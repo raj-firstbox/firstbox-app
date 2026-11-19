@@ -1729,8 +1729,9 @@ function renderBill(){
 
   // Items
   const inter = () => billInter(b);
-  const tpl = () => inter() ? '2.6fr 1fr .9fr .95fr 1fr 1.1fr 1fr 1.15fr' : '2.3fr 1fr .85fr .9fr .95fr 1.05fr .9fr .9fr 1.1fr';
-  const heads = () => ['Item', 'HSN/SAC', 'Quantity', 'Unit', 'Rate', 'Amount', ...(inter() ? ['IGST'] : ['CGST', 'SGST']), 'Total'];
+  // Proforma: no HSN/SAC or Unit columns (Raj's choice); tax invoice has both.
+  const tpl = () => pf ? (inter() ? '3fr 1fr 1fr 1.15fr 1.05fr 1.2fr' : '2.7fr .95fr .95fr 1.1fr .95fr .95fr 1.15fr') : (inter() ? '2.6fr 1fr .9fr .95fr 1fr 1.1fr 1fr 1.15fr' : '2.3fr 1fr .85fr .9fr .95fr 1.05fr .9fr .9fr 1.1fr');
+  const heads = () => ['Item', ...(pf ? [] : ['HSN/SAC']), 'Quantity', ...(pf ? [] : ['Unit']), 'Rate', 'Amount', ...(inter() ? ['IGST'] : ['CGST', 'SGST']), 'Total'];
   const itemsBox = h('div',{});
   const listId = 'bill-items-list';
   const drawItems = () => {
@@ -1757,9 +1758,9 @@ function renderBill(){
           h('button',{type:'button', class:'iconbtn', title:'Remove', 'aria-label':'Remove item ' + (i + 1), onclick:() => { b.items.splice(i, 1); touch(); drawItems(); }}, icon('x')))),
         h('div',{class:'inv-cols', style:'grid-template-columns:' + tpl()},
           h('div',{'data-l':'Item', class:'c-item'}, name),
-          h('div',{'data-l':'HSN/SAC'}, h('input',{value: it.hsn || '', 'aria-label':'HSN/SAC', oninput:e => { it.hsnTouched = true; set('hsn', e.target.value); }})),
+          pf ? null : h('div',{'data-l':'HSN/SAC'}, h('input',{value: it.hsn || '', 'aria-label':'HSN/SAC', oninput:e => { it.hsnTouched = true; set('hsn', e.target.value); }})),
           h('div',{'data-l':'Quantity'}, numIn(it.qty, v => set('qty', v), {'aria-label':'Quantity', placeholder:'0'})),
-          h('div',{'data-l':'Unit'}, unitSel),
+          pf ? null : h('div',{'data-l':'Unit'}, unitSel),
           h('div',{'data-l':'Rate (₹)'}, numIn(it.rate, v => set('rate', v), {'aria-label':'Rate', placeholder:'Rate'})),
           amtEl, ...taxEls, totEl),
         extra,
@@ -1960,7 +1961,10 @@ async function buildBillPdf(b){
   }
 
   // Items table
-  const cols = (inter ? [['#',22,'l'],['Item',140,'l'],['HSN/SAC',50,'c'],['Quantity',45,'c'],['Unit',32,'c'],['Rate',40,'c'],['Amount',65,'c'],['GST Rate',32,'c'],['IGST',50,'c'],['Total',63,'c']]
+  const cols = pf
+    ? (inter ? [['#',22,'l'],['Item',190,'l'],['Quantity',45,'c'],['Rate',45,'c'],['GST Rate',35,'c'],['Amount',70,'c'],['IGST',62,'c'],['Total',70,'c']]
+             : [['#',22,'l'],['Item',160,'l'],['Quantity',42,'c'],['Rate',42,'c'],['GST Rate',33,'c'],['Amount',66,'c'],['CGST',54,'c'],['SGST',54,'c'],['Total',66,'c']])
+    : (inter ? [['#',22,'l'],['Item',140,'l'],['HSN/SAC',50,'c'],['Quantity',45,'c'],['Unit',32,'c'],['Rate',40,'c'],['Amount',65,'c'],['GST Rate',32,'c'],['IGST',50,'c'],['Total',63,'c']]
              : [['#',20,'l'],['Item',120,'l'],['HSN/SAC',46,'c'],['Quantity',42,'c'],['Unit',28,'c'],['Rate',38,'c'],['Amount',62,'c'],['GST Rate',30,'c'],['CGST',48,'c'],['SGST',48,'c'],['Total',57,'c']]);
   const xs = []; { let x = M; for (const c of cols){ xs.push(x); x += c[1]; } }
   const FS = 8.5;
