@@ -371,7 +371,7 @@ const STATUSES = ['Estimate','Quoted','Confirmed','Completed','Lost'];
 const BOX = {rigid:'Rigid box – Top & bottom',shoulder:'Rigid box – Shoulder neck',magnetic:'Rigid box – Magnetic',slider:'Rigid box – Slider',mono:'Mono carton',corrugated:'Corrugated box',mdf:'MDF box',custom:'Custom box',printing:'Printing service'};
 const RIGID = new Set(['rigid','shoulder','magnetic','slider']);
 // Types no longer offered; older costings that use one still show it.
-const RETIRED = ['corrugated','custom'];
+const RETIRED = ['custom'];
 // Papers allowed on printed sheets, by product. Products not listed can use any paper.
 const PAPERS_FOR = {rigid:['art paper'], shoulder:['art paper'], magnetic:['art paper'], slider:['art paper'], mono:['sbs','art card']};
 const paperAllowed = (box, r) => !PAPERS_FOR[box] || PAPERS_FOR[box].includes(String(r.name || '').trim().toLowerCase());
@@ -418,9 +418,10 @@ const TEMPLATES = {
     {name:'Coating',calc:'area',link:'board',part:'finish'},
     {name:'Die & die cutting',calc:'diecut',dies:null,part:'die'}],
   corrugated:[
-    {k:'board',name:'Printed sheet 1',calc:'sheet',cat:'Board',hint:'corrug',L:40,W:50,ups:1,gsm:550},
-    {name:'Printing',calc:'impression',cat:'Printing',link:'board',passes:1},
-    {name:'Coating',calc:'area',link:'board',part:'finish'},
+    {k:'sheet',name:'Printed sheet 1',calc:'sheet',cat:'Paper',hint:'kraft',L:40,W:50,ups:1,gsm:150},
+    {name:'Printing',calc:'impression',cat:'Printing',link:'sheet',passes:4},
+    {name:'Coating',calc:'area',link:'sheet',part:'finish'},
+    {name:'Corrugated board sheet',calc:'sheet',cat:'Board',hint:'corrug',L:40,W:50,ups:1,gsm:550,part:'board'},
     {name:'Die & die cutting',calc:'diecut',dies:null,part:'die'},
     {name:'Making charges',calc:'piece',making:true,jobRate:true,part:'make'}],
   mdf:[
@@ -458,7 +459,10 @@ const PARTS = {
 };
 const PART_KEYS = Object.keys(PARTS);
 // Calculators shown for each product; anything not listed shows all.
-const PARTS_FOR = {mono:['print','finish','die'], printing:['print','finish','die']};
+const PARTS_FOR = {mono:['print','finish','die'], printing:['print','finish','die'], corrugated:['print','finish','board','die','make']};
+// Corrugated boxes use the board calculator for corrugated board instead of kappa board.
+const partTitle = k => k === 'board' && S.draft && S.draft.boxType === 'corrugated' ? 'Corrugated board' : PARTS[k].title;
+const partNote = k => k === 'board' && S.draft && S.draft.boxType === 'corrugated' ? 'Corrugated board sheets: board (3 ply / 5 ply), GSM, sheet size and ups. Priced by weight like paper.' : PARTS[k].note;
 const partsFor = j => PARTS_FOR[j && j.boxType] || PART_KEYS;
 // Sorts lines from older costings (made with 2 calculators) into the five calculators.
 function inferPart(l){
@@ -559,6 +563,7 @@ const ratesSorted = () => [...S.rates.values()].sort((a,b) => (CATS.indexOf(a.ca
 const findRate = (cat, calc, hint) => {
   const list = ratesSorted().filter(r => r.category === cat && r.calc === calc);
   const m = hint ? list.find(r => new RegExp(hint, 'i').test(r.name || '')) : null;
+  if (hint === 'corrug') return m || null; // corrugated board only takes a corrugated rate, never mill board
   return m || list[0];
 };
 const THICK = ['1','1.2','1.4','1.7','1.9','2.4','3'];
@@ -1545,7 +1550,7 @@ function renderJob(){
     details,
     h('nav',{class:'jump', 'aria-label':'Jump to a calculator'}, partsFor(j).map(k => h('button',{type:'button', onclick:() => {
       const el = document.getElementById('part-' + k); if (el) el.scrollIntoView({behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block:'start'});
-    }}, h('span',{class:'jn'}, PARTS[k].n), h('span',{class:'jt'}, h('span',{}, PARTS[k].title), h('b',{'data-t':'jump-' + k}, '₹0'))))),
+    }}, h('span',{class:'jn'}, PARTS[k].n), h('span',{class:'jt'}, h('span',{}, partTitle(k)), h('b',{'data-t':'jump-' + k}, '₹0'))))),
     h('div',{class:'note'},'After the job is done, type what each line really cost in “Actual ₹”.'),
     partsFor(j).map(partSection),
     overheadsRow(),
@@ -1569,13 +1574,13 @@ function partSection(p){
   wrap.append(
     h('div',{class:'part-head'},
       h('div',{class:'part-title'}, h('span',{class:'pnum', 'aria-hidden':'true'}, P.n),
-        h('div',{style:'min-width:0'}, h('div',{class:'ctype'},'Calculator ' + P.n), h('h2',{}, P.title), h('div',{class:'note'}, P.note), foldBtn)),
+        h('div',{style:'min-width:0'}, h('div',{class:'ctype'},'Calculator ' + P.n), h('h2',{}, partTitle(p)), h('div',{class:'note'}, partNote(p)), foldBtn)),
       h('div',{class:'amt'}, h('span',{class:'fl'},'Subtotal'), h('b',{'data-t':'part-' + p}), h('div',{class:'note', 'data-t':'pc-' + p}))),
     h('div',{class:'lines', id:'lines-' + p}),
     p === 'print' ? h('div',{class:'note warnline', id:'pastel-check'}) : '',
     h('div',{class:'adds'}, h('span',{class:'note', style:'align-self:center'},'Add:'),
       P.adds.filter(([c, label, extra]) => (!(extra && extra.boxes) || extra.boxes.includes(j.boxType)) && !(extra && extra.once && j.lines.some(x => x.making)))
-        .map(([c, label, extra]) => h('button',{class:'btn small', onclick:() => { addLine(c, p, label, extra); if (extra && extra.once) renderJob(); }}, '+ ' + label))));
+        .map(([c, label, extra]) => h('button',{class:'btn small', onclick:() => { addLine(c, p, label, extra); if (extra && extra.once) renderJob(); }}, '+ ' + (p === 'board' && j.boxType === 'corrugated' ? 'Corrugated board sheet' : label)))));
   return wrap;
 }
 function overheadsRow(){
@@ -1590,7 +1595,9 @@ function overheadsRow(){
 function addLine(calc, part, label, extra, linkTo){
   const j = S.draft;
   let o = {part};
-  if (calc === 'sheet' && part === 'board'){
+  if (calc === 'sheet' && part === 'board' && j.boxType === 'corrugated'){
+    o = {part, name:'Corrugated board sheet', gsm:550, ups:1, rateObj:findRate('Board', 'sheet', 'corrug')};
+  } else if (calc === 'sheet' && part === 'board'){
     const r = findRate('Board', 'sheet', 'grey') ;
     const mill = r && /mill|grey/i.test(r.name || '') ? r : ratesSorted().find(x => x.calc === 'sheet' && /mill/i.test(x.name || ''));
     o = {part, name:'Kappa board', gsm:1200, ups:1, thick:'1.9', rateObj:mill};
@@ -1662,7 +1669,7 @@ function renderLinesInner(){
     }
     const sheetLines = sheetsByPart(partOf(l) === 'finish' ? 'print' : partOf(l));
     const lr = l.rateId && S.rates.get(l.rateId);
-    const millLine = l.calc === 'sheet' && (partOf(l) === 'board' || !!(lr && isMill(lr)));
+    const millLine = l.calc === 'sheet' && (partOf(l) === 'board' || !!(lr && isMill(lr))) && !(j.boxType === 'corrugated' && !(lr && isMill(lr)));
     const same = partOf(l) === 'print'
       ? (l.calc === 'sheet' ? printSheets : j.lines.filter(x => partOf(x) === 'print' && x.calc !== 'sheet' && (x.link || null) === (l.link || null)))
       : j.lines.filter(x => partOf(x) === partOf(l));
@@ -1813,7 +1820,7 @@ function renderTotals(){
   t.append(
     h('div',{class:'card tl'},
       h('div',{class:'sect'},'Estimate & quote'),
-      partsFor(j).map(k => tr(PARTS[k].n + ' · ' + PARTS[k].title, 'tp-' + k)),
+      partsFor(j).map(k => tr(PARTS[k].n + ' · ' + partTitle(k), 'tp-' + k)),
       tr('Overheads', 'overhead'),
       tr('Total cost', 'total', 'big'),
       tr('Cost per piece', 'perPc'),
