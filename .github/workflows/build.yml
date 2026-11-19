@@ -60,10 +60,15 @@ jobs:
           if [ "${{ runner.os }}" = "macOS" ]; then T=--mac; else T=--win; fi
           if [[ "$GITHUB_REF" == refs/tags/v* ]]; then P=always; else P=never; fi
           npx electron-builder $T --publish $P
+      - name: Check the app starts
+        shell: bash
+        run: npm install --no-save --no-audit --no-fund playwright-core@1.48.2 && node tools/smoke.js
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: firstbox-${{ matrix.os }}
           path: |
             dist/*.dmg
             dist/*.exe
+            dist/smoke-*.png
           if-no-files-found: warn

@@ -25,22 +25,51 @@
     "appId": "in.firstbox.app",
     "productName": "Firstbox",
     "copyright": "Firstbox",
-    "directories": { "output": "dist", "buildResources": "build" },
-    "files": ["electron/**", "web/**", "package.json", "!web/firstbox.html"],
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "electron/**",
+      "web/**",
+      "package.json",
+      "!web/firstbox.html"
+    ],
     "mac": {
       "target": [
-        { "target": "dmg", "arch": ["arm64", "x64"] },
-        { "target": "zip", "arch": ["arm64", "x64"] }
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64",
+            "x64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "arm64",
+            "x64"
+          ]
+        }
       ],
       "category": "public.app-category.business",
       "icon": "build/icon.png",
-      "identity": "-",
+      "identity": null,
       "hardenedRuntime": false,
       "gatekeeperAssess": false
     },
-    "dmg": { "artifactName": "Firstbox-${version}-Mac-${arch}.${ext}" },
+    "dmg": {
+      "artifactName": "Firstbox-${version}-Mac-${arch}.${ext}"
+    },
     "win": {
-      "target": [{ "target": "nsis", "arch": ["x64"] }],
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
       "icon": "build/icon.png"
     },
     "nsis": {
@@ -51,6 +80,14 @@
       "shortcutName": "Firstbox",
       "artifactName": "Firstbox-Setup-${version}-Windows.${ext}"
     },
-    "publish": [{ "provider": "github", "owner": "raj-firstbox", "repo": "firstbox-app", "releaseType": "release" }]
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "raj-firstbox",
+        "repo": "firstbox-app",
+        "releaseType": "release"
+      }
+    ],
+    "afterPack": "build/after-pack.js"
   }
 }
