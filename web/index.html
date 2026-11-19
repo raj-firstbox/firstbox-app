@@ -2863,6 +2863,8 @@ async function boot(){
   const db = window.claude && window.claude.use ? await window.claude.use('db') : null;
   if (!db){ S.role = 'owner'; msg('Saved data is not available in this view. Open the page in Claude while signed in to use the costing tool.', true); fromHash(); return; }
   S.db = db;
+  // Inside Claude this page is now only a preview of the next app version.
+  if (!window.FIRSTBOX_CLOUD) msg('Preview of the next Firstbox app version. Try changes here; do your real work in the Firstbox app (data here is separate).');
   const slowTimer = setTimeout(() => { if (!S.loaded.jobs || !S.loaded.rates){ S.slow = true; render(); } }, 10000);
   const doneLoading = () => { if (S.loaded.jobs && S.loaded.rates){ clearTimeout(slowTimer); S.slow = false; } };
   const fail = e => { clearTimeout(slowTimer); msg(e && e.code === 'revoked' ? 'Access to saved data ended for this page.' : "Couldn't load your saved data. Reload the page to try again.", true); };
