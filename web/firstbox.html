@@ -27,6 +27,22 @@ h1{font-size:22px} h2{font-size:17px} h3{font-size:14px}
 .brand img{display:block;height:42px;width:auto}
 .bar .tab{white-space:nowrap}
 .setwrap{position:relative}
+/* Home tiles */
+.brand.home-link{cursor:pointer}
+.hgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px;margin-bottom:22px}
+.htile{display:grid;grid-template-columns:auto 1fr;grid-template-rows:auto auto;column-gap:16px;row-gap:12px;align-items:start;text-align:left;background:var(--surface);border:1px solid var(--line);border-top:4px solid var(--brand);border-radius:10px;padding:22px;font:inherit;color:var(--fg);cursor:pointer;min-height:150px;transition:box-shadow .15s,border-color .15s,transform .15s}
+.htile:hover,.htile:focus-visible{border-color:var(--brand);box-shadow:0 8px 24px rgba(31,26,22,.10);transform:translateY(-1px)}
+.htile:focus-visible{outline:2px solid var(--brand);outline-offset:2px}
+.hicon{display:grid;place-items:center;width:54px;height:54px;border-radius:12px;background:var(--accent-soft);color:var(--accent);grid-row:span 2}
+.htext{display:grid;gap:4px}
+.htitle{font-family:var(--font-display);font-weight:700;font-size:21px}
+.hdesc{font-size:14px;color:var(--muted)}
+.hstat{grid-column:2;font-size:13px;font-weight:600;color:var(--accent);background:var(--accent-soft);border-radius:999px;padding:4px 10px;justify-self:start}
+.hstat.alert{color:#fff;background:#B42318}
+.htile.small{min-height:0;padding:16px;border-top-width:3px}
+.htile.small .hicon{width:42px;height:42px;border-radius:10px}
+.htile.small .htitle{font-size:17px}
+.hsub{font-size:13px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin:4px 0 10px}
 .rowdel{display:inline-grid;place-items:center;min-width:34px;height:34px;padding:0 8px;border:1px solid transparent;border-radius:6px;background:none;color:var(--muted);cursor:pointer;font:inherit;font-size:13px;font-weight:600;white-space:nowrap}
 .rowdel:hover,.rowdel:focus-visible{color:var(--neg,#B42318);border-color:var(--line);background:var(--surface)}
 .rowdel.armed{color:#fff;background:#B42318;border-color:#B42318}
@@ -298,6 +314,7 @@ body:not(.show-rates) .adv{display:none}
 
 <main class="wrap">
   <div id="sysmsg"></div>
+  <section id="view-home" hidden></section>
   <section id="view-jobs"></section>
   <section id="view-job" hidden></section>
   <section id="view-cards" hidden></section>
@@ -771,13 +788,15 @@ function fromHash(){
   const hsh = location.hash.slice(1);
   if (hsh.startsWith('job-')) go('job', hsh.slice(4));
   else if (hsh.startsWith('card-')) go('card', hsh.slice(5));
-  else go(['rates','history','cards','stock','team'].includes(hsh) ? hsh : (S.role && S.role !== 'owner' ? homeView() : 'jobs'));
+  else go(['home','jobs','rates','history','cards','stock','team'].includes(hsh) ? hsh : homeView());
 }
 document.querySelectorAll('[data-go]').forEach(b => b.addEventListener('click', () => { closeSettings(); go(b.dataset.go); }));
 // Settings menu (top-left gear): Rate list and Price history.
 function closeSettings(focusBtn){ const m = $('#setmenu'), b = $('#setbtn'); if (!m || m.hidden) return; m.hidden = true; b.setAttribute('aria-expanded', 'false'); if (focusBtn) b.focus(); }
 $('#setbtn').addEventListener('click', e => { e.stopPropagation(); const m = $('#setmenu'); if (!m.hidden) return closeSettings(); m.hidden = false; $('#setbtn').setAttribute('aria-expanded', 'true'); m.querySelector('button').focus(); });
 document.addEventListener('click', e => { if (!e.target.closest('.setwrap')) closeSettings(); });
+// Logo goes back to the home tiles (owner).
+{ const br = $('.brand'); if (br){ br.classList.add('home-link'); br.title = 'Home'; br.addEventListener('click', () => { if (S.role === 'owner') go('home'); }); } }
 document.addEventListener('keydown', e => {
   const m = $('#setmenu'); if (!m || m.hidden) return;
   if (e.key === 'Escape') closeSettings(true);
@@ -789,9 +808,10 @@ function render(){
   applyRoleChrome();
   const ready = S.role === 'owner' || !!ROLES[S.role];
   $('#view-access').hidden = ready;
-  if (!ready){ ['jobs','job','rates','history','cards','stock','card','team'].forEach(v => $('#view-' + v).hidden = true); renderAccess(); return; }
+  if (!ready){ ['home','jobs','job','rates','history','cards','stock','card','team'].forEach(v => $('#view-' + v).hidden = true); renderAccess(); return; }
   $('#view-team').hidden = S.view !== 'team';
   $('#tab-team').setAttribute('aria-current', S.view === 'team' ? 'page' : 'false');
+  $('#view-home').hidden = S.view !== 'home';
   $('#view-jobs').hidden = S.view !== 'jobs';
   $('#view-job').hidden = S.view !== 'job';
   $('#view-rates').hidden = S.view !== 'rates';
@@ -806,7 +826,8 @@ function render(){
   $('#tab-history').setAttribute('aria-current', S.view === 'history' ? 'page' : 'false');
   $('#setbtn').classList.toggle('on', S.view === 'rates' || S.view === 'history' || S.view === 'team');
   if (S.view === 'team'){ renderTeam(); return; }
-  if (S.view === 'jobs') renderJobs();
+  if (S.view === 'home') renderHome();
+  else if (S.view === 'jobs') renderJobs();
   else if (S.view === 'job') renderJob();
   else if (S.view === 'history') renderHistory();
   else if (S.view === 'cards') renderCards();
@@ -816,6 +837,43 @@ function render(){
 }
 
 // ---------- Jobs view ----------
+// ---------- Home: big tiles for the main sections ----------
+const ICONS = {
+  jobs:'<path d="M4 4h16v16H4z"/><path d="M8 8h8M8 12h8M8 16h5"/>',
+  cards:'<path d="M7 3h7l5 5v13H7z"/><path d="M14 3v5h5"/><path d="M10 13h6M10 17h6"/>',
+  stock:'<path d="M3 8l9-5 9 5v8l-9 5-9-5z"/><path d="M3 8l9 5 9-5M12 13v8"/>',
+  rates:'<path d="M5 4h14v16H5z"/><path d="M9 8h6M9 12h6M9 16h3"/>',
+  history:'<path d="M4 19h16"/><path d="M5 15l4-5 4 3 6-7"/>',
+  team:'<circle cx="9" cy="8" r="3"/><path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6"/><circle cx="17" cy="9" r="2.5"/><path d="M15.5 14.2c2.8.3 5 2.6 5 5.8"/>'
+};
+let homeT = null;
+function homeSoon(){ if (S.view !== 'home') return; clearTimeout(homeT); homeT = setTimeout(() => { if (S.view === 'home') renderHome(); }, 120); }
+function renderHome(){
+  const root = $('#view-home'); root.replaceChildren();
+  const month = today().slice(0, 7), loading = '…';
+  const jobs = [...S.jobs.values()], cards = [...S.cards.values()], stock = [...S.stock.values()];
+  const short = stock.filter(i => n0(i.qty) < 0).length, low = stock.filter(i => n0(i.qty) >= 0 && n0(i.reorder) > 0 && n0(i.qty) <= n0(i.reorder)).length;
+  const lastCard = cards.sort((a, b) => n0(b.createdAt) - n0(a.createdAt))[0];
+  const icon = k => { const s = h('span',{class:'hicon', 'aria-hidden':'true'}); s.innerHTML = '<svg viewBox="0 0 24 24" width="30" height="30" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">' + ICONS[k] + '</svg>'; return s; };
+  const tile = (k, view, title, desc, stat, alert, small) => h('button',{type:'button', class:'htile' + (small ? ' small' : ''), onclick:() => go(view)},
+    icon(k), h('span',{class:'htext'}, h('span',{class:'htitle'}, title), h('span',{class:'hdesc'}, desc)),
+    stat ? h('span',{class:'hstat' + (alert ? ' alert' : '')}, stat) : '');
+  const hr = new Date().getHours();
+  root.append(h('div',{class:'head'}, h('div',{}, h('h1',{}, (hr < 12 ? 'Good morning' : hr < 17 ? 'Good afternoon' : 'Good evening')), h('div',{class:'note'}, 'What would you like to work on?'))));
+  root.append(h('div',{class:'hgrid'},
+    tile('jobs', 'jobs', 'Costings', 'Work out cost and quote for an order',
+      S.loaded.jobs ? jobs.length + ' costing' + (jobs.length === 1 ? '' : 's') + ' · ' + jobs.filter(j => (j.date || '').slice(0, 7) === month).length + ' this month' : loading),
+    tile('cards', 'cards', 'Job cards', 'Instructions for the team, master sheet, PDFs',
+      S.loaded.cards ? cards.length + ' job card' + (cards.length === 1 ? '' : 's') + (lastCard ? ' · latest ' + lastCard.id : '') : loading),
+    tile('stock', 'stock', 'Stock', 'Materials in stock, what to buy for upcoming jobs',
+      S.loaded.stock ? (short ? short + ' to buy now' : stock.length + ' material' + (stock.length === 1 ? '' : 's')) + (low ? ' · ' + low + ' running low' : '') : loading, !!short)));
+  root.append(h('h2',{class:'hsub'}, 'Settings'));
+  root.append(h('div',{class:'hgrid'},
+    tile('rates', 'rates', 'Rate list', 'Paper, board, lamination, printing and other rates', S.loaded.rates ? S.rates.size + ' rates' : loading, false, true),
+    tile('history', 'history', 'Price history', 'How raw material prices changed over time', '', false, true),
+    tile('team', 'team', 'Team & access', 'Logins and roles for your team', S.team.size ? S.team.size + (S.team.size === 1 ? ' person' : ' people') : '', false, true)));
+}
+
 function renderJobs(){
   const root = $('#view-jobs'); root.replaceChildren();
   const ready = S.loaded.jobs;
@@ -919,7 +977,7 @@ const ROLES = {
 const isOwnerRole = () => S.role === 'owner';
 const allowedViews = () => S.role === 'owner' ? null : (ROLES[S.role] || {views:[]}).views;
 const canView = v => { const a = allowedViews(); return !a || a.includes(v); };
-const homeView = () => S.role === 'owner' ? 'jobs' : ((ROLES[S.role] || {views:['access']}).views[0]);
+const homeView = () => S.role === 'owner' ? 'home' : ((ROLES[S.role] || {views:['access']}).views[0]);
 
 function applyRoleChrome(){
   const own = isOwnerRole(), r = ROLES[S.role];
@@ -2877,6 +2935,7 @@ async function boot(){
       if (!snap.metadata.fromCache && col === 'stock') S.loaded.stock = true;
       initialStockSync();
       if (S.view === 'stock' && !$('#view-stock').contains(document.activeElement)) renderStock();
+      homeSoon();
       if (S.view === 'card' && S.cardTab === 'mat' && !$('#view-card').contains(document.activeElement)) renderCard();
     }, fail);
     liveSub('stock', 'stock'); liveSub('stockLog', 'slog');
@@ -2888,7 +2947,8 @@ async function boot(){
       S.cards = m;
       if (!snap.metadata.fromCache) S.loaded.cards = true;
       initialStockSync();
-      if (S.view === 'cards'){ if (!$('#view-cards').contains(document.activeElement) || document.activeElement === document.body) renderCards(); }
+      homeSoon();
+    if (S.view === 'cards'){ if (!$('#view-cards').contains(document.activeElement) || document.activeElement === document.body) renderCards(); }
       else if (S.view === 'card'){
         const fresh = S.cards.get(S.cardId);
         if (!S.cdraft && fresh){ S.cdraft = clone(fresh); renderCard(); }
@@ -2939,7 +2999,8 @@ async function boot(){
       for (const [id, j] of S.jobs) if (!m.has(id) && busy('jobs/' + id)) m.set(id, j);
       S.jobs = m;
       if (!snap.metadata.fromCache){ S.loaded.jobs = true; doneLoading(); }
-      if (S.view === 'jobs'){ if (!$('#view-jobs').contains(document.activeElement) || document.activeElement === document.body) renderJobs(); }
+      homeSoon();
+    if (S.view === 'jobs'){ if (!$('#view-jobs').contains(document.activeElement) || document.activeElement === document.body) renderJobs(); }
       else if (S.view === 'job'){
         const fresh = S.jobs.get(S.jobId);
         if (!S.draft && fresh){ S.draft = clone(fresh); renderJob(); }
