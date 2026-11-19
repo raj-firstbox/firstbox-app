@@ -543,9 +543,9 @@ const PARTS = {
     adds:[]},
   make:{n:'7', title:'Making charges', note:'Type the making charge per box for this job. It is multiplied by the quantity.',
     adds:[['piece','Add making charges',{name:'Making charges', making:true, jobRate:true, once:true}]]},
-  fab:{n:'8', title:'Fabrication', note:'Side pasting is always included. Tick Euro slot or Window pasting if the carton has them. Rates are per 1000 cartons.',
+  fab:{n:'8', title:'Fabrication', note:'Side pasting is always included. Tick Euro slot or Window pasting if the carton has them.',
     adds:[]},
-  pack:{n:'9', title:'Packaging & forwarding', note:'How the cartons are packed: in sheets (₹10 per 2000 pcs) or in cartons (one carton per 1000 pcs, at your rate per carton).',
+  pack:{n:'9', title:'Packaging & forwarding', note:'Choose how the cartons are packed: in sheets or in cartons.',
     adds:[]}
 };
 const PART_KEYS = Object.keys(PARTS);
@@ -914,7 +914,7 @@ function fabEditor(l){
   const opt = (key, rateKey, label, setKey) => h('div',{class:'fabopt' + (key && !l[key] ? ' off' : '')},
     key ? h('label',{class:'row', style:'gap:8px'}, h('input',{type:'checkbox', checked: l[key] ? true : null, onchange:e => { l[key] = e.target.checked; touch(); renderLines(); }}), h('b',{}, label))
         : h('label',{class:'row', style:'gap:8px'}, h('input',{type:'checkbox', checked:true, disabled:true}), h('b',{}, label), h('span',{class:'note'}, '(always)')),
-    !key || l[key] ? fld('₹ per 1000 cartons', numIn(l[rateKey], v => { l[rateKey] = v; remember(setKey, v); touch(); }, {placeholder:'Rate'})) : null);
+    !key || l[key] ? h('div',{class: key ? '' : 'adv'}, fld('₹ per 1000 cartons', numIn(l[rateKey], v => { l[rateKey] = v; remember(setKey, v); touch(); }, {placeholder:'Rate'}))) : null);
   return specialCard(l, 'Fabrication', h('div',{class:'fabopts'},
     opt(null, 'sideRate', 'Side pasting', 'sidePastePer1000'),
     opt('euro', 'euroRate', 'Euro slot', 'euroSlotPer1000'),
@@ -922,12 +922,12 @@ function fabEditor(l){
 }
 function packEditor(l){
   const mode = (m, label, sub) => h('label',{class:'packopt' + (l.mode === m ? ' on' : '')},
-    h('input',{type:'radio', name:'pack-' + l.id, checked: l.mode === m ? true : null, onchange:() => { l.mode = m; touch(); renderLines(); }}), h('span',{}, h('b',{}, label), h('span',{class:'note'}, sub)));
+    h('input',{type:'radio', name:'pack-' + l.id, checked: l.mode === m ? true : null, onchange:() => { l.mode = m; touch(); renderLines(); }}), h('span',{}, h('b',{}, label), sub ? h('span',{class:'note'}, sub) : null));
   return specialCard(l, 'Packing', h('div',{style:'display:grid;gap:10px'},
     h('div',{class:'packopts', role:'radiogroup', 'aria-label':'Packing'},
-      mode('sheet', 'Packing in sheet', '₹10 per 2000 pcs'),
-      mode('carton', 'Packing in carton', 'One carton per 1000 pcs')),
-    l.mode === 'carton' ? fld('₹ per carton', numIn(l.cartonRate, v => { l.cartonRate = v; if (v != null){ S.settings.packCartonRate = v; saveSettings(); } touch(); }, {placeholder:'Rate per carton'})) : null));
+      mode('sheet', 'Packing in sheet', ''),
+      mode('carton', 'Packing in carton', '')),
+    l.mode === 'carton' ? h('div',{class: l.cartonRate == null ? '' : 'adv'}, fld('₹ per carton', numIn(l.cartonRate, v => { l.cartonRate = v; if (v != null){ S.settings.packCartonRate = v; saveSettings(); } touch(); }, {placeholder:'Rate per carton'}))) : null));
 }
 
 // Copies the colour-wise printing rate into the line, so later rate changes don't alter old costings.
