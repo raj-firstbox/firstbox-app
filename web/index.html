@@ -1570,6 +1570,33 @@ function rememberItem(it){
 const fmtWhen = t => t ? new Date(t).toLocaleString('en-IN',{day:'numeric', month:'short', year:'numeric', hour:'numeric', minute:'2-digit'}) : '—';
 const UNITS = ['NOS','PCS','SET','BOX','SHEETS','KG','PKT','ROLL','JOB'];
 
+// ----- Period filter for the Sales lists (Indian financial year: 1 April to 31 March) -----
+const PERIODS = [['month','This month'],['lastmonth','Last month'],['3m','Last 3 months'],['fy','This financial year'],['lastfy','Last financial year'],['all','All time']];
+const ymd = d => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+function periodRange(k){
+  const t = new Date(), y = t.getFullYear(), m = t.getMonth(), fy = m >= 3 ? y : y - 1;
+  if (k === 'month') return [ymd(new Date(y, m, 1)), ymd(new Date(y, m + 1, 0))];
+  if (k === 'lastmonth') return [ymd(new Date(y, m - 1, 1)), ymd(new Date(y, m, 0))];
+  if (k === '3m') return [ymd(new Date(y, m - 2, 1)), ymd(new Date(y, m + 1, 0))];
+  if (k === 'fy') return [fy + '-04-01', (fy + 1) + '-03-31'];
+  if (k === 'lastfy') return [(fy - 1) + '-04-01', fy + '-03-31'];
+  return [null, null];
+}
+const inPeriod = d => { const [f, t] = periodRange(S.billPeriod || 'fy'); if (!f) return true; const x = String(d || '').slice(0, 10); return x >= f && x <= t; };
+function periodLabel(){
+  const k = S.billPeriod || 'fy', [f, t] = periodRange(k); if (!f) return 'all time';
+  if (k === 'fy' || k === 'lastfy') return 'FY ' + f.slice(0, 4) + '–' + t.slice(2, 4);
+  const mm = d => new Date(d + 'T00:00:00').toLocaleDateString('en-IN',{month:'short', year:'numeric'});
+  return mm(f) === mm(t) ? mm(f) : mm(f) + ' – ' + mm(t);
+}
+function periodBar(){
+  return h('div',{class:'row', style:'gap:8px;margin-bottom:12px;align-items:center'},
+    h('span',{class:'note'}, 'Show:'),
+    h('nav',{class:'jump', 'aria-label':'Period', style:'position:static;padding:4px;flex-wrap:wrap'}, PERIODS.map(([k, n]) =>
+      h('button',{type:'button', class:'jctab', 'aria-current': (S.billPeriod || 'fy') === k ? 'page' : 'false', onclick:() => { S.billPeriod = k; renderBills(); }}, n))),
+    h('span',{class:'note'}, periodLabel()));
+}
+
 // ----- List: Proforma invoices | Tax invoices | Saved items -----
 function renderBills(){
   const root = $('#view-bills'); root.replaceChildren();
@@ -1591,23 +1618,24 @@ function renderBills(){
   if (!S.db){ box.append(h('div',{class:'card empty'},'Saved data is not available here.')); return; }
   if (!S.loaded.bills){ box.append(h('div',{class:'card empty'},'Loading invoices…')); return; }
   if (tab === 'items'){ savedItemsList(box); return; }
+  box.append(periodBar());
   if (tab === 'payments'){ paymentsList(box); return; }
   if (tab === 'challan'){ challanList(box); return; }
-  const all = [...S.bills.values()].filter(b => b.type === tab).map(b => ({b, c: billCalc(b)}));
-  const month = today().slice(0, 7), mon = all.filter(r => String(r.b.date || '').startsWith(month));
+  const all = [...S.bills.values()].filter(b => b.type === tab && inPeriod(b.date)).map(b => ({b, c: billCalc(b)}));
+  const mon = all, pl = periodLabel();
   box.append(h('div',{class:'kpis'}, tab === 'invoice' ? [
-      kpi('Invoiced this month', rs(mon.reduce((a, r) => a + r.c.total, 0)), mon.length + (mon.length === 1 ? ' invoice' : ' invoices') + ' incl. GST'),
-      kpi('GST this month', rs(mon.reduce((a, r) => a + r.c.tax, 0)), 'on tax invoices'),
+      kpi('Sales (incl. GST)', rs(mon.reduce((a, r) => a + r.c.total, 0)), mon.length + (mon.length === 1 ? ' invoice · ' : ' invoices · ') + pl),
+      kpi('Before GST', rs(mon.reduce((a, r) => a + r.c.amount, 0)), 'GST ' + rs(mon.reduce((a, r) => a + r.c.tax, 0))),
       kpi('Still to receive', rs(all.reduce((a, r) => a + Math.max(0, billPaid(r.b).bal), 0)), all.filter(r => billPaid(r.b).status !== 'paid').length + ' not fully paid')] : [
       kpi('Open proformas', String(all.filter(r => !(r.b.toId && S.bills.has(r.b.toId))).length), 'not yet turned into a tax invoice'),
-      kpi('Proformas this month', String(mon.length), rs(mon.reduce((a, r) => a + r.c.total, 0)) + ' incl. GST'),
+      kpi('Proformas', String(mon.length), rs(mon.reduce((a, r) => a + r.c.total, 0)) + ' incl. GST · ' + pl),
       kpi('Clients saved', String(realClients().length), 'filled in automatically next time')]));
   const search = h('input',{type:'search', placeholder:'Search no., client, GSTIN or item', value:S.billQ, style:'flex:1 1 240px'});
   const tbox = h('div',{class:'tablebox'});
   box.append(h('div',{class:'row', style:'margin-bottom:10px'}, search), tbox);
   const draw = () => {
     tbox.replaceChildren();
-    if (!all.length){ tbox.append(h('div',{class:'empty'}, tab === 'proforma' ? 'No proforma invoices yet. Press “+ Create proforma”, or use “Make proforma” on a PO.' : 'No tax invoices yet. Press “+ Create invoice”, turn a proforma into one, or use “Make invoice” on a dispatch.')); return; }
+    if (!all.length){ tbox.append(h('div',{class:'empty'}, [...S.bills.values()].some(b => b.type === tab) && (S.billPeriod || 'fy') !== 'all' ? 'Nothing in this period. Choose another period above, or “All time”.' : tab === 'proforma' ? 'No proforma invoices yet. Press “+ Create proforma”, or use “Make proforma” on a PO.' : 'No tax invoices yet. Press “+ Create invoice”, turn a proforma into one, or use “Make invoice” on a dispatch.')); return; }
     const q = S.billQ.trim().toLowerCase();
     const rows = all.filter(r => !q || [r.b.no, (r.b.client || {}).name, (r.b.client || {}).gstin, ...(r.b.items || []).map(i => i.name)].join(' ').toLowerCase().includes(q))
       .sort((a, b) => String(b.b.date || '').localeCompare(String(a.b.date || '')) || n0(b.b.createdAt) - n0(a.b.createdAt));
@@ -2205,14 +2233,13 @@ function transportLines(b){
 }
 
 function challanList(box){
-  const own = isOwnerRole(), all = [...S.bills.values()].filter(b => b.type === 'challan');
-  const month = today().slice(0, 7), mon = all.filter(b => String(b.date || '').startsWith(month));
-  box.append(h('div',{class:'kpis'}, kpi('Challans this month', String(mon.length), mon.reduce((a, b) => a + (b.items || []).reduce((x, it) => x + n0(it.qty), 0), 0).toLocaleString('en-IN') + ' pcs sent'), kpi('Delivery challans', String(all.length), 'in total')));
+  const own = isOwnerRole(), all = [...S.bills.values()].filter(b => b.type === 'challan' && inPeriod(b.date));
+  box.append(h('div',{class:'kpis'}, kpi('Delivery challans', String(all.length), periodLabel()), kpi('Pieces sent', all.reduce((a, b) => a + (b.items || []).reduce((x, it) => x + n0(it.qty), 0), 0).toLocaleString('en-IN'), 'on these challans')));
   const search = h('input',{type:'search', placeholder:'Search challan no., client, item or vehicle', value:S.billQ, style:'flex:1 1 240px'}), tbox = h('div',{class:'tablebox'});
   box.append(h('div',{class:'row', style:'margin-bottom:10px'}, search), tbox);
   const draw = () => {
     tbox.replaceChildren();
-    if (!all.length){ tbox.append(h('div',{class:'empty'},'No delivery challans yet. Press “+ Create delivery challan”, use “Make delivery challan” on a tax invoice, or “Make challan” on a dispatch in Orders.')); return; }
+    if (!all.length){ tbox.append(h('div',{class:'empty'}, S.bills.size && (S.billPeriod || 'fy') !== 'all' ? 'No delivery challans in this period. Choose another period above, or “All time”.' : 'No delivery challans yet. Press “+ Create delivery challan”, use “Make delivery challan” on a tax invoice, or “Make challan” on a dispatch in Orders.')); return; }
     const q = S.billQ.trim().toLowerCase();
     const rows = all.filter(b => !q || [b.no, (b.client || {}).name, (b.transport || {}).vehicle, ...(b.items || []).map(i => i.name)].join(' ').toLowerCase().includes(q)).sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')) || n0(b.createdAt) - n0(a.createdAt));
     if (!rows.length){ tbox.append(h('div',{class:'empty'},'Nothing matches.')); return; }
@@ -2478,19 +2505,18 @@ async function buildReceiptPdf(p){
   return await doc.save();
 }
 function paymentsList(box){
-  const own = isOwnerRole(), all = [...S.payments.values()];
-  const month = today().slice(0, 7), mon = all.filter(p => String(p.date || '').startsWith(month));
+  const own = isOwnerRole(), all = [...S.payments.values()].filter(p => inPeriod(p.date)), mon = all;
   const invs = [...S.bills.values()].filter(b => b.type === 'invoice').map(b => billPaid(b));
   const openPf = [...S.bills.values()].filter(b => b.type === 'proforma' && !(b.toId && S.bills.has(b.toId)));
   box.append(h('div',{class:'kpis'},
-    kpi('Received this month', rs(mon.reduce((a, p) => a + n0(p.amount), 0)), mon.length + (mon.length === 1 ? ' payment' : ' payments')),
+    kpi('Received', rs(mon.reduce((a, p) => a + n0(p.amount), 0)), mon.length + (mon.length === 1 ? ' payment · ' : ' payments · ') + periodLabel()),
     kpi('Advances on open proformas', rs(openPf.reduce((a, b) => a + billPaid(b).got, 0)), 'not yet invoiced'),
-    kpi('Still to receive', rs(invs.reduce((a, s) => a + Math.max(0, s.bal), 0)), 'on tax invoices')));
+    kpi('Still to receive', rs(invs.reduce((a, s) => a + Math.max(0, s.bal), 0)), 'on all tax invoices')));
   const search = h('input',{type:'search', placeholder:'Search receipt no., client, reference', value:S.billQ, style:'flex:1 1 240px'}), tbox = h('div',{class:'tablebox'});
   box.append(h('div',{class:'row', style:'margin-bottom:10px'}, search), tbox);
   const draw = () => {
     tbox.replaceChildren();
-    if (!all.length){ tbox.append(h('div',{class:'empty'},'No payments recorded yet. Press “+ Record payment”, or use the button on a proforma or tax invoice.')); return; }
+    if (!all.length){ tbox.append(h('div',{class:'empty'}, S.payments.size && (S.billPeriod || 'fy') !== 'all' ? 'No payments in this period. Choose another period above, or “All time”.' : 'No payments recorded yet. Press “+ Record payment”, or use the button on a proforma or tax invoice.')); return; }
     const q = S.billQ.trim().toLowerCase();
     const rows = all.filter(p => !q || [p.no, (p.client || {}).name, p.ref, payFor(p)].join(' ').toLowerCase().includes(q)).sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')) || n0(b.createdAt) - n0(a.createdAt));
     if (!rows.length){ tbox.append(h('div',{class:'empty'},'Nothing matches.')); return; }
