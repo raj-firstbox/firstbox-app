@@ -49,9 +49,9 @@ h1{font-size:22px} h2{font-size:17px} h3{font-size:14px}
 .hgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:26px}
 .hgrid.work{grid-template-columns:repeat(6,1fr)}
 .hgrid.work .htile{grid-column:span 2}
-.hgrid.work .htile:nth-child(4){grid-column:2 / span 2}
-@media (max-width:1000px){.hgrid.work{grid-template-columns:repeat(2,1fr)}.hgrid.work .htile,.hgrid.work .htile:nth-child(4){grid-column:auto}}
-@media (max-width:760px){.hgrid,.hgrid.work{grid-template-columns:1fr}}
+.hgrid.set{grid-template-columns:repeat(4,1fr)}
+@media (max-width:1000px){.hgrid.work,.hgrid.set{grid-template-columns:repeat(2,1fr)}.hgrid.work .htile{grid-column:auto}}
+@media (max-width:760px){.hgrid,.hgrid.work,.hgrid.set{grid-template-columns:1fr}}
 .htile{display:flex;align-items:center;gap:16px;text-align:left;background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:18px;font:inherit;color:var(--fg);cursor:pointer;min-height:108px;transition:box-shadow .15s,border-color .15s,transform .15s}
 .htile:hover,.htile:focus-visible{border-color:var(--brand);box-shadow:0 8px 24px rgba(31,26,22,.08);transform:translateY(-1px)}
 .htile:focus-visible{outline:2px solid var(--brand);outline-offset:2px}
@@ -239,6 +239,10 @@ tbody tr:last-child td{border-bottom:0}
 .jcrow .fld{flex:1 1 110px}
 .jcrow .fld.w2{flex:2 1 200px}
 .jcrow .fld.w0{flex:0 1 80px}
+.card .grid,.billitem .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
+.grid .fld.wide{grid-column:span 2}
+@media (max-width:520px){.grid .fld.wide{grid-column:auto}}
+.billitem{border:1px solid var(--line);border-radius:8px;padding:10px 12px;display:grid;gap:8px;background:var(--surface)}
 .prog{height:8px;min-width:90px;background:var(--sunk);border-radius:4px;overflow:hidden}
 .prog>i{display:block;height:100%;background:var(--brand);border-radius:4px}
 .prog.done>i{background:var(--good)}
@@ -318,6 +322,7 @@ body:not(.show-rates) .adv{display:none}
       <button class="tab" id="tab-jobs" data-go="jobs">Costings</button>
       <button class="tab" id="tab-cards" data-go="cards">Job cards</button>
       <button class="tab" id="tab-orders" data-go="orders">Orders</button>
+      <button class="tab" id="tab-bills" data-go="bills">Invoices</button>
       <button class="tab" id="tab-stock" data-go="stock">Stock</button>
       <button class="tab" id="tab-past" data-go="past">Database</button>
     </nav>
@@ -332,6 +337,7 @@ body:not(.show-rates) .adv{display:none}
         <div class="setmenu-h">Settings</div>
         <button type="button" role="menuitem" id="tab-rates" data-go="rates"><b>Rate list</b><span>Paper, board, lamination, printing and all other rates</span></button>
         <button type="button" role="menuitem" id="tab-history" data-go="history"><b>Price history</b><span>How raw material prices have changed over time</span></button>
+        <button type="button" role="menuitem" id="tab-billing" data-go="billing"><b>Billing details</b><span>Firstbox GSTIN, address, bank, invoice numbers and terms</span></button>
         <button type="button" role="menuitem" id="tab-team" data-go="team"><b>Team &amp; access</b><span>Choose who can use inventory and job cards</span></button>
       </div>
     </div>
@@ -346,6 +352,9 @@ body:not(.show-rates) .adv{display:none}
   <section id="view-job" hidden></section>
   <section id="view-cards" hidden></section>
   <section id="view-card" hidden></section>
+  <section id="view-bills" hidden></section>
+  <section id="view-bill" hidden></section>
+  <section id="view-billing" hidden></section>
   <section id="view-orders" hidden></section>
   <section id="view-order" hidden></section>
   <section id="view-stock" hidden></section>
@@ -493,7 +502,7 @@ const partOf = l => l.calc === 'diecut' && (l.part === 'print' || l.part === 'di
 
 // ---------- state ----------
 const S = {db:null, rates:new Map(), jobs:new Map(), settings:{overheadPct:12, marginPct:25, wastagePct:5},
-  loaded:{rates:false, jobs:false, hist:false, cards:false, stock:false, shared:false, past:false, orders:false}, orders:new Map(), poRates:new Map(), orderId:null, ordQ:'', ordFilter:'open', ordNew:false, ordEdit:false, dispEdit:null, dispOpen:false, hist:new Map(), cards:new Map(), cardId:null, cdraft:null, newCardOpen:false, cardQ:'', past:new Map(), pq:null, pastNew:false, pastEdit:null, role:null, myId:null, myRequest:null, user:null, team:new Map(), requests:new Map(), shared:{}, cardTab:'master', printAll:false, stock:new Map(), slog:new Map(), stockCat:'all', stockQ:'', stockOpen:null, stockNew:false, issue:null,
+  loaded:{rates:false, jobs:false, hist:false, cards:false, stock:false, shared:false, past:false, orders:false, bills:false}, bills:new Map(), clients:new Map(), billing:null, bdraft:null, billQ:'', billFilter:'all', orders:new Map(), poRates:new Map(), orderId:null, ordQ:'', ordFilter:'open', ordNew:false, ordEdit:false, dispEdit:null, dispOpen:false, hist:new Map(), cards:new Map(), cardId:null, cdraft:null, newCardOpen:false, cardQ:'', past:new Map(), pq:null, pastNew:false, pastEdit:null, role:null, myId:null, myRequest:null, user:null, team:new Map(), requests:new Map(), shared:{}, cardTab:'master', printAll:false, stock:new Map(), slog:new Map(), stockCat:'all', stockQ:'', stockOpen:null, stockNew:false, issue:null,
   hs:{cat:null, sel:null, slots:{}, mode:'rs', range:'all', focus:null}, slow:false, view:'jobs', jobId:null, draft:null,
   filters:{q:'', status:'all', month:'all'},
   diecutDefaults:{die:1500, first:1200, next:800},
@@ -816,7 +825,8 @@ function go(view, id){
   if (S.role && S.role !== 'owner' && ROLES[S.role] && !canView(view)){ view = homeView(); id = null; }
   if (view !== 'order' || id !== S.orderId){ S.ordEdit = false; S.dispEdit = null; S.dispOpen = false; }
   S.view = view; S.jobId = view === 'job' ? (id || null) : null; S.cardId = view === 'card' ? (id || null) : null; S.orderId = view === 'order' ? (id || null) : null;
-  const hash = view === 'job' ? '#job-' + id : view === 'card' ? '#card-' + id : view === 'order' ? '#order-' + id : '#' + view;
+  if (view === 'bill'){ const b = S.bills.get(id); S.bdraft = b ? clone(b) : (S.bdraft && S.bdraft.id === id ? S.bdraft : null); S.billId = id; } else { S.bdraft = null; S.billId = null; }
+  const hash = view === 'job' ? '#job-' + id : view === 'card' ? '#card-' + id : view === 'order' ? '#order-' + id : view === 'bill' ? '#bill-' + id : '#' + view;
   if (location.hash !== hash) history.replaceState(null, '', hash);
   if (view === 'job'){ const j = S.jobs.get(id); S.draft = j ? clone(j) : null; }
   if (view === 'card'){ const c = S.cards.get(id); S.cdraft = c ? clone(c) : null; }
@@ -828,7 +838,8 @@ function fromHash(){
   if (hsh.startsWith('job-')) go('job', hsh.slice(4));
   else if (hsh.startsWith('card-')) go('card', hsh.slice(5));
   else if (hsh.startsWith('order-')) go('order', hsh.slice(6));
-  else go(['home','jobs','rates','history','cards','stock','team','past','orders'].includes(hsh) ? hsh : homeView());
+  else if (hsh.startsWith('bill-')) go('bill', hsh.slice(5));
+  else go(['home','jobs','rates','history','cards','stock','team','past','orders','bills','billing'].includes(hsh) ? hsh : homeView());
 }
 document.querySelectorAll('[data-go]').forEach(b => b.addEventListener('click', () => { closeSettings(); go(b.dataset.go); }));
 // Settings menu (top-left gear): Rate list and Price history.
@@ -848,7 +859,7 @@ function render(){
   applyRoleChrome();
   const ready = S.role === 'owner' || !!ROLES[S.role];
   $('#view-access').hidden = ready;
-  if (!ready){ ['home','past','jobs','job','rates','history','cards','stock','card','team','orders','order'].forEach(v => $('#view-' + v).hidden = true); renderAccess(); return; }
+  if (!ready){ ['home','past','jobs','job','rates','history','cards','stock','card','team','orders','order','bills','bill','billing'].forEach(v => $('#view-' + v).hidden = true); renderAccess(); return; }
   $('#view-team').hidden = S.view !== 'team';
   $('#tab-team').setAttribute('aria-current', S.view === 'team' ? 'page' : 'false');
   $('#view-home').hidden = S.view !== 'home';
@@ -862,6 +873,11 @@ function render(){
   $('#view-cards').hidden = S.view !== 'cards';
   $('#view-stock').hidden = S.view !== 'stock';
   $('#view-orders').hidden = S.view !== 'orders';
+  $('#view-bills').hidden = S.view !== 'bills';
+  $('#view-bill').hidden = S.view !== 'bill';
+  $('#view-billing').hidden = S.view !== 'billing';
+  $('#tab-bills').setAttribute('aria-current', S.view === 'bills' || S.view === 'bill' ? 'page' : 'false');
+  $('#tab-billing').setAttribute('aria-current', S.view === 'billing' ? 'page' : 'false');
   $('#view-order').hidden = S.view !== 'order';
   $('#tab-orders').setAttribute('aria-current', S.view === 'orders' || S.view === 'order' ? 'page' : 'false');
   $('#tab-stock').setAttribute('aria-current', S.view === 'stock' ? 'page' : 'false');
@@ -870,7 +886,7 @@ function render(){
   $('#tab-jobs').setAttribute('aria-current', S.view === 'jobs' || S.view === 'job' ? 'page' : 'false');
   $('#tab-rates').setAttribute('aria-current', S.view === 'rates' ? 'page' : 'false');
   $('#tab-history').setAttribute('aria-current', S.view === 'history' ? 'page' : 'false');
-  $('#setbtn').classList.toggle('on', S.view === 'rates' || S.view === 'history' || S.view === 'team');
+  $('#setbtn').classList.toggle('on', S.view === 'rates' || S.view === 'history' || S.view === 'team' || S.view === 'billing');
   if (S.view === 'team'){ renderTeam(); return; }
   if (S.view === 'home') renderHome();
   else if (S.view === 'past') renderPast();
@@ -882,6 +898,9 @@ function render(){
   else if (S.view === 'card') renderCard();
   else if (S.view === 'orders') renderOrders();
   else if (S.view === 'order') renderOrder();
+  else if (S.view === 'bills') renderBills();
+  else if (S.view === 'bill') renderBill();
+  else if (S.view === 'billing') renderBilling();
   else renderRates();
 }
 
@@ -1205,6 +1224,7 @@ function renderOrder(){
       h('h1',{style:'margin-top:6px'}, poTitle(o), ' ', poPill(poStatus(o, s))),
       h('div',{class:'note'}, [o.item, o.poDate ? 'PO date ' + fmtDate(o.poDate) : '', own && rt != null ? rs2(rt) + ' / pc' : '', o.notes].filter(Boolean).join(' · '))),
     h('div',{class:'row'},
+      h('button',{class:'btn', onclick:() => proformaFromPO(o)}, 'Make proforma'),
       h('button',{class:'btn', onclick:() => { S.ordEdit = !S.ordEdit; renderOrder(); }}, S.ordEdit ? 'Close edit' : 'Edit PO'),
       own ? rowDelete('this PO', async () => { await deleteOrder(o.id); go('orders'); }) : null)));
   if (S.ordEdit) root.append(poForm(o));
@@ -1249,6 +1269,7 @@ function renderOrder(){
         own ? h('td',{class:'n'}, rt == null ? '—' : rs(rt * dispTotal(d))) : null,
         h('td',{style:'white-space:normal'}, d.note || '', d.by ? h('div',{class:'sub'}, 'by ' + d.by) : null),
         h('td',{class:'act'}, h('div',{class:'row', style:'gap:4px;flex-wrap:nowrap;justify-content:flex-end'},
+          d.invoiceId && S.bills.has(d.invoiceId) ? h('button',{class:'linkbtn', title:'Open the tax invoice for this dispatch', onclick:() => go('bill', d.invoiceId)}, 'Invoice ' + (S.bills.get(d.invoiceId).no || '')) : h('button',{class:'btn small', title:'Make a tax invoice for this dispatch', onclick:() => invoiceFromLot(o, d)}, 'Make invoice'),
           h('button',{class:'btn small', onclick:() => { S.dispEdit = d.id; renderOrder(); const f = $('#disp-form'); if (f) f.scrollIntoView({block:'start'}); }}, 'Edit'),
           rowDelete('dispatch of ' + fmtDate(d.date) + (oth.length ? ' (the whole lot, on every PO)' : ''), async () => { removeLot(o.client, lotOf(d)); if (S.dispEdit === d.id) S.dispEdit = null; renderOrder(); })))); }))))));
 }
@@ -1324,6 +1345,479 @@ function dispatchForm(o, ex){
   return wrap;
 }
 
+// ---------- Invoices: proforma invoices and tax invoices ----------
+// invoices/<id>: type 'proforma' | 'invoice', no, num, date, client {name,address,state,pin,gstin,pan,email,phone},
+//   items [{id,name,hsn,size,desc,qty,unit,rate,gst}], roundOff, terms, payTerms, fromId (proforma it came from),
+//   toId (invoice made from this proforma), orderIds, lot (dispatch lot it bills), createdAt, updatedAt.
+// clients/<id>: the client book (filled from every invoice). shared/billing: Firstbox's own details (owner writes).
+// GST: CGST + SGST when the client is in the same state as Firstbox, IGST otherwise.
+const GST_STATES = {'01':'Jammu and Kashmir','02':'Himachal Pradesh','03':'Punjab','04':'Chandigarh','05':'Uttarakhand','06':'Haryana','07':'Delhi','08':'Rajasthan','09':'Uttar Pradesh','10':'Bihar','11':'Sikkim','12':'Arunachal Pradesh','13':'Nagaland','14':'Manipur','15':'Mizoram','16':'Tripura','17':'Meghalaya','18':'Assam','19':'West Bengal','20':'Jharkhand','21':'Odisha','22':'Chhattisgarh','23':'Madhya Pradesh','24':'Gujarat','26':'Dadra and Nagar Haveli and Daman and Diu','27':'Maharashtra','29':'Karnataka','30':'Goa','31':'Lakshadweep','32':'Kerala','33':'Tamil Nadu','34':'Puducherry','35':'Andaman and Nicobar Islands','36':'Telangana','37':'Andhra Pradesh','38':'Ladakh','97':'Other Territory'};
+const stateOptions = () => [['','Choose state'], ...Object.entries(GST_STATES).sort((a, b) => a[1].localeCompare(b[1]))];
+// GSTIN = 2-digit state code + PAN + entity no. + 'Z' + check character.
+function gstinInfo(g){
+  const s = String(g || '').trim().toUpperCase(), m = /^(\d{2})([A-Z]{5}\d{4}[A-Z])[0-9A-Z]Z[0-9A-Z]$/.exec(s);
+  if (!m || !GST_STATES[m[1]]) return null;
+  const A = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ'; let sum = 0;
+  for (let i = 0; i < 14; i++){ const p = A.indexOf(s[i]) * (i % 2 ? 2 : 1); sum += Math.floor(p / 36) + p % 36; }
+  return {code:m[1], state:GST_STATES[m[1]], pan:m[2], ok: A[(36 - sum % 36) % 36] === s[14]};
+}
+const BILL_DEFAULTS = {name:'Firstbox', address:'', state:'07', pin:'', gstin:'', pan:'', email:'', phone:'',
+  accName:'Firstbox', accNo:'', ifsc:'', accType:'Current', bank:'',
+  invPrefix:'FB', invNext:1, pfPrefix:'', pfNext:1, hsn:'48191010', gst:5, unit:'NOS', roundOff:true,
+  invTerms:'All disputes are subject to Delhi jurisdiction.\nGoods once sold will not be taken back or exchanged.\nInterest @24% p.a. will be charged if the bill is not cleared within 15 days.',
+  pfTerms:'Final production will proceed based on the approved artwork/file shared by the client. Any errors or changes post-approval are the client’s responsibility and may incur additional charges.\nAny damage or loss during transit is not our liability. Buyers are requested to inspect packages at the time of delivery and raise claims directly with the transporter.\nOrders once confirmed and processed are non-cancellable. In case of unavoidable cancellation, any expenses incurred till that point will be chargeable.\nAll disputes are subject to the jurisdiction of Delhi Courts only.\nThe price is valid for 15 days only. Prices are subjected to increase if payment is not made.',
+  pfPayTerms:''};
+const billCfg = () => ({...BILL_DEFAULTS, ...(S.billing || {})});
+const BILL_TYPE = {proforma:'Proforma invoice', invoice:'Tax invoice'};
+const r2 = v => Math.round((n0(v) + Number.EPSILON) * 100) / 100;
+const rsN = v => '₹' + new Intl.NumberFormat('en-IN',{maximumFractionDigits:2}).format(n0(v));
+const billInter = b => { const c = billCfg(); const cs = (b.client || {}).state || c.state; return String(cs) !== String(c.state); };
+function billCalc(b){
+  const inter = billInter(b), rows = (b.items || []).map(it => { const amt = r2(n0(it.qty) * n0(it.rate)), tax = r2(amt * n0(it.gst) / 100); return {it, amt, tax, total: r2(amt + tax)}; });
+  const amount = r2(rows.reduce((a, r) => a + r.amt, 0)), taxes = {};
+  for (const r of rows) if (n0(r.it.gst) > 0) taxes[n0(r.it.gst)] = r2((taxes[n0(r.it.gst)] || 0) + r.tax);
+  const tax = r2(Object.values(taxes).reduce((a, v) => a + v, 0)), raw = r2(amount + tax);
+  const round = b.roundOff ? r2(Math.round(raw) - raw) : 0;
+  return {inter, rows, amount, taxes, tax, round, total: r2(raw + round)};
+}
+// Amount in words, Indian system (lakh, crore).
+function inWords(n){
+  const a = ['','ONE','TWO','THREE','FOUR','FIVE','SIX','SEVEN','EIGHT','NINE','TEN','ELEVEN','TWELVE','THIRTEEN','FOURTEEN','FIFTEEN','SIXTEEN','SEVENTEEN','EIGHTEEN','NINETEEN'];
+  const t = ['','','TWENTY','THIRTY','FORTY','FIFTY','SIXTY','SEVENTY','EIGHTY','NINETY'];
+  const two = x => x < 20 ? a[x] : t[Math.floor(x / 10)] + (x % 10 ? ' ' + a[x % 10] : '');
+  const three = x => x >= 100 ? a[Math.floor(x / 100)] + ' HUNDRED' + (x % 100 ? ' ' + two(x % 100) : '') : two(x);
+  if (!n) return 'ZERO';
+  const parts = [], cr = Math.floor(n / 1e7), lk = Math.floor(n / 1e5) % 100, th = Math.floor(n / 1000) % 100, rest = n % 1000;
+  if (cr) parts.push(inWords(cr) + ' CRORE'); if (lk) parts.push(two(lk) + ' LAKH'); if (th) parts.push(two(th) + ' THOUSAND'); if (rest) parts.push(three(rest));
+  return parts.join(' ');
+}
+function amountWords(v){
+  const rup = Math.floor(n0(v) + 1e-9), paise = Math.round((n0(v) - rup) * 100);
+  return inWords(rup) + ' RUPEES' + (paise ? ' AND ' + inWords(paise) + ' PAISE' : '') + ' ONLY';
+}
+const billDate = d => d ? new Date(d + 'T00:00:00').toLocaleDateString('en-US',{month:'short', day:'numeric', year:'numeric'}) : '';
+function nextBillNo(type){
+  const c = billCfg(), pf = type === 'proforma', prefix = String(pf ? c.pfPrefix : c.invPrefix || '').trim();
+  let n = n0(pf ? c.pfNext : c.invNext) || 1;
+  for (const b of S.bills.values()) if (b.type === type && String(b.no || '').startsWith(prefix)){ const m = /(\d+)$/.exec(String(b.no).slice(prefix.length)); if (m) n = Math.max(n, +m[1] + 1); }
+  return {no: prefix + n, num: n};
+}
+function newBill(type, extra){
+  const c = billCfg(), id = uid(), nb = nextBillNo(type);
+  const b = {id, type, no: nb.no, num: nb.num, date: today(), client: {name:'', address:'', state:'', pin:'', gstin:'', pan:'', email:'', phone:''},
+    items: [], roundOff: !!c.roundOff, terms: type === 'proforma' ? c.pfTerms : c.invTerms, payTerms: type === 'proforma' ? c.pfPayTerms : '',
+    createdAt: Date.now(), by: S.myName || '', ...(extra || {})};
+  if (!b.items.length) b.items = [blankItem()];
+  return b;
+}
+const blankItem = () => { const c = billCfg(); return {id: uid(), name:'', hsn: c.hsn, size:'', desc:'', qty: null, unit: c.unit, rate: null, gst: n0(c.gst)}; };
+function saveBill(b){ b.updatedAt = Date.now(); S.bills.set(b.id, b); const snap = clone(b); scheduleSave('invoices/' + b.id, () => snap, 500); }
+function findClient(name, gstin){
+  const g = String(gstin || '').trim().toUpperCase(), n = normC(name);
+  const all = [...S.clients.values()];
+  return (g && all.find(c => String(c.gstin || '').toUpperCase() === g)) || (n && all.find(c => normC(c.name) === n)) || null;
+}
+let clientT = null;
+function rememberClient(cl){
+  clearTimeout(clientT);
+  clientT = setTimeout(() => {
+    if (!String(cl.name || '').trim()) return;
+    const ex = findClient(cl.name, cl.gstin), id = ex ? ex.id : (cl.gstin ? String(cl.gstin).toUpperCase() : 'c-' + uid());
+    const doc = {name: String(cl.name).trim(), address: cl.address || '', state: cl.state || '', pin: cl.pin || '', gstin: String(cl.gstin || '').trim().toUpperCase(), pan: cl.pan || '', email: cl.email || '', phone: cl.phone || '', updatedAt: Date.now()};
+    if (ex && stable({...ex, id: undefined, updatedAt: undefined}) === stable({...doc, updatedAt: undefined})) return;
+    S.clients.set(id, {...doc, id}); flush('clients/' + id, () => doc);
+  }, 1200);
+}
+const clientFor = name => { const c = findClient(name, ''); return c ? {name:c.name, address:c.address || '', state:c.state || '', pin:c.pin || '', gstin:c.gstin || '', pan:c.pan || '', email:c.email || '', phone:c.phone || ''} : {name: name || '', address:'', state:'', pin:'', gstin:'', pan:'', email:'', phone:''}; };
+
+// Proforma for a whole PO, and a tax invoice for one dispatch lot (all its parts, each PO at its own rate).
+function proformaFromPO(o){
+  const c = billCfg(), rt = poRate(o.id);
+  const b = newBill('proforma', {client: clientFor(o.client), orderIds:[o.id],
+    items: (o.variants || []).map(v => ({id: uid(), name: (o.item ? o.item + ' – ' : '') + v.name, hsn: c.hsn, size:'', desc:'', qty: n0(v.qty), unit: c.unit, rate: rt, gst: n0(c.gst)}))});
+  if (o.poNo) b.payTerms = (b.payTerms ? b.payTerms + '\n' : '') + 'Against PO no. ' + o.poNo + (o.poDate ? ' dated ' + billDate(o.poDate) : '');
+  saveBill(b); go('bill', b.id);
+}
+function invoiceFromLot(o, d){
+  const c = billCfg(), lot = lotOf(d), items = [], orderIds = [];
+  for (const x of clientPOs(o.client)) for (const y of x.dispatches || []) if (sameLot(y, lot)){
+    orderIds.push(x.id);
+    for (const v of x.variants || []){ const q = n0((y.items || {})[v.id]); if (q > 0) items.push({id: uid(), name: (x.item ? x.item + ' – ' : '') + v.name, hsn: c.hsn, size:'', desc: x.poNo ? 'PO ' + x.poNo : '', qty: q, unit: c.unit, rate: poRate(x.id), gst: n0(c.gst)}); }
+  }
+  const b = newBill('invoice', {client: clientFor(o.client), orderIds: [...new Set(orderIds)], lot, items, date: d.date || today()});
+  if (d.ref) b.payTerms = 'Challan no. ' + d.ref;
+  saveBill(b); markLot(o.client, lot, b);
+  go('bill', b.id);
+}
+// Marks (or clears) the invoice on every part of a dispatch lot.
+function markLot(client, lot, b){
+  for (const x of clientPOs(client)){ let ch = false;
+    for (const y of x.dispatches || []) if (sameLot(y, lot)){ if (b){ y.invoiceId = b.id; y.invoiceNo = b.no; } else { delete y.invoiceId; delete y.invoiceNo; } ch = true; }
+    if (ch) saveOrder(x); }
+}
+async function deleteBill(b){
+  if (b.lot) for (const x of S.orders.values()) if ((x.dispatches || []).some(y => y.invoiceId === b.id)){ x.dispatches.forEach(y => { if (y.invoiceId === b.id){ delete y.invoiceId; delete y.invoiceNo; } }); saveOrder(x); }
+  if (b.fromId){ const p = S.bills.get(b.fromId); if (p && p.toId === b.id){ delete p.toId; saveBill(p); } }
+  if (b.toId){ const t = S.bills.get(b.toId); if (t && t.fromId === b.id){ delete t.fromId; saveBill(t); } }
+  S.bills.delete(b.id); if (S.bdraft && S.bdraft.id === b.id) S.bdraft = null; await removeDoc('invoices/' + b.id);
+}
+function convertToInvoice(p){
+  if (p.toId && S.bills.has(p.toId)){ go('bill', p.toId); return; }
+  const b = newBill('invoice', {client: clone(p.client || {}), items: clone(p.items || []).map(it => ({...it, id: uid()})), roundOff: !!p.roundOff, fromId: p.id, orderIds: p.orderIds || []});
+  saveBill(b); p.toId = b.id; saveBill(p); go('bill', b.id);
+}
+
+// ----- List -----
+function renderBills(){
+  const root = $('#view-bills'); root.replaceChildren();
+  const own = isOwnerRole(), cfg = billCfg();
+  root.append(h('div',{class:'head'},
+    h('div',{}, h('h1',{},'Invoices'), h('div',{class:'note'},'Proforma invoices and tax invoices, billed by ' + (cfg.name || 'Firstbox') + '. Make a proforma first and turn it into a tax invoice with one click, or start a tax invoice directly.')),
+    h('div',{class:'row'},
+      h('button',{class:'btn', onclick:() => { const b = newBill('proforma'); saveBill(b); go('bill', b.id); }}, '+ New proforma'),
+      h('button',{class:'btn primary', onclick:() => { const b = newBill('invoice'); saveBill(b); go('bill', b.id); }}, '+ New tax invoice'))));
+  if (own && !cfg.gstin) root.append(h('div',{class:'banner'}, 'Fill in Firstbox’s GSTIN, address and bank details once in ', h('button',{class:'linkbtn', onclick:() => go('billing')}, '⚙ Billing details'), ' — they print on every invoice.'));
+  const box = h('div',{}); root.append(box);
+  if (!S.db){ box.append(h('div',{class:'card empty'},'Saved data is not available here.')); return; }
+  if (!S.loaded.bills){ box.append(h('div',{class:'card empty'},'Loading invoices…')); return; }
+  const all = [...S.bills.values()].map(b => ({b, c: billCalc(b)}));
+  const month = today().slice(0, 7), inv = all.filter(r => r.b.type === 'invoice' && String(r.b.date || '').startsWith(month));
+  const openPf = all.filter(r => r.b.type === 'proforma' && !(r.b.toId && S.bills.has(r.b.toId)));
+  box.append(h('div',{class:'kpis'},
+    kpi('Tax invoices this month', rs(inv.reduce((a, r) => a + r.c.total, 0)), inv.length + (inv.length === 1 ? ' invoice' : ' invoices') + ' incl. GST'),
+    kpi('GST this month', rs(inv.reduce((a, r) => a + r.c.tax, 0)), 'on tax invoices'),
+    kpi('Open proformas', String(openPf.length), 'not yet turned into an invoice'),
+    kpi('Clients saved', String(S.clients.size), 'filled in automatically next time')));
+  const search = h('input',{type:'search', placeholder:'Search no., client, GSTIN or item', value:S.billQ, style:'flex:1 1 240px'});
+  const filt = h('nav',{class:'jump', 'aria-label':'Show', style:'position:static;padding:4px'}, [['all','All'],['proforma','Proforma'],['invoice','Tax invoices']].map(([k, n]) =>
+    h('button',{type:'button', class:'jctab', 'aria-current': S.billFilter === k ? 'page' : 'false', onclick:() => { S.billFilter = k; renderBills(); }}, n)));
+  const tbox = h('div',{class:'tablebox'});
+  box.append(h('div',{class:'row', style:'margin-bottom:10px'}, search, filt), tbox);
+  const draw = () => {
+    tbox.replaceChildren();
+    if (!all.length){ tbox.append(h('div',{class:'empty'},'No invoices yet. Press “+ New proforma” or “+ New tax invoice”, or make one from a PO in Orders & dispatch.')); return; }
+    const q = S.billQ.trim().toLowerCase();
+    const rows = all.filter(r => S.billFilter === 'all' || r.b.type === S.billFilter)
+      .filter(r => !q || [r.b.no, (r.b.client || {}).name, (r.b.client || {}).gstin, ...(r.b.items || []).map(i => i.name)].join(' ').toLowerCase().includes(q))
+      .sort((a, b) => String(b.b.date || '').localeCompare(String(a.b.date || '')) || n0(b.b.createdAt) - n0(a.b.createdAt));
+    if (!rows.length){ tbox.append(h('div',{class:'empty'},'Nothing matches.')); return; }
+    tbox.append(h('table',{class:'jobs'},
+      h('thead',{}, h('tr',{}, h('th',{},'No.'), h('th',{},'Date'), h('th',{},'Client'), h('th',{class:'n'},'Amount'), h('th',{class:'n'},'GST'), h('th',{class:'n'},'Total'), h('th',{},'Status'), own ? h('th',{class:'act'}, h('span',{class:'sr'},'Delete')) : null)),
+      h('tbody',{}, rows.map(({b, c}) => { const to = b.toId && S.bills.get(b.toId), from = b.fromId && S.bills.get(b.fromId);
+        return h('tr',{tabindex:'0', onclick:() => go('bill', b.id), onkeydown:e => { if (e.key === 'Enter') go('bill', b.id); }},
+          h('td',{}, h('span',{class:'jcno'}, b.no || '—'), h('div',{class:'sub'}, BILL_TYPE[b.type])),
+          h('td',{}, fmtDate(b.date)),
+          h('td',{}, h('div',{class:'jobno'}, (b.client || {}).name || '(no client)'), h('div',{class:'sub'}, (b.items || []).map(i => i.name).filter(Boolean).join(', '))),
+          h('td',{class:'n'}, rs2(c.amount)), h('td',{class:'n'}, rs2(c.tax)), h('td',{class:'n'}, h('b',{}, rs2(c.total))),
+          h('td',{}, b.type === 'proforma' ? (to ? h('span',{class:'pill Completed'}, 'Invoiced · ' + to.no) : h('span',{class:'pill Quoted'}, 'Open')) : from ? h('span',{class:'sub'}, 'From proforma ' + from.no) : b.lot ? h('span',{class:'sub'}, 'From a dispatch') : ''),
+          own ? h('td',{class:'act'}, rowDelete(BILL_TYPE[b.type].toLowerCase() + ' ' + (b.no || ''), async () => { await deleteBill(b); renderBills(); })) : null); }))));
+  };
+  search.addEventListener('input', e => { S.billQ = e.target.value; draw(); });
+  draw();
+}
+
+// ----- Editor -----
+function renderBill(){
+  const root = $('#view-bill'); root.replaceChildren();
+  const b = S.bdraft;
+  if (!b){ root.append(h('div',{class:'empty'}, S.loaded.bills ? 'This invoice no longer exists.' : 'Loading…'), h('div',{class:'row', style:'justify-content:center'}, h('button',{class:'btn', onclick:() => go('bills')},'Back to invoices'))); return; }
+  const own = isOwnerRole(), cfg = billCfg(), pf = b.type === 'proforma';
+  b.client = b.client || {}; b.items = b.items || [];
+  const touch = () => { saveBill(b); refreshTotals(); };
+  const cl = b.client;
+  const to = b.toId && S.bills.get(b.toId), from = b.fromId && S.bills.get(b.fromId);
+  const dlBtn = h('button',{class:'btn primary', onclick:e => downloadBill(b, e.currentTarget)}, 'Download PDF');
+  root.append(h('div',{class:'head'},
+    h('div',{}, h('button',{class:'linkbtn', onclick:() => go('bills')}, '← All invoices'),
+      h('h1',{style:'margin-top:6px'}, BILL_TYPE[b.type] + ' ', h('span',{class:'jcno', id:'bill-no'}, b.no || '')),
+      h('div',{class:'note'}, from ? ['Made from proforma ', h('button',{class:'linkbtn', onclick:() => go('bill', from.id)}, from.no)] : to ? ['Turned into tax invoice ', h('button',{class:'linkbtn', onclick:() => go('bill', to.id)}, to.no)] : 'Changes save automatically.')),
+    h('div',{class:'row'},
+      pf ? h('button',{class:'btn', onclick:() => convertToInvoice(b)}, to ? 'Open tax invoice ' + to.no : 'Make tax invoice from this') : null,
+      dlBtn,
+      own ? rowDelete(BILL_TYPE[b.type].toLowerCase(), async () => { await deleteBill(b); go('bills'); }) : null)));
+  root.append(h('div',{id:'bill-alert'}));
+  if (own && !cfg.gstin) root.append(h('div',{class:'banner'}, 'Firstbox’s GSTIN and bank details are not filled in yet. Add them in ', h('button',{class:'linkbtn', onclick:() => go('billing')}, '⚙ Billing details'), '.'));
+
+  // Number and date
+  root.append(h('section',{class:'card', style:'display:grid;gap:10px;margin-bottom:14px'},
+    h('div',{class:'grid'},
+      fld(pf ? 'Proforma no.' : 'Invoice no.', h('input',{value:b.no || '', oninput:e => { b.no = e.target.value.trim(); const m = /(\d+)$/.exec(b.no); b.num = m ? +m[1] : null; $('#bill-no').textContent = b.no; touch(); }})),
+      fld(pf ? 'Proforma date' : 'Invoice date', h('input',{type:'date', value:String(b.date || '').slice(0, 10), onchange:e => { b.date = e.target.value; touch(); }})))));
+
+  // Billed to
+  const gstNote = h('div',{class:'note'});
+  const listId = 'bill-clients';
+  const fields = {};
+  const fillFrom = c => { ['name','address','state','pin','gstin','pan','email','phone'].forEach(k => { if (c[k] != null && c[k] !== ''){ cl[k] = c[k]; if (fields[k]) fields[k].value = c[k]; } }); };
+  const gstCheck = () => { const g = gstinInfo(cl.gstin); gstNote.className = 'note' + (cl.gstin && (!g || !g.ok) ? ' warnline' : '');
+    gstNote.textContent = !cl.gstin ? 'Type the GSTIN: state and PAN fill in by themselves, and a saved client fills in completely.' : !g ? 'This doesn’t look like a GSTIN (15 characters, e.g. 06AAMCB9807F1ZI).' : !g.ok ? 'Check this GSTIN: the last character doesn’t match. It may have a typing mistake.' : '✓ Valid GSTIN · ' + g.state + (billInter(b) ? ' · IGST applies' : ' · CGST + SGST apply'); };
+  const inp = (k, ph, extra) => (fields[k] = h('input',{value: cl[k] || '', placeholder: ph || '', ...(extra || {}), oninput:e => { cl[k] = e.target.value; touch(); rememberClient(cl); }}));
+  fields.address = h('textarea',{rows:'2', placeholder:'Street, area, city', oninput:e => { cl.address = e.target.value; touch(); rememberClient(cl); }}, cl.address || '');
+  fields.state = sel(stateOptions(), cl.state || '', {onchange:e => { cl.state = e.target.value; touch(); rememberClient(cl); gstCheck(); }});
+  const nameIn = inp('name', 'Company name', {list: listId, onchange:e => { const c = findClient(e.target.value, ''); if (c){ fillFrom(c); touch(); gstCheck(); } }});
+  const gstIn = h('input',{value: cl.gstin || '', placeholder:'15 characters', style:'text-transform:uppercase', oninput:e => {
+    cl.gstin = e.target.value.trim().toUpperCase(); const g = gstinInfo(cl.gstin);
+    if (g){ const c = findClient('', cl.gstin); if (c) fillFrom(c); cl.state = g.code; fields.state.value = g.code; if (!cl.pan){ cl.pan = g.pan; fields.pan.value = g.pan; } else if (cl.pan !== g.pan){ cl.pan = g.pan; fields.pan.value = g.pan; } }
+    touch(); rememberClient(cl); gstCheck(); }});
+  fields.gstin = gstIn;
+  root.append(h('section',{class:'card', style:'display:grid;gap:10px;margin-bottom:14px'},
+    h('div',{class:'row', style:'justify-content:space-between'}, h('h2',{},'Billed to'), h('span',{class:'note'}, 'Billed by: ' + (cfg.name || 'Firstbox') + (cfg.gstin ? ' · GSTIN ' + cfg.gstin : ''))),
+    h('datalist',{id:listId}, [...S.clients.values()].sort((a, c) => String(a.name).localeCompare(String(c.name))).map(c => h('option',{value:c.name}, c.gstin || ''))),
+    h('div',{class:'grid'}, fld('Client', nameIn, 'wide'), fld('GSTIN', gstIn), fld('State', fields.state), fld('PIN code', inp('pin', 'e.g. 122001', {inputmode:'numeric'})), fld('PAN', inp('pan', 'Fills from GSTIN'))),
+    fld('Address', fields.address),
+    h('div',{class:'grid'}, fld('Email', inp('email', 'Optional', {type:'email'})), fld('Phone', inp('phone', 'Optional', {type:'tel'}))),
+    gstNote));
+  gstCheck();
+
+  // Items
+  const itemsBox = h('div',{style:'display:grid;gap:10px'});
+  const drawItems = () => {
+    itemsBox.replaceChildren(...b.items.map((it, i) => {
+      const lineTot = h('div',{class:'note', style:'text-align:right'});
+      const upd = () => { const amt = r2(n0(it.qty) * n0(it.rate)), tax = r2(amt * n0(it.gst) / 100); lineTot.replaceChildren('Amount ', h('b',{}, rs2(amt)), ' + GST ' + rs2(tax) + ' = ', h('b',{}, rs2(amt + tax))); };
+      const set = (k, v) => { it[k] = v; upd(); touch(); };
+      upd();
+      return h('div',{class:'billitem'},
+        h('div',{class:'row', style:'justify-content:space-between'}, h('b',{}, (i + 1) + '.'), h('div',{class:'row', style:'gap:4px'},
+          i > 0 ? h('button',{type:'button', class:'btn small', 'aria-label':'Move up', onclick:() => { b.items.splice(i - 1, 0, b.items.splice(i, 1)[0]); touch(); drawItems(); }}, '↑') : null,
+          h('button',{type:'button', class:'rowdel', 'aria-label':'Remove item ' + (i + 1), title:'Remove item', onclick:() => { b.items.splice(i, 1); touch(); drawItems(); }}, '✕'))),
+        h('div',{class:'grid'},
+          fld('Item', h('input',{value: it.name || '', placeholder:'e.g. Small Gift Box', oninput:e => set('name', e.target.value)}), 'wide'),
+          fld('HSN/SAC', h('input',{value: it.hsn || '', oninput:e => set('hsn', e.target.value)})),
+          fld('Quantity', numIn(it.qty, v => set('qty', v))),
+          fld('Unit', h('input',{value: it.unit || '', placeholder:'NOS', oninput:e => set('unit', e.target.value)})),
+          fld('Rate (₹)', numIn(it.rate, v => set('rate', v), it.rate == null ? {placeholder:'Enter rate'} : {})),
+          fld('GST %', sel([0, 5, 12, 18, 28].map(x => [x, x + '%']), n0(it.gst), {onchange:e => set('gst', +e.target.value)}))),
+        h('div',{class:'grid'},
+          fld('Dimensions', h('input',{value: it.size || '', placeholder:'e.g. 7.5 x 6 x 2.5 inch', oninput:e => set('size', e.target.value)})),
+          fld('Description (prints under the item)', h('textarea',{rows:'2', placeholder:'Optional, one line each', oninput:e => set('desc', e.target.value)}, it.desc || ''), 'wide')),
+        lineTot);
+    }), h('div',{class:'row'},
+      h('button',{type:'button', class:'btn', onclick:() => { b.items.push(blankItem()); touch(); drawItems(); const ins = itemsBox.querySelectorAll('.billitem'); const last = ins[ins.length - 1]; if (last) last.querySelector('input').focus(); }}, '+ Add item'),
+      h('button',{type:'button', class:'btn', onclick:() => { b.items.push({...blankItem(), name:'Freight Charges', hsn:'9965', qty:1}); touch(); drawItems(); }}, '+ Freight charges')));
+  };
+  drawItems();
+  root.append(h('section',{class:'card', style:'display:grid;gap:10px;margin-bottom:14px'}, h('h2',{},'Items'), itemsBox));
+
+  // Totals
+  const totBox = h('div',{});
+  const refreshTotals = () => {
+    const c = billCalc(b), half = r => r2(r / 2);
+    const line = (l, v, strong) => h('div',{class:'row', style:'justify-content:space-between' + (strong ? ';font-size:18px;font-weight:700;border-top:1px solid var(--line);padding-top:8px' : '')}, h('span',{}, l), h('span',{}, v));
+    const noRate = b.items.filter(it => (it.name || it.qty) && it.rate == null).length;
+    totBox.replaceChildren(...[
+      line('Amount', rs2(c.amount)),
+      ...Object.entries(c.taxes).sort((a, b) => a[0] - b[0]).flatMap(([rate, v]) => c.inter ? [line('IGST (' + rate + '%)', rs2(v))] : [line('CGST (' + (rate / 2) + '%)', rs2(half(v))), line('SGST (' + (rate / 2) + '%)', rs2(v - half(v)))]),
+      c.round ? line('Round off', (c.round > 0 ? '+' : '−') + rs2(Math.abs(c.round))) : null,
+      line('Total (INR)', rs2(c.total), true),
+      h('div',{class:'note'}, 'In words: ' + amountWords(c.total)),
+      noRate ? h('div',{class:'warnline'}, noRate === 1 ? 'One item has no rate yet.' : noRate + ' items have no rate yet.') : null].filter(Boolean));
+  };
+  refreshTotals();
+  root.append(h('section',{class:'card', style:'display:grid;gap:10px;margin-bottom:14px;max-width:560px;margin-left:auto'},
+    h('div',{class:'row', style:'justify-content:space-between'}, h('h2',{},'Total'),
+      h('label',{class:'row', style:'gap:6px'}, h('input',{type:'checkbox', checked: b.roundOff ? true : null, onchange:e => { b.roundOff = e.target.checked; touch(); }}), 'Round off to the rupee')), totBox));
+
+  // Terms
+  root.append(h('section',{class:'card', style:'display:grid;gap:10px'},
+    h('h2',{},'Terms'),
+    fld('Terms and conditions (one per line)', h('textarea',{rows:'5', oninput:e => { b.terms = e.target.value; touch(); }}, b.terms || '')),
+    fld('Payment terms (one per line, optional)', h('textarea',{rows:'2', oninput:e => { b.payTerms = e.target.value; touch(); }}, b.payTerms || ''))));
+}
+
+async function downloadBill(b, btn){
+  const label = btn.textContent; btn.disabled = true; btn.textContent = 'Making PDF…';
+  const say = t => { const a = $('#bill-alert'); if (a) a.replaceChildren(h('div',{class:'banner'}, t)); };
+  try {
+    const dl = window.claude && window.claude.use ? await window.claude.use('downloads') : null;
+    if (!dl){ say('Downloading isn’t available in this view.'); return; }
+    let bytes;
+    try { bytes = await buildBillPdf(b); } catch(e){ console.error(e); say('Couldn’t make the PDF. Check your internet connection and try again.'); return; }
+    const name = ((b.type === 'proforma' ? 'Proforma ' : 'Tax invoice ') + (b.no || '') + ' ' + ((b.client || {}).name || '')).replace(/[\\/:*?"<>|]+/g, ' ').replace(/\s+/g, ' ').trim() + '.pdf';
+    try { const res = await dl.save({filename: name, data: new Blob([bytes], {type:'application/pdf'})}); btn.textContent = res && res.path ? 'Saved' : 'Downloaded'; if (res && res.path) say('Saved to ' + res.path); setTimeout(() => btn.textContent = label, 2000); return; }
+    catch(e){ if (e && e.code === 'declined') return; say('The download didn’t work here. Try again.'); }
+  } finally { btn.disabled = false; if (btn.textContent === 'Making PDF…') btn.textContent = label; }
+}
+
+// ----- PDF, laid out like the Refrens invoices -----
+async function buildBillPdf(b){
+  const {PDFDocument, StandardFonts, rgb} = await loadPdfLib();
+  const cfg = billCfg(), calc = billCalc(b), pf = b.type === 'proforma', inter = calc.inter, cl = b.client || {};
+  const doc = await PDFDocument.create();
+  doc.setTitle((pf ? 'Proforma Invoice ' : 'Tax Invoice ') + (b.no || '')); doc.setAuthor(cfg.name || 'Firstbox');
+  const F = await doc.embedFont(StandardFonts.Helvetica), FB = await doc.embedFont(StandardFonts.HelveticaBold);
+  const W = 595.28, H = 841.89, M = 28, BW = W - 2 * M;
+  const BLUE = rgb(0.17, 0.56, 0.91), HEAD = rgb(0.22, 0.6, 0.95), SOFT = rgb(0.84, 0.92, 0.99), ROWA = rgb(0.97, 0.98, 1), INK = rgb(0.1, 0.1, 0.12), GREY = rgb(0.42, 0.42, 0.45), WHITE = rgb(1, 1, 1);
+  let page = doc.addPage([W, H]);
+  // Standard fonts have no ₹, so the sign is drawn as lines.
+  const RUP = 0.6;
+  const tw = (t, f, s) => String(t == null ? '' : t).split('₹').reduce((a, p) => a + f.widthOfTextAtSize(pdfSafe(p), s), 0) + (String(t == null ? '' : t).split('₹').length - 1) * RUP * s;
+  const rupee = (x, y, s, color, bold) => page.drawSvgPath('M 60 -700 L 540 -700 M 60 -555 L 540 -555 M 175 -700 C 470 -700 470 -400 175 -400 L 120 -400 L 470 0', {x, y, scale: s / 1000, borderColor: color, borderWidth: bold ? 85 : 62});
+  const text = (t, x, y, f, s, color) => { color = color || INK; let cx = x; String(t == null ? '' : t).split('₹').forEach((p, i) => { if (i){ rupee(cx, y, s, color, f === FB); cx += RUP * s; } if (p){ const q = pdfSafe(p); page.drawText(q, {x: cx, y, size: s, font: f, color}); cx += f.widthOfTextAtSize(q, s); } }); return cx; };
+  const textR = (t, xr, y, f, s, c) => text(t, xr - tw(t, f, s), y, f, s, c);
+  const textC = (t, xc, y, f, s, c) => text(t, xc - tw(t, f, s) / 2, y, f, s, c);
+  const wrap = (t, f, s, w) => { const out = []; for (const para of String(t == null ? '' : t).split('\n')){ let cur = ''; for (const word of para.split(/\s+/).filter(Boolean)){ const nx = cur ? cur + ' ' + word : word; if (tw(nx, f, s) <= w || !cur) cur = nx; else { out.push(cur); cur = word; } } out.push(cur); } return out; };
+  const rrect = (x, yTop, w, hgt, color, r) => { r = r ?? 6; page.drawSvgPath(`M ${r} 0 H ${w - r} Q ${w} 0 ${w} ${r} V ${hgt - r} Q ${w} ${hgt} ${w - r} ${hgt} H ${r} Q 0 ${hgt} 0 ${hgt - r} V ${r} Q 0 0 ${r} 0 Z`, {x, y: yTop, color}); };
+  const money = v => '₹' + inr2.format(r2(v));
+  const rateTxt = v => v == null ? '' : '₹' + new Intl.NumberFormat('en-IN',{maximumFractionDigits:2}).format(n0(v));
+
+  // Header: title, number, date; logo on the right.
+  text(pf ? 'Proforma Invoice' : 'TAX INVOICE', M, H - 60, F, 24, BLUE);
+  text('Invoice No', M + 1, H - 90, F, 9, GREY); text(b.no || '', M + 70, H - 90, FB, 9);
+  text('Invoice Date', M + 1, H - 108, F, 9, GREY); text(billDate(b.date), M + 70, H - 108, FB, 9);
+  try {
+    const src = ($('#logo') || {}).src || '';
+    if (src.startsWith('data:image/')){
+      const bytes = Uint8Array.from(atob(src.split(',')[1]), ch => ch.charCodeAt(0));
+      const img = /^data:image\/png/.test(src) ? await doc.embedPng(bytes) : await doc.embedJpg(bytes);
+      const hh = 44, ww = Math.min(170, img.width * hh / img.height), hh2 = ww * img.height / img.width;
+      page.drawImage(img, {x: W - M - ww, y: H - 34 - hh2, width: ww, height: hh2});
+    }
+  } catch(e){}
+
+  // Billed by / Billed to
+  let y = H - 124;
+  const boxW = (BW - 10) / 2, pad = 14, lh = 12.5;
+  const partyLines = (p, isUs) => {
+    const L = [];
+    L.push({t: p.name || '', f: FB});
+    for (const ln of wrap(p.address || '', F, 9, boxW - 2 * pad)) if (ln) L.push({t: ln});
+    const st = GST_STATES[p.state] || '';
+    if (st || p.pin) L.push({t: [st, 'India'].filter(Boolean).join(', ') + (p.pin ? ' - ' + p.pin : '')});
+    if (p.gstin) L.push({k: 'GSTIN:', t: String(p.gstin).toUpperCase()});
+    if (p.pan) L.push({k: 'PAN:', t: p.pan});
+    if (isUs && p.email) L.push({k: 'Email:', t: p.email});
+    if (!isUs && p.email) L.push({k: 'Email:', t: p.email});
+    if (!isUs && p.phone) L.push({k: 'Phone:', t: p.phone});
+    return L;
+  };
+  const us = partyLines({name: cfg.name, address: cfg.address, state: cfg.state, pin: cfg.pin, gstin: cfg.gstin, pan: cfg.pan, email: cfg.email}, true);
+  const them = partyLines({...cl, name: String(cl.name || '').toUpperCase()}, false);
+  const boxH = 40 + Math.max(us.length, them.length) * lh + 6;
+  [[us, 'Billed By', M], [them, 'Billed To', M + boxW + 10]].forEach(([L, title, x]) => {
+    rrect(x, y, boxW, boxH, SOFT);
+    text(title, x + pad, y - 26, F, 14, BLUE);
+    L.forEach((ln, i) => { const yy = y - 43 - i * lh; let cx = x + pad; if (ln.k) cx = text(ln.k + ' ', cx, yy, FB, 9); text(ln.t, cx, yy, ln.f || F, 9); });
+  });
+  y -= boxH + 14;
+
+  // Items table
+  const cols = pf
+    ? (inter ? [['#',22,'l'],['Item',190,'l'],['Quantity',45,'c'],['Rate',45,'c'],['GST Rate',35,'c'],['Amount',70,'c'],['IGST',62,'c'],['Total',70,'c']]
+             : [['#',22,'l'],['Item',160,'l'],['Quantity',42,'c'],['Rate',42,'c'],['GST Rate',33,'c'],['Amount',66,'c'],['CGST',54,'c'],['SGST',54,'c'],['Total',66,'c']])
+    : (inter ? [['#',22,'l'],['Item',140,'l'],['HSN/SAC',50,'c'],['Quantity',45,'c'],['Unit',32,'c'],['Rate',40,'c'],['Amount',65,'c'],['GST Rate',32,'c'],['IGST',50,'c'],['Total',63,'c']]
+             : [['#',20,'l'],['Item',120,'l'],['HSN/SAC',46,'c'],['Quantity',42,'c'],['Unit',28,'c'],['Rate',38,'c'],['Amount',62,'c'],['GST Rate',30,'c'],['CGST',48,'c'],['SGST',48,'c'],['Total',57,'c']]);
+  const xs = []; { let x = M; for (const c of cols){ xs.push(x); x += c[1]; } }
+  const FS = 8.5;
+  const headerRow = () => {
+    const hh = 38;
+    rrect(M, y, BW, hh, HEAD, 6); page.drawRectangle({x: M, y: y - hh, width: BW, height: 8, color: HEAD});
+    cols.forEach(([lab, w, al], i) => { if (lab === '#') return; const ls = wrap(lab, FB, FS, w - 6); ls.forEach((l, j) => { const yy = y - 16 - j * 11; if (al === 'l') text(l, xs[i] + 4, yy, FB, FS, WHITE); else textC(l, xs[i] + w / 2, yy, FB, FS, WHITE); }); });
+    y -= hh;
+  };
+  const newPage = () => { page = doc.addPage([W, H]); y = H - M; };
+  headerRow();
+  const half = v => r2(v / 2);
+  calc.rows.forEach((r, i) => {
+    const it = r.it, itemW = cols[1][1] - 8;
+    const nameLines = wrap(it.name || '', F, 9, itemW - (pf && it.hsn ? tw('  (HSN/SAC: ' + it.hsn + ')', F, 7) : 0));
+    const extra = [];
+    if (it.size) extra.push({k: 'Dimensions: ', t: it.size});
+    for (const ln of wrap(it.desc || '', F, 8.5, itemW)) if (ln) extra.push({t: ln});
+    const rowH = 10 + nameLines.length * 12 + (extra.length ? 8 + extra.length * 12 : 0) + 8;
+    if (y - rowH < 70){ newPage(); headerRow(); }
+    page.drawRectangle({x: M, y: y - rowH, width: BW, height: rowH, color: i % 2 ? SOFT : ROWA});
+    const top = y - 16;
+    text((i + 1) + '.', M + 6, top, F, 9);
+    nameLines.forEach((l, j) => { const end = text(l, xs[1] + 4, top - j * 12, F, 9); if (pf && it.hsn && j === nameLines.length - 1) text(' (HSN/SAC: ' + it.hsn + ')', end + 2, top - j * 12, F, 7, GREY); });
+    let ey = top - nameLines.length * 12 - 8;
+    for (const e of extra){ let cx = xs[1] + 4; if (e.k) cx = text(e.k, cx, ey, FB, 8.5); text(e.t, cx, ey, F, 8.5); ey -= 12; }
+    const vals = {'Quantity': fmtN(it.qty, 3), 'Unit': it.unit || '', 'HSN/SAC': it.hsn || '', 'Rate': rateTxt(it.rate), 'GST Rate': n0(it.gst) + '%', 'Amount': money(r.amt),
+      'IGST': money(r.tax), 'CGST': money(half(r.tax)), 'SGST': money(r.tax - half(r.tax)), 'Total': money(r.total)};
+    cols.forEach(([lab, w], k) => { if (vals[lab] != null && k > 1) textC(vals[lab], xs[k] + w / 2, top, F, FS); });
+    y -= rowH;
+  });
+  y -= 18;
+
+  // Words on the left, sums on the right.
+  if (y < 230){ newPage(); }
+  const sumX = W - M - 200, sumR = W - M - 12;
+  const words = wrap('Total (in words) : ' + amountWords(calc.total), FB, 9, sumX - M - 20);
+  words.forEach((l, j) => text(l, M, y - j * 13, FB, 9));
+  let sy = y;
+  const sumLine = (l, v) => { text(l, sumX, sy, F, 9.5); textR(v, sumR, sy, F, 9.5); sy -= 22; };
+  sumLine('Amount', money(calc.amount));
+  Object.entries(calc.taxes).sort((a, c) => a[0] - c[0]).forEach(([rate, v]) => {
+    if (inter) sumLine('IGST (' + rate + '%)', money(v));
+    else { sumLine('CGST (' + (rate / 2) + '%)', money(half(v))); sumLine('SGST (' + (rate / 2) + '%)', money(v - half(v))); }
+  });
+  if (calc.round) sumLine(calc.round > 0 ? 'Round Up' : 'Round Down', money(Math.abs(calc.round)));
+  sy += 6;
+  page.drawLine({start: {x: sumX, y: sy}, end: {x: W - M, y: sy}, thickness: 1, color: INK});
+  text('Total (INR)', sumX, sy - 22, FB, 14); textR(money(calc.total), sumR, sy - 22, FB, 14);
+  page.drawLine({start: {x: sumX, y: sy - 32}, end: {x: W - M, y: sy - 32}, thickness: 1, color: INK});
+  let ly = y - words.length * 13 - 16;
+  // Bank details
+  const bankRows = [['Account Name', cfg.accName], ['Account Number', cfg.accNo], ['IFSC', cfg.ifsc], ['Account Type', cfg.accType], ['Bank', cfg.bank]].filter(r => r[1]);
+  if (cfg.accNo && bankRows.length){
+    const bh = 30 + bankRows.length * 15 + 8, bw = sumX - M - 24;
+    rrect(M, ly, bw, bh, SOFT);
+    text('Bank Details', M + 18, ly - 20, F, 11, BLUE);
+    bankRows.forEach(([k, v], j) => { text(k, M + 18, ly - 35 - j * 15, FB, 9); text(v, M + 18 + bw * 0.42, ly - 35 - j * 15, F, 9); });
+    ly -= bh + 18;
+  }
+  y = Math.min(ly, sy - 46);
+  // Terms and payment terms
+  const list = (title, body) => {
+    const items = String(body || '').split('\n').map(s => s.trim()).filter(Boolean); if (!items.length) return;
+    if (y < 70){ newPage(); }
+    text(title, M, y, F, 11, BLUE); y -= 14;
+    items.forEach((t, j) => { const ls = wrap(t, F, 9, BW - 20); if (y - ls.length * 11.5 < 40){ newPage(); } text((j + 1) + '.', M + 8, y, F, 9); ls.forEach((l, k) => text(l, M + 22, y - k * 11.5, F, 9)); y -= ls.length * 11.5 + 1; });
+    y -= 10;
+  };
+  list('Terms and Conditions', b.terms);
+  list('Payment terms', b.payTerms);
+  // Footer
+  if (cfg.email || cfg.phone){
+    if (y < 40) newPage();
+    const parts = [['For any enquiry, reach out via ', F]];
+    if (cfg.email) parts.push(['email at ', F], [cfg.email, FB]);
+    if (cfg.phone) parts.push([cfg.email ? ', call on ' : 'call on ', F], [cfg.phone, FB]);
+    const tot = parts.reduce((a, [t, f]) => a + tw(t, f, 9), 0); let cx = W / 2 - tot / 2;
+    parts.forEach(([t, f]) => { cx = text(t, cx, y - 6, f, 9); });
+  }
+  if (!pf){ const pages = doc.getPages(); const lp = pages[pages.length - 1]; const s = 'This is an electronically generated document, no signature is required.'; lp.drawText(s, {x: W / 2 - F.widthOfTextAtSize(s, 6) / 2, y: 22, size: 6, font: F, color: INK}); }
+  return await doc.save();
+}
+
+// ----- Billing details (owner) -----
+function renderBilling(){
+  const root = $('#view-billing'); root.replaceChildren();
+  const c = billCfg(), d = {...c};
+  const save = () => { S.billing = {...d}; scheduleSave('shared/billing', () => ({...d}), 600); };
+  const t = (label, k, ph, extra) => fld(label, h('input',{value: d[k] ?? '', placeholder: ph || '', ...(extra || {}), oninput:e => { d[k] = e.target.value; if (k === 'gstin'){ const g = gstinInfo(e.target.value); if (g){ d.state = g.code; d.pan = g.pan; root.querySelector('#bd-state').value = g.code; root.querySelector('#bd-pan').value = g.pan; } } save(); }}));
+  const nm = (label, k) => fld(label, numIn(d[k], v => { d[k] = v; save(); }));
+  const ta = (label, k, rows) => fld(label, h('textarea',{rows: String(rows || 4), oninput:e => { d[k] = e.target.value; save(); }}, d[k] || ''));
+  root.append(h('div',{class:'head'}, h('div',{}, h('h1',{},'Billing details'), h('div',{class:'note'},'Printed as “Billed By” on every proforma and tax invoice. Changes save automatically and apply to new PDFs.'))));
+  if (!S.loaded.shared){ root.append(h('div',{class:'card empty'},'Loading…')); return; }
+  const card = (title, ...kids) => h('section',{class:'card', style:'display:grid;gap:10px;margin-bottom:14px'}, h('h2',{}, title), ...kids);
+  root.append(card('Firstbox',
+    h('div',{class:'grid'}, t('Company name', 'name'), t('GSTIN', 'gstin', '15 characters', {style:'text-transform:uppercase'}), fld('State', sel(stateOptions(), d.state, {id:'bd-state', onchange:e => { d.state = e.target.value; save(); }})), t('PIN code', 'pin'), fld('PAN', h('input',{id:'bd-pan', value:d.pan || '', oninput:e => { d.pan = e.target.value; save(); }}))),
+    ta('Address', 'address', 2),
+    h('div',{class:'grid'}, t('Email (printed)', 'email'), t('Phone (printed)', 'phone'))));
+  root.append(card('Bank details',
+    h('div',{class:'grid'}, t('Account name', 'accName'), t('Account number', 'accNo'), t('IFSC', 'ifsc'), t('Account type', 'accType'), t('Bank', 'bank'))));
+  root.append(card('Numbers and defaults',
+    h('div',{class:'grid'}, t('Tax invoice prefix', 'invPrefix', 'e.g. FB'), nm('Next tax invoice no.', 'invNext'), t('Proforma prefix', 'pfPrefix', 'Optional'), nm('Next proforma no.', 'pfNext'),
+      t('Default HSN/SAC', 'hsn'), fld('Default GST %', sel([0, 5, 12, 18, 28].map(x => [x, x + '%']), n0(d.gst), {onchange:e => { d.gst = +e.target.value; save(); }})), t('Default unit', 'unit')),
+    h('label',{class:'row', style:'gap:6px'}, h('input',{type:'checkbox', checked: d.roundOff ? true : null, onchange:e => { d.roundOff = e.target.checked; save(); }}), 'Round totals off to the rupee on new invoices'),
+    h('div',{class:'note'}, 'If a higher number has already been used, the app carries on from that one.')));
+  root.append(card('Standard text',
+    ta('Tax invoice: terms and conditions (one per line)', 'invTerms', 4),
+    ta('Proforma: terms and conditions (one per line)', 'pfTerms', 6),
+    ta('Proforma: payment terms (one per line, optional)', 'pfPayTerms', 2)));
+}
+
 // ---------- Home: big tiles for the main sections ----------
 const ICONS = {
   jobs:'<path d="M4 4h16v16H4z"/><path d="M8 8h8M8 12h8M8 16h5"/>',
@@ -1332,6 +1826,8 @@ const ICONS = {
   rates:'<path d="M5 4h14v16H5z"/><path d="M9 8h6M9 12h6M9 16h3"/>',
   history:'<path d="M4 19h16"/><path d="M5 15l4-5 4 3 6-7"/>',
   past:'<ellipse cx="12" cy="5.5" rx="7.5" ry="2.5"/><path d="M4.5 5.5v6c0 1.4 3.4 2.5 7.5 2.5s7.5-1.1 7.5-2.5v-6"/><path d="M4.5 11.5v6c0 1.4 3.4 2.5 7.5 2.5s7.5-1.1 7.5-2.5v-6"/>',
+  bills:'<path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h6M9 16h3"/>',
+  billing:'<path d="M3 7h18v12H3z"/><path d="M3 11h18"/><path d="M7 15h4"/>',
   orders:'<path d="M2 6h12v10H2z"/><path d="M14 9h4l3 3v4h-7"/><circle cx="6.5" cy="17.5" r="2"/><circle cx="17.5" cy="17.5" r="2"/>',
   team:'<circle cx="9" cy="8" r="3"/><path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6"/><circle cx="17" cy="9" r="2.5"/><path d="M15.5 14.2c2.8.3 5 2.6 5 5.8"/>'
 };
@@ -1358,12 +1854,14 @@ function renderHome(){
     tile('jobs', 'jobs', 'Costings', 'Work out cost and quote for an order'),
     tile('cards', 'cards', 'Job cards', 'Instructions for the team, master sheet, PDFs'),
     tile('orders', 'orders', 'Orders & dispatch', 'Client POs: what is delivered and what is remaining'),
+    tile('bills', 'bills', 'Invoices', 'Proforma and tax invoices, PDF in your format'),
     tile('stock', 'stock', 'Stock', 'Materials in stock, what to buy for upcoming jobs'),
     tile('past', 'past', 'Database', 'Boxes made before and their selling prices')));
   root.append(h('h2',{class:'hsub'}, 'Settings'));
-  root.append(h('div',{class:'hgrid'},
+  root.append(h('div',{class:'hgrid set'},
     tile('rates', 'rates', 'Rate list', 'Paper, board, lamination, printing and other rates', S.loaded.rates ? S.rates.size + ' rates' : loading, false, true),
     tile('history', 'history', 'Price history', 'How raw material prices changed over time', '', false, true),
+    tile('billing', 'billing', 'Billing details', 'GSTIN, address, bank and invoice numbers', '', false, true),
     tile('team', 'team', 'Team & access', 'Logins and roles for your team', S.team.size ? S.team.size + (S.team.size === 1 ? ' person' : ' people') : '', false, true)));
 }
 
@@ -1465,7 +1963,7 @@ function rowDelete(what, onConfirm){
 // job cards, stock and the shared lists are open to people the page is shared with for editing.
 const ROLES = {
   inventory:{n:'Inventory', d:'Stock: add materials, record purchases when they arrive, correct counts, see what to buy', views:['stock']},
-  jobcards:{n:'Job cards', d:'Job cards: create, edit, print and download team sheets; client POs and dispatches', views:['cards','card','orders','order']}
+  jobcards:{n:'Job cards', d:'Job cards: create, edit, print and download team sheets; client POs, dispatches and invoices', views:['cards','card','orders','order','bills','bill']}
 };
 const isOwnerRole = () => S.role === 'owner';
 const allowedViews = () => S.role === 'owner' ? null : (ROLES[S.role] || {views:[]}).views;
@@ -1474,7 +1972,7 @@ const homeView = () => S.role === 'owner' ? 'home' : ((ROLES[S.role] || {views:[
 
 function applyRoleChrome(){
   const own = isOwnerRole(), r = ROLES[S.role];
-  [['tab-jobs','jobs'], ['tab-cards','cards'], ['tab-orders','orders'], ['tab-stock','stock'], ['tab-past','past']].forEach(([id, v]) => { const el = $('#' + id); if (el) el.hidden = !(S.role && canView(v) && (own || r)); });
+  [['tab-jobs','jobs'], ['tab-cards','cards'], ['tab-orders','orders'], ['tab-bills','bills'], ['tab-stock','stock'], ['tab-past','past']].forEach(([id, v]) => { const el = $('#' + id); if (el) el.hidden = !(S.role && canView(v) && (own || r)); });
   const sw = $('.setwrap'); if (sw) sw.hidden = !own;
   const chip = $('#rolechip');
   if (chip){ chip.hidden = !r; chip.textContent = r ? r.n + ' access' : ''; }
@@ -3427,6 +3925,11 @@ async function boot(){
   S.user = user;
   const owner = user ? await user.isOwner() : false;
   if (user && user.me) user.me().then(m => { S.myName = String((m && m.name) || '').trim().split(/[\s,–-]+/)[0] || ''; homeSoon(); }).catch(() => {});
+  db.doc('shared/billing').onSnapshot(s => {
+    if (busy('shared/billing')) return;
+    S.billing = s.exists ? (s.data() || {}) : null;
+    if (S.view === 'billing' && !$('#view-billing').contains(document.activeElement)) renderBilling();
+  }, () => {});
   db.doc('shared/lists').onSnapshot(s => {
     if (!busy('shared/lists')) S.shared = s.exists ? (s.data() || {}) : {};
     S.loaded.shared = true; publishSharedLists();
@@ -3447,6 +3950,28 @@ async function boot(){
       if (S.view === 'card' && S.cardTab === 'mat' && !$('#view-card').contains(document.activeElement)) renderCard();
     }, fail);
     liveSub('stock', 'stock'); liveSub('stockLog', 'slog');
+    if (S.role === 'owner' || canView('bills')){
+      db.collection('invoices').onSnapshot(snap => {
+        const m = new Map();
+        for (const d of snap.docs){ const path = 'invoices/' + d.id; m.set(d.id, busy(path) && S.bills.has(d.id) ? S.bills.get(d.id) : {...d.data(), id:d.id}); }
+        for (const [id, x] of S.bills) if (!m.has(id) && busy('invoices/' + id)) m.set(id, x);
+        S.bills = m; if (!snap.metadata.fromCache) S.loaded.bills = true;
+        if (S.view === 'bills' && !$('#view-bills').contains(document.activeElement)) renderBills();
+        else if (S.view === 'bill'){
+          const fresh = S.bills.get(S.billId);
+          if (!S.bdraft && fresh){ S.bdraft = clone(fresh); renderBill(); }
+          else if (S.bdraft && !fresh && S.loaded.bills && !busy('invoices/' + S.billId)){ S.bdraft = null; renderBill(); }
+          else if (S.bdraft && fresh && fresh !== S.bdraft && !busy('invoices/' + S.billId) && stable(fresh) !== stable(S.bdraft) && !$('#view-bill').contains(document.activeElement)){ S.bdraft = clone(fresh); renderBill(); }
+          else if (!S.bdraft) renderBill();
+        }
+      }, () => { S.loaded.bills = true; });
+      db.collection('clients').onSnapshot(snap => {
+        const m = new Map();
+        for (const d of snap.docs){ const path = 'clients/' + d.id; m.set(d.id, busy(path) && S.clients.has(d.id) ? S.clients.get(d.id) : {...d.data(), id:d.id}); }
+        for (const [id, x] of S.clients) if (!m.has(id) && busy('clients/' + id)) m.set(id, x);
+        S.clients = m;
+      }, () => {});
+    }
     if (S.role === 'owner' || canView('orders')) db.collection('orders').onSnapshot(snap => {
       const m = new Map();
       for (const d of snap.docs){ const path = 'orders/' + d.id; m.set(d.id, busy(path) && S.orders.has(d.id) ? S.orders.get(d.id) : {...d.data(), id:d.id}); }

@@ -9,8 +9,9 @@ explain changes in plain words, never ask him to run commands, and test before p
 - **Stock & procurement**: materials list; each job card takes its materials out of stock automatically (and puts them back when deleted); "To buy" list.
 - **Database** (owner only): boxes made before with selling prices; search by size (L/W swap allowed, tolerance). Entries = `pastwork/<id>` (imported from Raj's old Excel sheet or added by hand) + every costing with a quoted price (live). Separate databases per product (Rigid boxes, Mono cartons, Corrugated boxes, MDF boxes; no printing; `cat` field, or from box type) — a costing only compares like with like. Search by size or by area (L × W sq in ± tolerance, like Raj's old Excel). Old Excel rows imported as `pastwork/old-NNNN` (source 'import', sizes converted from inches). Costing screen shows "Made before: N similar …".
 - **Orders & dispatch**: client POs (`orders/<id>`: client, PO no., date, item, variants `[{id,name,qty}]`, dispatches `[{id,date,ref,note,items:{variantId:qty},by}]`). Each dispatch is a mix of variants; delivered / remaining per variant worked out from the dispatches. Rate per piece (same for all variants of a PO) in `poRates/<id>`, owner only. Owner + job cards role; only the owner deletes a PO. Not linked to job cards (Raj's choice). Same client with several open POs (different rates): a dispatch is split oldest PO first (PO date, then created) by variant name; each part saved on its PO with a shared `lot` id; edit/delete acts on the whole lot.
+- **Invoices**: proforma + tax invoices (`invoices/<id>`), PDF drawn with pdf-lib to match Raj's Refrens layout (₹ drawn as a path since standard fonts lack it). Billed by Firstbox: details in ⚙ Billing details (`shared/billing`, owner writes). Client book `clients/<id>` (filled from invoices; GSTIN fills state + PAN, checksum checked). IGST if client state ≠ Firstbox state, else CGST+SGST. Proforma → “Make tax invoice from this”. From Orders: “Make proforma” on a PO, “Make invoice” on a dispatch lot (marks the lot). Owner + job cards; only owner deletes. PO rates are owner-only, so invoices made by job cards from a dispatch have blank rates.
 - **Home** (owner): big logo, greeting, tiles. Staff land straight on their section.
-- **Settings ⚙**: Rate list, Price history, Team & access.
+- **Settings ⚙**: Rate list, Price history, Billing details, Team & access.
 
 ## Where things are
 - `web/firstbox.html` — **the whole page** (UI + logic, plain JS, no framework). Edit this file for almost every change.
@@ -20,7 +21,7 @@ explain changes in plain words, never ask him to run commands, and test before p
 - `web/index.html` — generated from `web/firstbox.html` by `python3 tools/make-index.py` (adds the script tags). Regenerate after editing; CI also regenerates it.
 - `web/config.js` — Supabase project URL and publishable key (public by design; access is enforced by the database rules).
 - `supabase/setup.sql` — tables `docs` (col, id, data jsonb) and `members` (role: owner / inventory / jobcards / pending / removed), row-level security, realtime. Re-runnable.
-- `electron/` — the Mac/Windows app shell. Loads the online page (`electron/app-config.json` → `uiUrl`) when reachable, else the built-in `web/` copy. Saves PDFs to `Documents/Firstbox/Job cards/<job card no.>/`.
+- `electron/` — the Mac/Windows app shell. Loads the online page (`electron/app-config.json` → `uiUrl`) when reachable, else the built-in `web/` copy. Saves PDFs to `Documents/Firstbox/Job cards/<job card no.>/` (invoices to `Documents/Firstbox/Invoices/`).
 - `.github/workflows/build.yml` — push to `main` publishes the page (GitHub Pages, when the repo is public); push a tag `vX.Y.Z` builds the Mac (.dmg) and Windows (.exe) installers into a GitHub release.
 
 ## Roles (enforced in `supabase/setup.sql`, mirrored in the page's `ROLES`)
@@ -29,7 +30,7 @@ explain changes in plain words, never ask him to run commands, and test before p
   Behind the scenes a username is the Supabase login `<username>@firstbox.local`; SQL functions `create_member`,
   `set_member_password`, `delete_member` (owner only) in `supabase/team-logins.sql`. Self sign-up is switched off in Supabase.
 - inventory: reads job cards/stock, writes stock + stockLog only.
-- jobcards: reads/writes job cards, stock, stockLog, orders. Cannot delete job cards or POs.
+- jobcards: reads/writes job cards, stock, stockLog, orders, invoices, clients. Cannot delete job cards, POs or invoices.
 - Costings (`jobs`), `rates`, `rateHistory`, `config`, `poRates`, `pastwork`: owner only. `shared/lists` (paper names, lamination divisors): owner writes, staff read.
 
 ## Data model notes

@@ -27,12 +27,13 @@ function isTrusted(url) {
   try { return !!ONLINE_ORIGIN && new URL(url).origin === ONLINE_ORIGIN; } catch (e) { return false; }
 }
 
-// Save a file the page made. Job card PDFs go in Documents/Firstbox/Job cards/<job card no.>/
+// Save a file the page made. Job card PDFs go in Documents/Firstbox/Job cards/<job card no.>/, invoices in Documents/Firstbox/Invoices/
 ipcMain.handle('firstbox:save-file', async (event, name, bytes) => {
   if (!isTrusted(event.senderFrame && event.senderFrame.url)) throw new Error('Not allowed');
   const file = safeName(name);
   const m = /^([A-Z]{2}-\d+)\b/.exec(file);
-  const dir = file.toLowerCase().endsWith('.pdf') && m ? firstboxFolder(path.join('Job cards', m[1])) : firstboxFolder('Files');
+  const pdf = file.toLowerCase().endsWith('.pdf');
+  const dir = pdf && m ? firstboxFolder(path.join('Job cards', m[1])) : pdf && /^(Tax invoice|Proforma) /i.test(file) ? firstboxFolder('Invoices') : firstboxFolder('Files');
   const full = path.join(dir, file);
   fs.writeFileSync(full, Buffer.from(bytes));
   shell.showItemInFolder(full);

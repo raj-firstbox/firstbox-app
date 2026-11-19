@@ -11,8 +11,8 @@
   let session = JSON.parse(sessionStorage.getItem(AU) || 'null');
   const authCbs = [];
   const role = () => { const d = load(); const m = session && d.members.find(x => x.user_id === session.user.id); return m ? m.role : ''; };
-  const canRead = (r) => role() === 'owner' || (['inventory','jobcards'].includes(role()) && ['jobcards','stock','stockLog','shared'].includes(r.col)) || (role() === 'jobcards' && r.col === 'orders');
-  const canWrite = (col) => role() === 'owner' || (role() === 'jobcards' && ['jobcards','stock','stockLog','orders'].includes(col)) || (role() === 'inventory' && ['stock','stockLog'].includes(col));
+  const canRead = (r) => role() === 'owner' || (['inventory','jobcards'].includes(role()) && ['jobcards','stock','stockLog','shared'].includes(r.col)) || (role() === 'jobcards' && ['orders','invoices','clients'].includes(r.col));
+  const canWrite = (col) => role() === 'owner' || (role() === 'jobcards' && ['jobcards','stock','stockLog','orders','invoices','clients'].includes(col)) || (role() === 'inventory' && ['stock','stockLog'].includes(col));
   function q(table){
     const st = {table, filters:[], op:'select', range:null, single:false};
     const api = {
