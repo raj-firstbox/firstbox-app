@@ -8,6 +8,7 @@ explain changes in plain words, never ask him to run commands, and test before p
 - **Job cards**: internal instructions per order, with a master sheet and one sheet per team (designer, printing, fabrication, die, box making). PDF download.
 - **Stock & procurement**: materials list; each job card takes its materials out of stock automatically (and puts them back when deleted); "To buy" list.
 - **Database** (owner only): boxes made before with selling prices; search by size (L/W swap allowed, tolerance). Entries = `pastwork/<id>` (imported from Raj's old Excel sheet or added by hand) + every costing with a quoted price (live). Separate databases per product (Rigid boxes, Mono cartons, Corrugated boxes, MDF boxes; no printing; `cat` field, or from box type) — a costing only compares like with like. Search by size or by area (L × W sq in ± tolerance, like Raj's old Excel). Old Excel rows imported as `pastwork/old-NNNN` (source 'import', sizes converted from inches). Costing screen shows "Made before: N similar …".
+- **Orders & dispatch**: client POs (`orders/<id>`: client, PO no., date, item, variants `[{id,name,qty}]`, dispatches `[{id,date,ref,note,items:{variantId:qty},by}]`). Each dispatch is a mix of variants; delivered / remaining per variant worked out from the dispatches. Rate per piece (same for all variants of a PO) in `poRates/<id>`, owner only. Owner + job cards role; only the owner deletes a PO. Not linked to job cards (Raj's choice).
 - **Home** (owner): big logo, greeting, tiles. Staff land straight on their section.
 - **Settings ⚙**: Rate list, Price history, Team & access.
 
@@ -28,8 +29,8 @@ explain changes in plain words, never ask him to run commands, and test before p
   Behind the scenes a username is the Supabase login `<username>@firstbox.local`; SQL functions `create_member`,
   `set_member_password`, `delete_member` (owner only) in `supabase/team-logins.sql`. Self sign-up is switched off in Supabase.
 - inventory: reads job cards/stock, writes stock + stockLog only.
-- jobcards: reads/writes job cards, stock, stockLog. Cannot delete job cards.
-- Costings (`jobs`), `rates`, `rateHistory`, `config`: owner only. `shared/lists` (paper names, lamination divisors): owner writes, staff read.
+- jobcards: reads/writes job cards, stock, stockLog, orders. Cannot delete job cards or POs.
+- Costings (`jobs`), `rates`, `rateHistory`, `config`, `poRates`, `pastwork`: owner only. `shared/lists` (paper names, lamination divisors): owner writes, staff read.
 
 ## Data model notes
 - Everything the page stores is a JSON document at `collection/id` (e.g. `jobcards/CO-102`, `stock/<id>`, `config/defaults`).

@@ -47,8 +47,10 @@ h1{font-size:22px} h2{font-size:17px} h3{font-size:14px}
 .hsub{display:flex;align-items:center;gap:12px;font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin:0 0 12px}
 .hsub::after{content:"";flex:1;height:1px;background:var(--line)}
 .hgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:26px}
-.hgrid.work{grid-template-columns:repeat(4,1fr)}
-@media (max-width:1000px){.hgrid.work{grid-template-columns:repeat(2,1fr)}}
+.hgrid.work{grid-template-columns:repeat(6,1fr)}
+.hgrid.work .htile{grid-column:span 2}
+.hgrid.work .htile:nth-child(4){grid-column:2 / span 2}
+@media (max-width:1000px){.hgrid.work{grid-template-columns:repeat(2,1fr)}.hgrid.work .htile,.hgrid.work .htile:nth-child(4){grid-column:auto}}
 @media (max-width:760px){.hgrid,.hgrid.work{grid-template-columns:1fr}}
 .htile{display:flex;align-items:center;gap:16px;text-align:left;background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:18px;font:inherit;color:var(--fg);cursor:pointer;min-height:108px;transition:box-shadow .15s,border-color .15s,transform .15s}
 .htile:hover,.htile:focus-visible{border-color:var(--brand);box-shadow:0 8px 24px rgba(31,26,22,.08);transform:translateY(-1px)}
@@ -237,6 +239,10 @@ tbody tr:last-child td{border-bottom:0}
 .jcrow .fld{flex:1 1 110px}
 .jcrow .fld.w2{flex:2 1 200px}
 .jcrow .fld.w0{flex:0 1 80px}
+.prog{height:8px;min-width:90px;background:var(--sunk);border-radius:4px;overflow:hidden}
+.prog>i{display:block;height:100%;background:var(--brand);border-radius:4px}
+.prog.done>i{background:var(--good)}
+tfoot th{background:var(--sunk);font-size:13px;letter-spacing:0;text-transform:none;color:var(--fg)}
 .jcno{font-family:var(--font-display);font-weight:700;color:var(--accent)}
 .linkbtn{background:none;border:0;padding:0;color:var(--accent);font-weight:600;text-decoration:underline;cursor:pointer}
 .jcprint{display:none}
@@ -311,6 +317,7 @@ body:not(.show-rates) .adv{display:none}
     <nav>
       <button class="tab" id="tab-jobs" data-go="jobs">Costings</button>
       <button class="tab" id="tab-cards" data-go="cards">Job cards</button>
+      <button class="tab" id="tab-orders" data-go="orders">Orders</button>
       <button class="tab" id="tab-stock" data-go="stock">Stock</button>
       <button class="tab" id="tab-past" data-go="past">Database</button>
     </nav>
@@ -339,6 +346,8 @@ body:not(.show-rates) .adv{display:none}
   <section id="view-job" hidden></section>
   <section id="view-cards" hidden></section>
   <section id="view-card" hidden></section>
+  <section id="view-orders" hidden></section>
+  <section id="view-order" hidden></section>
   <section id="view-stock" hidden></section>
   <section id="view-team" hidden></section>
   <section id="view-access" hidden></section>
@@ -484,7 +493,7 @@ const partOf = l => l.calc === 'diecut' && (l.part === 'print' || l.part === 'di
 
 // ---------- state ----------
 const S = {db:null, rates:new Map(), jobs:new Map(), settings:{overheadPct:12, marginPct:25, wastagePct:5},
-  loaded:{rates:false, jobs:false, hist:false, cards:false, stock:false, shared:false, past:false}, hist:new Map(), cards:new Map(), cardId:null, cdraft:null, newCardOpen:false, cardQ:'', past:new Map(), pq:null, pastNew:false, pastEdit:null, role:null, myId:null, myRequest:null, user:null, team:new Map(), requests:new Map(), shared:{}, cardTab:'master', printAll:false, stock:new Map(), slog:new Map(), stockCat:'all', stockQ:'', stockOpen:null, stockNew:false, issue:null,
+  loaded:{rates:false, jobs:false, hist:false, cards:false, stock:false, shared:false, past:false, orders:false}, orders:new Map(), poRates:new Map(), orderId:null, ordQ:'', ordFilter:'open', ordNew:false, ordEdit:false, dispEdit:null, dispOpen:false, hist:new Map(), cards:new Map(), cardId:null, cdraft:null, newCardOpen:false, cardQ:'', past:new Map(), pq:null, pastNew:false, pastEdit:null, role:null, myId:null, myRequest:null, user:null, team:new Map(), requests:new Map(), shared:{}, cardTab:'master', printAll:false, stock:new Map(), slog:new Map(), stockCat:'all', stockQ:'', stockOpen:null, stockNew:false, issue:null,
   hs:{cat:null, sel:null, slots:{}, mode:'rs', range:'all', focus:null}, slow:false, view:'jobs', jobId:null, draft:null,
   filters:{q:'', status:'all', month:'all'},
   diecutDefaults:{die:1500, first:1200, next:800},
@@ -805,8 +814,9 @@ function nextJobNo(prefix){
 // ---------- routing ----------
 function go(view, id){
   if (S.role && S.role !== 'owner' && ROLES[S.role] && !canView(view)){ view = homeView(); id = null; }
-  S.view = view; S.jobId = view === 'job' ? (id || null) : null; S.cardId = view === 'card' ? (id || null) : null;
-  const hash = view === 'job' ? '#job-' + id : view === 'card' ? '#card-' + id : '#' + view;
+  if (view !== 'order' || id !== S.orderId){ S.ordEdit = false; S.dispEdit = null; S.dispOpen = false; }
+  S.view = view; S.jobId = view === 'job' ? (id || null) : null; S.cardId = view === 'card' ? (id || null) : null; S.orderId = view === 'order' ? (id || null) : null;
+  const hash = view === 'job' ? '#job-' + id : view === 'card' ? '#card-' + id : view === 'order' ? '#order-' + id : '#' + view;
   if (location.hash !== hash) history.replaceState(null, '', hash);
   if (view === 'job'){ const j = S.jobs.get(id); S.draft = j ? clone(j) : null; }
   if (view === 'card'){ const c = S.cards.get(id); S.cdraft = c ? clone(c) : null; }
@@ -817,7 +827,8 @@ function fromHash(){
   const hsh = location.hash.slice(1);
   if (hsh.startsWith('job-')) go('job', hsh.slice(4));
   else if (hsh.startsWith('card-')) go('card', hsh.slice(5));
-  else go(['home','jobs','rates','history','cards','stock','team','past'].includes(hsh) ? hsh : homeView());
+  else if (hsh.startsWith('order-')) go('order', hsh.slice(6));
+  else go(['home','jobs','rates','history','cards','stock','team','past','orders'].includes(hsh) ? hsh : homeView());
 }
 document.querySelectorAll('[data-go]').forEach(b => b.addEventListener('click', () => { closeSettings(); go(b.dataset.go); }));
 // Settings menu (top-left gear): Rate list and Price history.
@@ -837,7 +848,7 @@ function render(){
   applyRoleChrome();
   const ready = S.role === 'owner' || !!ROLES[S.role];
   $('#view-access').hidden = ready;
-  if (!ready){ ['home','past','jobs','job','rates','history','cards','stock','card','team'].forEach(v => $('#view-' + v).hidden = true); renderAccess(); return; }
+  if (!ready){ ['home','past','jobs','job','rates','history','cards','stock','card','team','orders','order'].forEach(v => $('#view-' + v).hidden = true); renderAccess(); return; }
   $('#view-team').hidden = S.view !== 'team';
   $('#tab-team').setAttribute('aria-current', S.view === 'team' ? 'page' : 'false');
   $('#view-home').hidden = S.view !== 'home';
@@ -850,6 +861,9 @@ function render(){
   $('#view-history').hidden = S.view !== 'history';
   $('#view-cards').hidden = S.view !== 'cards';
   $('#view-stock').hidden = S.view !== 'stock';
+  $('#view-orders').hidden = S.view !== 'orders';
+  $('#view-order').hidden = S.view !== 'order';
+  $('#tab-orders').setAttribute('aria-current', S.view === 'orders' || S.view === 'order' ? 'page' : 'false');
   $('#tab-stock').setAttribute('aria-current', S.view === 'stock' ? 'page' : 'false');
   $('#view-card').hidden = S.view !== 'card';
   $('#tab-cards').setAttribute('aria-current', S.view === 'cards' || S.view === 'card' ? 'page' : 'false');
@@ -866,6 +880,8 @@ function render(){
   else if (S.view === 'cards') renderCards();
   else if (S.view === 'stock') renderStock();
   else if (S.view === 'card') renderCard();
+  else if (S.view === 'orders') renderOrders();
+  else if (S.view === 'order') renderOrder();
   else renderRates();
 }
 
@@ -1007,6 +1023,239 @@ function pastForm(ex, cat){
   return wrap;
 }
 
+// ---------- Orders (client POs) and dispatches ----------
+// A PO has variants (e.g. Oud, Icy, Sandal) each with an ordered quantity. Each dispatch records how many of
+// each variant went in that lot (mix and match). Delivered and remaining are worked out from the dispatches.
+// orders/<id>: client, poNo, poDate, item, notes, variants:[{id,name,qty}], dispatches:[{id,date,ref,note,items:{variantId:qty},by}]
+// poRates/<id>: {rate} — price per piece, the same for every variant of the PO. Owner only.
+function poStats(o){
+  const vs = o.variants || [], del = {};
+  vs.forEach(v => del[v.id] = 0);
+  for (const d of o.dispatches || []) for (const [vid, q] of Object.entries(d.items || {})) del[vid] = (del[vid] || 0) + n0(q);
+  const ordered = vs.reduce((a, v) => a + n0(v.qty), 0);
+  const delivered = vs.reduce((a, v) => a + n0(del[v.id]), 0);
+  const remaining = vs.reduce((a, v) => a + Math.max(0, n0(v.qty) - n0(del[v.id])), 0);
+  const status = !ordered || delivered <= 0 ? 'none' : remaining <= 0 ? 'done' : 'part';
+  const last = (o.dispatches || []).map(d => d.date || '').sort().pop() || '';
+  return {del, ordered, delivered, remaining, status, last, pct: ordered ? Math.min(100, delivered / ordered * 100) : 0};
+}
+const PO_STATUS = {none:['Not dispatched',''], part:['Part dispatched','Confirmed'], done:['Completed','Completed']};
+const poPill = st => h('span',{class:'pill ' + PO_STATUS[st][1]}, PO_STATUS[st][0]);
+const progBar = (p, done) => h('div',{class:'prog' + (done ? ' done' : ''), role:'img', 'aria-label': Math.round(p) + '% delivered'}, h('i',{style:'width:' + Math.round(p) + '%'}));
+const poRate = id => { const r = S.poRates.get(id); return r && r.rate != null && r.rate !== '' ? n0(r.rate) : null; };
+const poTitle = o => (o.client || 'No client') + (o.poNo ? ' · PO ' + o.poNo : '');
+const dispTxt = (o, d) => (o.variants || []).filter(v => n0((d.items || {})[v.id]) > 0).map(v => (v.name || 'Variant') + ' ' + fmtN(d.items[v.id])).join(' · ');
+const dispTotal = d => Object.values(d.items || {}).reduce((a, q) => a + n0(q), 0);
+function saveOrder(o){ o.updatedAt = Date.now(); S.orders.set(o.id, o); const snap = clone(o); flush('orders/' + o.id, () => snap); }
+function knownClients(){
+  const s = new Set();
+  for (const m of [S.orders, S.cards, S.jobs, S.past]) for (const x of m.values()) if (x.client && String(x.client).trim()) s.add(String(x.client).trim());
+  return [...s].sort((a, b) => a.localeCompare(b));
+}
+
+function renderOrders(){
+  const root = $('#view-orders'); root.replaceChildren();
+  const own = isOwnerRole();
+  root.append(h('div',{class:'head'},
+    h('div',{}, h('h1',{},'Orders & dispatch'), h('div',{class:'note'},'Client POs with their variants. Record each dispatch to see what has been delivered and what is still remaining.')),
+    h('button',{class:'btn primary', onclick:() => { S.ordNew = !S.ordNew; renderOrders(); }}, S.ordNew ? 'Close' : '+ New PO')));
+  if (S.ordNew) root.append(poForm(null));
+  const box = h('div',{}); root.append(box);
+  if (!S.db){ box.append(h('div',{class:'card empty'},'Saved data is not available here.')); return; }
+  if (!S.loaded.orders){ box.append(h('div',{class:'card empty'},'Loading orders…')); return; }
+  const all = [...S.orders.values()].map(o => ({o, s: poStats(o)}));
+  const open = all.filter(r => r.s.status !== 'done');
+  const month = today().slice(0, 7);
+  const dispMonth = all.reduce((a, r) => a + (r.o.dispatches || []).filter(d => String(d.date || '').startsWith(month)).length, 0);
+  const valPending = open.reduce((a, r) => { const rt = poRate(r.o.id); return rt == null ? a : a + rt * r.s.remaining; }, 0);
+  box.append(h('div',{class:'kpis'},
+    kpi('Open POs', String(open.length), all.length + ' in total'),
+    kpi('Pieces still to deliver', fmtN(open.reduce((a, r) => a + r.s.remaining, 0)), 'across open POs'),
+    kpi('Dispatches this month', String(dispMonth), new Date().toLocaleDateString('en-IN',{month:'long'})),
+    own ? kpi('Value still to deliver', rs(valPending), 'remaining pcs × PO rate') : null));
+  const search = h('input',{type:'search', placeholder:'Search client, PO no., item or variant', value:S.ordQ, style:'flex:1 1 240px'});
+  const filt = h('nav',{class:'jump', 'aria-label':'Show', style:'position:static;padding:4px'}, [['open','Open'],['done','Completed'],['all','All']].map(([k, n]) =>
+    h('button',{type:'button', class:'jctab', 'aria-current': S.ordFilter === k ? 'page' : 'false', onclick:() => { S.ordFilter = k; renderOrders(); }}, n)));
+  const tbox = h('div',{class:'tablebox'});
+  box.append(h('div',{class:'row', style:'margin-bottom:10px'}, search, filt), tbox);
+  const draw = () => {
+    tbox.replaceChildren();
+    if (!all.length){ tbox.append(h('div',{class:'empty'},'No POs yet. Press “+ New PO” to add a client’s purchase order and its variants.')); return; }
+    const q = S.ordQ.trim().toLowerCase();
+    const rows = all.filter(r => S.ordFilter === 'all' || (S.ordFilter === 'done' ? r.s.status === 'done' : r.s.status !== 'done'))
+      .filter(r => !q || [r.o.client, r.o.poNo, r.o.item, ...(r.o.variants || []).map(v => v.name)].join(' ').toLowerCase().includes(q))
+      .sort((a, b) => String(b.o.poDate || '').localeCompare(String(a.o.poDate || '')) || n0(b.o.createdAt) - n0(a.o.createdAt));
+    if (!rows.length){ tbox.append(h('div',{class:'empty'}, S.ordFilter === 'open' && !q ? 'Every PO is fully delivered. Choose “Completed” or “All” to see them.' : 'No POs match.')); return; }
+    tbox.append(h('table',{class:'jobs'},
+      h('thead',{}, h('tr',{}, h('th',{},'Client'), h('th',{},'PO'), h('th',{class:'n'},'Ordered'), h('th',{class:'n'},'Delivered'), h('th',{class:'n'},'Remaining'), h('th',{},'Progress'), h('th',{},'Status'), h('th',{},'Last dispatch'), own ? h('th',{class:'n'},'Value remaining') : null, own ? h('th',{class:'act'}, h('span',{class:'sr'},'Delete')) : null)),
+      h('tbody',{}, rows.map(({o, s}) => { const rt = poRate(o.id); return h('tr',{tabindex:'0', onclick:() => go('order', o.id), onkeydown:e => { if (e.key === 'Enter') go('order', o.id); }},
+        h('td',{}, h('div',{class:'jobno'}, o.client || '(no client)'), h('div',{class:'sub'}, [o.item, (o.variants || []).length + ((o.variants || []).length === 1 ? ' variant' : ' variants')].filter(Boolean).join(' · '))),
+        h('td',{}, h('div',{}, o.poNo || '—'), h('div',{class:'sub'}, fmtDate(o.poDate))),
+        h('td',{class:'n'}, fmtN(s.ordered)), h('td',{class:'n'}, fmtN(s.delivered)), h('td',{class:'n'}, h('b',{}, fmtN(s.remaining))),
+        h('td',{}, progBar(s.pct, s.status === 'done'), h('div',{class:'sub'}, Math.round(s.pct) + '%')),
+        h('td',{}, poPill(s.status)), h('td',{}, fmtDate(s.last) || '—'),
+        own ? h('td',{class:'n'}, rt == null ? '—' : rs(rt * s.remaining)) : null,
+        own ? h('td',{class:'act'}, rowDelete('PO for ' + (o.client || 'no client'), async () => { await deleteOrder(o.id); renderOrders(); })) : null); }))));
+  };
+  search.addEventListener('input', e => { S.ordQ = e.target.value; draw(); });
+  draw();
+}
+async function deleteOrder(id){ S.orders.delete(id); S.poRates.delete(id); await removeDoc('orders/' + id); if (isOwnerRole()) await removeDoc('poRates/' + id); }
+
+// New PO / edit PO.
+function poForm(ex){
+  const own = isOwnerRole();
+  const st = ex ? clone(ex) : {client:'', poNo:'', poDate:today(), item:'', notes:'', variants:[{id:uid(), name:'', qty:null}, {id:uid(), name:'', qty:null}], dispatches:[]};
+  let rate = ex ? poRate(ex.id) : null;
+  const del = poStats(st).del;
+  const wrap = h('div',{class:'newjob'});
+  const listId = 'po-clients';
+  const draw = () => {
+    const vt = h('tbody',{}, st.variants.map((v, i) => h('tr',{},
+      h('td',{}, h('input',{value:v.name || '', placeholder: i === 0 ? 'e.g. Oud' : i === 1 ? 'e.g. Icy' : 'Variant name', 'aria-label':'Variant name', style:'width:100%', oninput:e => v.name = e.target.value})),
+      h('td',{class:'n'}, numIn(v.qty, x => v.qty = x, {'aria-label':'Ordered quantity for ' + (v.name || 'variant'), placeholder:'pcs', style:'width:120px;text-align:right'})),
+      h('td',{class:'n note'}, n0(del[v.id]) > 0 ? fmtN(del[v.id]) + ' delivered' : ''),
+      h('td',{class:'act'}, n0(del[v.id]) > 0 ? h('span',{class:'note', title:'Already dispatched, so it can’t be removed'}, '') :
+        h('button',{type:'button', class:'rowdel', 'aria-label':'Remove variant ' + (v.name || ''), title:'Remove', onclick:() => { st.variants.splice(i, 1); draw(); }}, '✕')))));
+    wrap.replaceChildren(h('h2',{}, ex ? 'Edit PO' : 'New PO'),
+      h('datalist',{id:listId}, knownClients().map(c => h('option',{value:c}))),
+      h('div',{class:'grid'},
+        fld('Client', h('input',{value:st.client || '', list:listId, placeholder:'e.g. Bombay Musk', oninput:e => st.client = e.target.value})),
+        fld('PO no.', h('input',{value:st.poNo || '', placeholder:'Client’s PO number', oninput:e => st.poNo = e.target.value})),
+        fld('PO date', h('input',{type:'date', value:String(st.poDate || '').slice(0, 10), onchange:e => st.poDate = e.target.value})),
+        fld('Item', h('input',{value:st.item || '', placeholder:'e.g. Perfume boxes', oninput:e => st.item = e.target.value})),
+        own ? fld('Rate per piece (₹)', numIn(rate, x => rate = x, {placeholder:'Same for every variant'})) : null,
+        fld('Notes', h('input',{value:st.notes || '', placeholder:'Anything to remember', oninput:e => st.notes = e.target.value}))),
+      h('div',{class:'tablebox'}, h('table',{},
+        h('thead',{}, h('tr',{}, h('th',{},'Variant'), h('th',{class:'n'},'Ordered (pcs)'), h('th',{class:'n'}, ex ? 'Delivered so far' : ''), h('th',{class:'act'}, h('span',{class:'sr'},'Remove')))), vt)),
+      h('div',{class:'row'}, h('button',{type:'button', class:'btn', onclick:() => { st.variants.push({id:uid(), name:'', qty:null}); draw(); const ins = wrap.querySelectorAll('tbody input:not([type=number])'); if (ins.length) ins[ins.length - 1].focus(); }}, '+ Add variant'),
+        h('span',{class:'note'}, 'Total ordered: ' + fmtN(st.variants.reduce((a, v) => a + n0(v.qty), 0)) + ' pcs')),
+      h('div',{class:'row'},
+        h('button',{class:'btn primary', onclick:() => {
+          st.client = String(st.client || '').trim();
+          const keep = st.variants.filter(v => String(v.name || '').trim() || n0(v.qty) > 0 || n0(del[v.id]) > 0);
+          if (!st.client){ alert0(wrap, 'Enter the client name.'); return; }
+          if (!keep.length){ alert0(wrap, 'Add at least one variant with its quantity.'); return; }
+          if (keep.some(v => !String(v.name || '').trim())){ alert0(wrap, 'Give every variant a name.'); return; }
+          if (keep.some(v => !(n0(v.qty) > 0))){ alert0(wrap, 'Enter the ordered quantity for every variant.'); return; }
+          const names = keep.map(v => String(v.name).trim().toLowerCase());
+          if (new Set(names).size !== names.length){ alert0(wrap, 'Two variants have the same name.'); return; }
+          const id = ex ? ex.id : uid();
+          const o = {...st, id, client: st.client, poNo: String(st.poNo || '').trim(), item: String(st.item || '').trim(), notes: st.notes || '',
+            variants: keep.map(v => ({id:v.id, name:String(v.name).trim(), qty:n0(v.qty)})), dispatches: ex ? (S.orders.get(id) || ex).dispatches || [] : [], createdAt: ex ? ex.createdAt : Date.now()};
+          saveOrder(o);
+          if (own){ const old = poRate(id); if (rate !== old){ if (rate == null) { S.poRates.delete(id); if (ex) removeDoc('poRates/' + id); } else { S.poRates.set(id, {rate}); flush('poRates/' + id, () => ({rate})); } } }
+          S.ordNew = false; S.ordEdit = false;
+          if (ex) renderOrder(); else go('order', id);
+        }}, ex ? 'Save changes' : 'Create PO'),
+        h('button',{class:'btn', onclick:() => { S.ordNew = false; S.ordEdit = false; if (ex) renderOrder(); else renderOrders(); }}, 'Cancel')));
+  };
+  draw();
+  return wrap;
+}
+
+function renderOrder(){
+  const root = $('#view-order'); root.replaceChildren();
+  const o = S.orders.get(S.orderId);
+  if (!o){ root.append(h('div',{class:'empty'}, S.loaded.orders ? 'This PO no longer exists.' : 'Loading PO…'), h('div',{class:'row', style:'justify-content:center'}, h('button',{class:'btn', onclick:() => go('orders')},'Back to orders'))); return; }
+  const own = isOwnerRole(), s = poStats(o), rt = poRate(o.id), vs = o.variants || [];
+  root.append(h('div',{class:'head'},
+    h('div',{}, h('button',{class:'linkbtn', onclick:() => go('orders')}, '← All orders'),
+      h('h1',{style:'margin-top:6px'}, poTitle(o), ' ', poPill(s.status)),
+      h('div',{class:'note'}, [o.item, o.poDate ? 'PO date ' + fmtDate(o.poDate) : '', own && rt != null ? rs2(rt) + ' / pc' : '', o.notes].filter(Boolean).join(' · '))),
+    h('div',{class:'row'},
+      h('button',{class:'btn', onclick:() => { S.ordEdit = !S.ordEdit; renderOrder(); }}, S.ordEdit ? 'Close edit' : 'Edit PO'),
+      own ? rowDelete('this PO', async () => { await deleteOrder(o.id); go('orders'); }) : null)));
+  if (S.ordEdit) root.append(poForm(o));
+  root.append(h('div',{class:'kpis'},
+    kpi('Ordered', fmtN(s.ordered) + ' pcs', vs.length + (vs.length === 1 ? ' variant' : ' variants')),
+    kpi('Delivered', fmtN(s.delivered) + ' pcs', Math.round(s.pct) + '% · ' + (o.dispatches || []).length + ((o.dispatches || []).length === 1 ? ' dispatch' : ' dispatches')),
+    kpi('Remaining', fmtN(s.remaining) + ' pcs', s.status === 'done' ? 'Fully delivered' : 'still to deliver'),
+    own ? kpi('Value remaining', rt == null ? '—' : rs(rt * s.remaining), rt == null ? 'Add the rate in Edit PO' : 'Delivered ' + rs(rt * s.delivered)) : null));
+
+  // Variant by variant
+  root.append(h('section',{class:'card', style:'display:grid;gap:10px;margin-bottom:14px'}, h('h2',{},'Variants'),
+    h('div',{class:'tablebox'}, h('table',{},
+      h('thead',{}, h('tr',{}, h('th',{},'Variant'), h('th',{class:'n'},'Ordered'), h('th',{class:'n'},'Delivered'), h('th',{class:'n'},'Remaining'), h('th',{},'Progress'), h('th',{},''))),
+      h('tbody',{}, vs.map(v => { const d = n0(s.del[v.id]), q = n0(v.qty), rem = q - d; return h('tr',{},
+        h('td',{}, h('b',{}, v.name)), h('td',{class:'n'}, fmtN(q)), h('td',{class:'n'}, fmtN(d)), h('td',{class:'n'}, h('b',{}, fmtN(Math.max(0, rem)))),
+        h('td',{}, progBar(q ? Math.min(100, d / q * 100) : 0, rem <= 0)),
+        h('td',{}, rem < 0 ? h('span',{class:'warnline'}, fmtN(-rem) + ' extra sent') : rem === 0 ? h('span',{class:'pos'}, '✓ Done') : d > 0 ? 'Part sent' : 'Not sent yet')); })),
+      h('tfoot',{}, h('tr',{}, h('th',{},'Total'), h('th',{class:'n'}, fmtN(s.ordered)), h('th',{class:'n'}, fmtN(s.delivered)), h('th',{class:'n'}, fmtN(s.remaining)), h('th',{}, progBar(s.pct, s.status === 'done')), h('th',{}, Math.round(s.pct) + '%')))))));
+
+  // Record (or edit) a dispatch
+  const editing = S.dispEdit ? (o.dispatches || []).find(d => d.id === S.dispEdit) : null;
+  if (S.dispEdit && !editing) S.dispEdit = null;
+  if (s.status === 'done' && !editing && !S.dispOpen){
+    root.append(h('div',{class:'row', style:'margin-bottom:14px'}, h('span',{class:'note'},'Everything on this PO has been delivered.'), h('button',{class:'btn', onclick:() => { S.dispOpen = true; renderOrder(); }}, '+ Record another dispatch')));
+  } else root.append(dispatchForm(o, editing));
+
+  // History
+  const list = [...(o.dispatches || [])].sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')) || n0(b.at) - n0(a.at));
+  root.append(h('section',{class:'card', style:'display:grid;gap:10px'}, h('h2',{},'Dispatch history'),
+    !list.length ? h('div',{class:'note'},'Nothing dispatched yet.') :
+    h('div',{class:'tablebox'}, h('table',{},
+      h('thead',{}, h('tr',{}, h('th',{},'Date'), h('th',{},'Challan / invoice no.'), h('th',{},'What went'), h('th',{class:'n'},'Total pcs'), h('th',{},'Note'), h('th',{class:'act'}, h('span',{class:'sr'},'Actions')))),
+      h('tbody',{}, list.map(d => h('tr',{},
+        h('td',{}, fmtDate(d.date)), h('td',{}, d.ref || '—'),
+        h('td',{style:'white-space:normal;min-width:220px'}, dispTxt(o, d) || '—'),
+        h('td',{class:'n'}, h('b',{}, fmtN(dispTotal(d)))),
+        h('td',{style:'white-space:normal'}, d.note || '', d.by ? h('div',{class:'sub'}, 'by ' + d.by) : null),
+        h('td',{class:'act'}, h('div',{class:'row', style:'gap:4px;flex-wrap:nowrap;justify-content:flex-end'},
+          h('button',{class:'btn small', onclick:() => { S.dispEdit = d.id; renderOrder(); const f = $('#disp-form'); if (f) f.scrollIntoView({block:'start'}); }}, 'Edit'),
+          rowDelete('dispatch of ' + fmtDate(d.date), async () => { const x = S.orders.get(o.id); if (!x) return; x.dispatches = (x.dispatches || []).filter(y => y.id !== d.id); if (S.dispEdit === d.id) S.dispEdit = null; saveOrder(x); renderOrder(); }))))))))));
+}
+
+function dispatchForm(o, ex){
+  const s = poStats(o), vs = o.variants || [];
+  const st = ex ? clone(ex) : {date:today(), ref:'', note:'', items:{}};
+  st.items = st.items || {};
+  // What is still open for each variant, not counting this dispatch when editing it.
+  const left = v => n0(v.qty) - (n0(s.del[v.id]) - (ex ? n0((ex.items || {})[v.id]) : 0));
+  const wrap = h('section',{class:'newjob', id:'disp-form'});
+  const totalEl = h('b',{}), warnEl = h('div',{class:'warnline'});
+  const refresh = () => {
+    const tot = vs.reduce((a, v) => a + n0(st.items[v.id]), 0);
+    totalEl.textContent = fmtN(tot) + ' pcs';
+    const over = vs.filter(v => n0(st.items[v.id]) > Math.max(0, left(v)));
+    warnEl.textContent = over.length ? 'More than remaining: ' + over.map(v => v.name + ' (+' + fmtN(n0(st.items[v.id]) - Math.max(0, left(v))) + ')').join(', ') + '. You can still save if extra was sent.' : '';
+  };
+  const inputs = {};
+  const rows = vs.map(v => {
+    const inp = numIn(st.items[v.id] || null, x => { if (x == null || x === 0) delete st.items[v.id]; else st.items[v.id] = x; refresh(); }, {'aria-label':'Pieces of ' + v.name + ' in this dispatch', placeholder:'0', min:'0', style:'width:120px;text-align:right'});
+    inputs[v.id] = inp;
+    const l = left(v);
+    return h('tr',{},
+      h('td',{}, h('b',{}, v.name)),
+      h('td',{class:'n'}, l > 0 ? fmtN(l) : h('span',{class:'pos'}, '✓ Done')),
+      h('td',{class:'n'}, inp),
+      h('td',{}, l > 0 ? h('button',{type:'button', class:'btn small', onclick:() => { st.items[v.id] = l; inp.value = l; refresh(); }}, 'All ' + fmtN(l)) : ''));
+  });
+  wrap.append(h('h2',{}, ex ? 'Edit dispatch of ' + fmtDate(ex.date) : 'Record a dispatch'),
+    h('div',{class:'grid'},
+      fld('Dispatch date', h('input',{type:'date', value:String(st.date || '').slice(0, 10), onchange:e => st.date = e.target.value})),
+      fld('Challan / invoice no.', h('input',{value:st.ref || '', placeholder:'e.g. DC-245', oninput:e => st.ref = e.target.value})),
+      fld('Note', h('input',{value:st.note || '', placeholder:'Vehicle, transporter, anything to remember', oninput:e => st.note = e.target.value}))),
+    h('div',{class:'note'}, 'Type how many pieces of each variant went in this lot. Leave the others empty.'),
+    h('div',{class:'tablebox'}, h('table',{},
+      h('thead',{}, h('tr',{}, h('th',{},'Variant'), h('th',{class:'n'}, 'Remaining'), h('th',{class:'n'},'In this dispatch'), h('th',{}, ''))),
+      h('tbody',{}, rows))),
+    h('div',{class:'row'}, h('span',{}, 'Total in this dispatch: ', totalEl)), warnEl,
+    h('div',{class:'row'},
+      h('button',{class:'btn primary', onclick:() => {
+        const items = {}; for (const v of vs){ const q = n0(st.items[v.id]); if (q > 0) items[v.id] = q; }
+        if (!st.date){ alert0(wrap, 'Enter the dispatch date.'); return; }
+        if (!Object.keys(items).length){ alert0(wrap, 'Enter the pieces dispatched for at least one variant.'); return; }
+        const x = S.orders.get(o.id); if (!x) return;
+        const d = {id: ex ? ex.id : uid(), date: st.date, ref: String(st.ref || '').trim(), note: String(st.note || '').trim(), items, by: ex ? (ex.by || '') : (S.myName || ''), at: ex ? (ex.at || Date.now()) : Date.now()};
+        x.dispatches = ex ? (x.dispatches || []).map(y => y.id === d.id ? d : y) : [...(x.dispatches || []), d];
+        saveOrder(x); S.dispEdit = null; S.dispOpen = false; renderOrder();
+      }}, ex ? 'Save changes' : 'Save dispatch'),
+      ex || S.dispOpen ? h('button',{class:'btn', onclick:() => { S.dispEdit = null; S.dispOpen = false; renderOrder(); }}, 'Cancel') : null));
+  refresh();
+  return wrap;
+}
+
 // ---------- Home: big tiles for the main sections ----------
 const ICONS = {
   jobs:'<path d="M4 4h16v16H4z"/><path d="M8 8h8M8 12h8M8 16h5"/>',
@@ -1015,6 +1264,7 @@ const ICONS = {
   rates:'<path d="M5 4h14v16H5z"/><path d="M9 8h6M9 12h6M9 16h3"/>',
   history:'<path d="M4 19h16"/><path d="M5 15l4-5 4 3 6-7"/>',
   past:'<ellipse cx="12" cy="5.5" rx="7.5" ry="2.5"/><path d="M4.5 5.5v6c0 1.4 3.4 2.5 7.5 2.5s7.5-1.1 7.5-2.5v-6"/><path d="M4.5 11.5v6c0 1.4 3.4 2.5 7.5 2.5s7.5-1.1 7.5-2.5v-6"/>',
+  orders:'<path d="M2 6h12v10H2z"/><path d="M14 9h4l3 3v4h-7"/><circle cx="6.5" cy="17.5" r="2"/><circle cx="17.5" cy="17.5" r="2"/>',
   team:'<circle cx="9" cy="8" r="3"/><path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6"/><circle cx="17" cy="9" r="2.5"/><path d="M15.5 14.2c2.8.3 5 2.6 5 5.8"/>'
 };
 let homeT = null;
@@ -1039,6 +1289,7 @@ function renderHome(){
   root.append(h('div',{class:'hgrid work'},
     tile('jobs', 'jobs', 'Costings', 'Work out cost and quote for an order'),
     tile('cards', 'cards', 'Job cards', 'Instructions for the team, master sheet, PDFs'),
+    tile('orders', 'orders', 'Orders & dispatch', 'Client POs: what is delivered and what is remaining'),
     tile('stock', 'stock', 'Stock', 'Materials in stock, what to buy for upcoming jobs'),
     tile('past', 'past', 'Database', 'Boxes made before and their selling prices')));
   root.append(h('h2',{class:'hsub'}, 'Settings'));
@@ -1146,7 +1397,7 @@ function rowDelete(what, onConfirm){
 // job cards, stock and the shared lists are open to people the page is shared with for editing.
 const ROLES = {
   inventory:{n:'Inventory', d:'Stock: add materials, record purchases when they arrive, correct counts, see what to buy', views:['stock']},
-  jobcards:{n:'Job cards', d:'Job cards: create, edit, print and download team sheets', views:['cards','card']}
+  jobcards:{n:'Job cards', d:'Job cards: create, edit, print and download team sheets; client POs and dispatches', views:['cards','card','orders','order']}
 };
 const isOwnerRole = () => S.role === 'owner';
 const allowedViews = () => S.role === 'owner' ? null : (ROLES[S.role] || {views:[]}).views;
@@ -1155,7 +1406,7 @@ const homeView = () => S.role === 'owner' ? 'home' : ((ROLES[S.role] || {views:[
 
 function applyRoleChrome(){
   const own = isOwnerRole(), r = ROLES[S.role];
-  [['tab-jobs','jobs'], ['tab-cards','cards'], ['tab-stock','stock'], ['tab-past','past']].forEach(([id, v]) => { const el = $('#' + id); if (el) el.hidden = !(S.role && canView(v) && (own || r)); });
+  [['tab-jobs','jobs'], ['tab-cards','cards'], ['tab-orders','orders'], ['tab-stock','stock'], ['tab-past','past']].forEach(([id, v]) => { const el = $('#' + id); if (el) el.hidden = !(S.role && canView(v) && (own || r)); });
   const sw = $('.setwrap'); if (sw) sw.hidden = !own;
   const chip = $('#rolechip');
   if (chip){ chip.hidden = !r; chip.textContent = r ? r.n + ' access' : ''; }
@@ -3128,6 +3379,14 @@ async function boot(){
       if (S.view === 'card' && S.cardTab === 'mat' && !$('#view-card').contains(document.activeElement)) renderCard();
     }, fail);
     liveSub('stock', 'stock'); liveSub('stockLog', 'slog');
+    if (S.role === 'owner' || canView('orders')) db.collection('orders').onSnapshot(snap => {
+      const m = new Map();
+      for (const d of snap.docs){ const path = 'orders/' + d.id; m.set(d.id, busy(path) && S.orders.has(d.id) ? S.orders.get(d.id) : {...d.data(), id:d.id}); }
+      for (const [id, x] of S.orders) if (!m.has(id) && busy('orders/' + id)) m.set(id, x);
+      S.orders = m; if (!snap.metadata.fromCache) S.loaded.orders = true;
+      if (S.view === 'orders' && !$('#view-orders').contains(document.activeElement)) renderOrders();
+      if (S.view === 'order' && !$('#view-order').contains(document.activeElement)) renderOrder();
+    }, () => { S.loaded.orders = true; });
 
     db.collection('jobcards').onSnapshot(snap => {
       const m = new Map();
@@ -3198,6 +3457,13 @@ async function boot(){
       }
     }, fail);
     listSub('team', 'team'); listSub('requests', 'requests');
+    db.collection('poRates').onSnapshot(snap => {
+      const m = new Map();
+      for (const d of snap.docs){ const path = 'poRates/' + d.id; m.set(d.id, busy(path) && S.poRates.has(d.id) ? S.poRates.get(d.id) : d.data()); }
+      S.poRates = m;
+      if (S.view === 'orders' && !$('#view-orders').contains(document.activeElement)) renderOrders();
+      if (S.view === 'order' && !$('#view-order').contains(document.activeElement)) renderOrder();
+    }, () => {});
     db.collection('pastwork').onSnapshot(snap => {
       const m = new Map();
       for (const d of snap.docs){ const path = 'pastwork/' + d.id; m.set(d.id, busy(path) && S.past.has(d.id) ? S.past.get(d.id) : {...d.data(), id:d.id}); }
