@@ -902,9 +902,8 @@ function similarCount(l, w, hh, exceptJobId, tol, cat){
 
 function renderPast(){
   const root = $('#view-past'); root.replaceChildren();
-  const q = S.pq = S.pq || {unit:'in', l:null, w:null, h:null, tol:5, atol:5, mode:'size', box:'', text:''};
-  q.mode = q.mode || 'size'; q.atol = q.atol ?? 5; q.cat = PCATS[q.cat] ? q.cat : 'rigid';
-  const areaMode = q.mode === 'area';
+  const q = S.pq = S.pq || {unit:'in', l:null, w:null, h:null, tol:5, box:'', text:''};
+  q.cat = PCATS[q.cat] ? q.cat : 'rigid';
   const inch = q.unit === 'in';
   const shown = v => v == null ? null : inch ? Math.round(v / MM_PER_IN * 100) / 100 : Math.round(v * 10) / 10;
   const dim = (label, k) => fld(label + ' (' + (inch ? 'in' : 'mm') + ')', numIn(shown(q[k]), v => { q[k] = v == null ? null : inch ? v * MM_PER_IN : v; draw(); }));
@@ -919,42 +918,37 @@ function renderPast(){
     h('div',{class:'row', style:'align-items:flex-end'},
       fld('Size in', sel([['mm','mm'],['in','inches']], q.unit, {onchange:e => { q.unit = e.target.value; renderPast(); }})),
       dim('Length L', 'l'), dim('Width W', 'w'), dim('Height H', 'h'),
-      fld('Match by', sel([['size','Size (L, W, H)'],['area','Area (L × W)']], q.mode, {onchange:e => { q.mode = e.target.value; renderPast(); }})),
-      areaMode ? fld('Area close to within', sel([[0,'Exact area'],[2,'± 2 sq in'],[5,'± 5 sq in'],[10,'± 10 sq in'],[20,'± 20 sq in']], q.atol, {onchange:e => { q.atol = +e.target.value; draw(); }}))
-        : fld('Close to within', sel([[0,'Exact size'],[2,'± 2 mm'],[5,'± 5 mm'],[10,'± 10 mm'],[20,'± 20 mm'],[50,'± 50 mm']], q.tol, {onchange:e => { q.tol = +e.target.value; draw(); }})),
+      fld('Close to within', sel([[0,'Exact size'],[2,'± 2 mm'],[5,'± 5 mm'],[10,'± 10 mm'],[20,'± 20 mm'],[50,'± 50 mm']], q.tol, {onchange:e => { q.tol = +e.target.value; draw(); }})),
       q.cat === 'rigid' ? fld('Box type', sel([['','Any'], ...Object.entries(BOX).filter(([k]) => RIGID.has(k)), ...[...new Set([...S.past.values()].filter(p => catOf(p) === 'rigid').map(p => p.boxType).filter(t => t && !BOX[t]))].sort().map(t => [t, t])], q.box, {onchange:e => { q.box = e.target.value; draw(); }})) : null,
       fld('Client or item', h('input',{type:'search', value:q.text, placeholder:'Search', oninput:e => { q.text = e.target.value; draw(); }})),
       h('button',{class:'btn', onclick:() => { S.pq = null; renderPast(); }}, 'Clear')),
-    h('div',{class:'note'}, areaMode ? 'Area = length × width in square inches, like your old Excel search. Height is not used.' : 'Length and width are matched either way round. Leave a size empty to ignore it.')));
+    h('div',{class:'note'}, 'Matched by size. Length and width are matched either way round. Leave a size empty to ignore it.')));
   const box = h('div',{}); root.append(box);
   function draw(){
     box.replaceChildren();
     if (!S.loaded.past || !S.loaded.jobs){ box.append(h('div',{class:'card empty'},'Loading…')); return; }
     const all = pastEntries().filter(e => catOf(e) === q.cat);
     if (!all.length){ box.append(h('div',{class:'card empty'},'No ' + PCATS[q.cat].toLowerCase() + ' here yet. Costings for ' + PCATS[q.cat].toLowerCase() + ' with a quoted price appear here automatically; older jobs can be added with “+ Add past job”.')); return; }
-    const inArea = (l, w) => l != null && w != null && l !== '' && w !== '' ? (n0(l) / MM_PER_IN) * (n0(w) / MM_PER_IN) : null;
-    const target = areaMode ? inArea(q.l, q.w) : null;
-    const searching = areaMode ? target != null : [q.l, q.w, q.h].some(v => v != null);
+    const searching = [q.l, q.w, q.h].some(v => v != null);
     const text = (q.text || '').trim().toLowerCase();
-    const gapOf = e => { if (!areaMode) return sizeGap(e, q); const a = inArea(e.l, e.w); return a == null ? null : {max: Math.abs(a - target), area: a}; };
-    let rows = all.map(e => ({e, g: searching ? gapOf(e) : null}))
-      .filter(r => !searching || (r.g && r.g.max <= (areaMode ? q.atol : q.tol) + 0.05))
+    let rows = all.map(e => ({e, g: searching ? sizeGap(e, q) : null}))
+      .filter(r => !searching || (r.g && r.g.max <= q.tol + 0.05))
       .filter(r => !q.box || r.e.boxType === q.box)
       .filter(r => !text || [r.e.client, r.e.item, boxName(r.e.boxType), r.e.notes, r.e.specs].join(' ').toLowerCase().includes(text));
     const byNewest = (a, b) => String(b.e.date || '').localeCompare(String(a.e.date || '')) || String(a.e.client || '').localeCompare(String(b.e.client || ''));
     rows.sort((a, b) => searching ? a.g.max - b.g.max || byNewest(a, b) : byNewest(a, b));
     const prices = rows.map(r => r.e.pricePc).filter(v => v != null && v !== '' && n0(v) > 0).map(n0);
     box.append(h('div',{class:'kpis'},
-      kpi(searching ? 'Matching boxes' : 'Boxes in database', String(rows.length), searching ? (areaMode ? 'area ' + fmtN(target, 1) + ' sq in ' + (q.atol ? '± ' + q.atol : 'exact') : 'within ' + (q.tol ? '± ' + q.tol + ' mm' : 'exact size')) : all.length + ' in total'),
+      kpi(searching ? 'Matching boxes' : 'Boxes in database', String(rows.length), searching ? 'within ' + (q.tol ? '± ' + q.tol + ' mm' : 'exact size') : all.length + ' in total'),
       kpi('Lowest price / pc', prices.length ? rs2(Math.min(...prices)) : '—', 'of these boxes'),
       kpi('Highest price / pc', prices.length ? rs2(Math.max(...prices)) : '—', 'of these boxes'),
       kpi('Average price / pc', prices.length ? rs2(prices.reduce((a, b) => a + b, 0) / prices.length) : '—', 'of these boxes')));
     if (!rows.length){ box.append(h('div',{class:'card empty'}, searching ? 'No box of this size made before. Try a wider “Close to within”.' : 'Nothing matches.')); return; }
-    const gapTxt = g => { if (!g) return ''; if (areaMode) return g.max <= 0.05 ? 'Same area' : 'Area ' + fmtN(g.area, 1) + ' sq in'; if (g.max <= 0.5) return 'Same size'; return 'Differs up to ' + fmtN(g.max, 1) + ' mm'; };
+    const gapTxt = g => { if (!g) return ''; if (g.max <= 0.5) return 'Same size'; return 'Differs up to ' + fmtN(g.max, 1) + ' mm'; };
     box.append(h('div',{class:'tablebox'}, h('table',{class:'jobs'},
       h('thead',{}, h('tr',{}, searching ? h('th',{},'Match') : null, h('th',{},'Client'), h('th',{},'Item'), h('th',{},'Size (L × W × H)'), h('th',{},'Specs'), h('th',{class:'n'},'Qty'), h('th',{class:'n'},'Selling price / pc'), h('th',{},'Date'), h('th',{class:'act'}, h('span',{class:'sr'},'Actions')))),
       h('tbody',{}, rows.slice(0, 300).map(({e, g}) => h('tr',{class: e.jobId ? 'click' : '', onclick: e.jobId ? () => go('job', e.jobId) : null},
-        searching ? h('td',{}, h('span',{class: g && g.max <= (areaMode ? 0.05 : 0.5) ? 'pill Completed' : 'pill Confirmed'}, gapTxt(g))) : null,
+        searching ? h('td',{}, h('span',{class: g && g.max <= 0.5 ? 'pill Completed' : 'pill Confirmed'}, gapTxt(g))) : null,
         h('td',{}, h('div',{class:'jobno'}, e.client || '—')),
         h('td',{style:'white-space:normal;min-width:130px'}, h('div',{}, boxName(e.boxType)), h('div',{class:'sub'}, e.item || ''), e.notes ? h('div',{class:'sub'}, e.notes) : ''),
         h('td',{}, h('div',{}, sizeIn(e) || '—'), h('div',{class:'sub'}, sizeTxt(e) === '—' ? '' : sizeTxt(e))),
@@ -1362,7 +1356,7 @@ function madeBefore(){
   const cat = catOf({boxType: j.boxType});
   if (!PCATS[cat]){ el.replaceChildren(); return; } // printing service: no database
   const n = similarCount(j.l, j.w, j.h, j.id, 5, cat);
-  el.replaceChildren(n ? h('button',{type:'button', class:'linkbtn', onclick:() => { S.pq = {unit:j.dimUnit || 'mm', l:j.l, w:j.w, h:j.h, tol:5, atol:5, mode:'size', box:'', text:'', cat}; go('past'); }},
+  el.replaceChildren(n ? h('button',{type:'button', class:'linkbtn', onclick:() => { S.pq = {unit:j.dimUnit || 'mm', l:j.l, w:j.w, h:j.h, tol:5, box:'', text:'', cat}; go('past'); }},
     'Made before: ' + n + ' similar ' + (cat === 'mono' ? 'mono carton' + (n > 1 ? 's' : '') : cat === 'rigid' ? 'rigid box' + (n > 1 ? 'es' : '') : 'job' + (n > 1 ? 's' : '')) + ' (± 5 mm). See prices') : h('span',{class:'note'}, 'Not made this size before in ' + PCATS[cat].toLowerCase() + ' (± 5 mm).'));
 }
 // Special effects on a printed sheet (job card: fx.foil, fx.spotuv, fx.emboss, fx.deboss).
