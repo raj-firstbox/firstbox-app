@@ -478,7 +478,7 @@ const MOQ = () => 0; // minimum order warning switched off
 const TEMPLATES = {
   rigid:[
     {k:'board',name:'Kappa board (top + bottom)',calc:'sheet',cat:'Board',hint:'grey',thick:'1.9',L:25,W:36,ups:2,gsm:1200,part:'board'},
-    {k:'p1',name:'Printed sheet 1',calc:'sheet',cat:'Paper',hint:'art paper',L:20,W:30,gsm:130,pastels:[{name:'Top',ups:1},{name:'Bottom',ups:1}]},
+    {k:'p1',name:'Printed item 1',calc:'sheet',cat:'Paper',hint:'art paper',L:20,W:30,gsm:130,pastels:[{name:'Top',ups:1},{name:'Bottom',ups:1}]},
     {name:'Printing',calc:'impression',cat:'Printing',link:'p1',passes:4},
     {name:'Coating',calc:'area',link:'p1',part:'finish'},
     {name:'Insert',calc:'piece',insert:true,part:'insert'},
@@ -486,7 +486,7 @@ const TEMPLATES = {
     {name:'Making charges',calc:'piece',making:true,jobRate:true,part:'make'}],
   shoulder:[
     {k:'board',name:'Kappa board (top, neck + bottom)',calc:'sheet',cat:'Board',hint:'grey',thick:'1.9',L:25,W:36,ups:2,gsm:1200,part:'board'},
-    {k:'p1',name:'Printed sheet 1',calc:'sheet',cat:'Paper',hint:'art paper',L:20,W:30,gsm:130,pastels:[{name:'Top',ups:1},{name:'Bottom',ups:1},{name:'Neck outer',ups:1}]},
+    {k:'p1',name:'Printed item 1',calc:'sheet',cat:'Paper',hint:'art paper',L:20,W:30,gsm:130,pastels:[{name:'Top',ups:1},{name:'Bottom',ups:1},{name:'Neck outer',ups:1}]},
     {name:'Printing',calc:'impression',cat:'Printing',link:'p1',passes:4},
     {name:'Coating',calc:'area',link:'p1',part:'finish'},
     {name:'Insert',calc:'piece',insert:true,part:'insert'},
@@ -494,7 +494,7 @@ const TEMPLATES = {
     {name:'Making charges',calc:'piece',making:true,jobRate:true,part:'make'}],
   magnetic:[
     {k:'board',name:'Kappa board (tray + cover)',calc:'sheet',cat:'Board',hint:'grey',thick:'1.9',L:25,W:36,ups:2,gsm:1200,part:'board'},
-    {k:'p1',name:'Printed sheet 1',calc:'sheet',cat:'Paper',hint:'art paper',L:20,W:30,gsm:130,pastels:[{name:'Outer',ups:1},{name:'Tray outer',ups:1}]},
+    {k:'p1',name:'Printed item 1',calc:'sheet',cat:'Paper',hint:'art paper',L:20,W:30,gsm:130,pastels:[{name:'Outer',ups:1},{name:'Tray outer',ups:1}]},
     {name:'Printing',calc:'impression',cat:'Printing',link:'p1',passes:4},
     {name:'Coating',calc:'area',link:'p1',part:'finish'},
     {name:'Magnets',calc:'piece',cat:'Accessories',hint:'magnet',auto:'magnets'},
@@ -503,7 +503,7 @@ const TEMPLATES = {
     {name:'Making charges',calc:'piece',making:true,jobRate:true,part:'make'}],
   slider:[
     {k:'board',name:'Kappa board (jacket + tray)',calc:'sheet',cat:'Board',hint:'grey',thick:'1.9',L:25,W:36,ups:2,gsm:1200,part:'board'},
-    {k:'p1',name:'Printed sheet 1',calc:'sheet',cat:'Paper',hint:'art paper',L:20,W:30,gsm:130,pastels:[{name:'Jacket outer',ups:1},{name:'Tray outer',ups:1}]},
+    {k:'p1',name:'Printed item 1',calc:'sheet',cat:'Paper',hint:'art paper',L:20,W:30,gsm:130,pastels:[{name:'Jacket outer',ups:1},{name:'Tray outer',ups:1}]},
     {name:'Printing',calc:'impression',cat:'Printing',link:'p1',passes:4},
     {name:'Coating',calc:'area',link:'p1',part:'finish'},
     {name:'Ribbon',calc:'piece',cat:'Accessories',hint:'ribbon',perBox:0},
@@ -511,12 +511,12 @@ const TEMPLATES = {
     {name:'Die & die cutting',calc:'diecut',dies:null,part:'die'},
     {name:'Making charges',calc:'piece',making:true,jobRate:true,part:'make'}],
   mono:[
-    {k:'board',name:'Printed sheet 1',calc:'sheet',cat:'Paper',hint:'sbs',L:20,W:30,ups:4,gsm:300},
+    {k:'board',name:'Printed item 1',calc:'sheet',cat:'Paper',hint:'sbs',L:20,W:30,ups:4,gsm:300},
     {name:'Printing',calc:'impression',cat:'Printing',link:'board',passes:4},
     {name:'Coating',calc:'area',link:'board',part:'finish'},
     {name:'Die & die cutting',calc:'diecut',dies:null,part:'die'}],
   corrugated:[
-    {k:'sheet',name:'Printed sheet 1',calc:'sheet',cat:'Paper',hint:'kraft',L:40,W:50,ups:1,gsm:150},
+    {k:'sheet',name:'Printed item 1',calc:'sheet',cat:'Paper',hint:'kraft',L:40,W:50,ups:1,gsm:150},
     {name:'Printing',calc:'impression',cat:'Printing',link:'sheet',passes:4},
     {name:'Coating',calc:'area',link:'sheet',part:'finish'},
     {name:'Corrugated board sheet',calc:'sheet',cat:'Board',hint:'corrug',L:40,W:50,ups:1,gsm:550,part:'board'},
@@ -530,7 +530,7 @@ const TEMPLATES = {
     {name:'Die & die cutting',calc:'diecut',dies:null,part:'die'},
     {name:'Making charges',calc:'piece',making:true,jobRate:true,part:'make'}],
   printing:[
-    {k:'paper',name:'Printed sheet 1',calc:'sheet',cat:'Paper',hint:'art card',L:20,W:30,ups:4,gsm:300},
+    {k:'paper',name:'Printed item 1',calc:'sheet',cat:'Paper',hint:'art card',L:20,W:30,ups:4,gsm:300},
     {name:'Printing',calc:'impression',cat:'Printing',link:'paper',passes:4},
     {name:'Coating',calc:'area',link:'paper',part:'finish'},
     {name:'Die & die cutting',calc:'diecut',dies:null,part:'die'},
@@ -540,8 +540,8 @@ const TEMPLATES = {
 };
 // The five calculators inside every costing. Each add button: [calculation, button label, starting values].
 const PARTS = {
-  print:{n:'1', title:'Printing & paper', note:'One box for each printed sheet: paper, sheet size, the ups on it and its printing. Die cutting goes below the sheets.',
-    adds:[['sheet','Add a printed sheet']]},
+  print:{n:'1', title:'Printing & paper', note:'One box for each printed item (one name, or “Lid + Base” if printed together): paper, sheet size, ups and printing. Several variants on one sheet: use “+ Add variants”.',
+    adds:[['sheet','Add a printed item']]},
   finish:{n:'2', title:'Finishing', note:'Coating (lamination, varnish or hybrid) covers all printed sheets. Add foiling, spot UV, embossing or debossing if the job has them, and pick the printed sheet each runs on.',
     adds:[['impression','Add special effect',{fx:true, name:'Special effect'}]]},
   board:{n:'3', title:'Kappa board', note:'Kappa board sheets for the box: board type, thickness, sheet size and ups.',
@@ -683,14 +683,23 @@ function rateUnit(calc, unit){
 // ---------- costing engine ----------
 // Pastels placed on one printed sheet, e.g. [{name:'Top', ups:2}, {name:'Bottom', ups:2}].
 const hasPastels = l => Array.isArray(l.pastels) && l.pastels.length > 0;
+// A printed item's own name (empty for the default “Printed sheet 1” / “Printed item 1”).
+const itemName = l => { const n = String(l.name || '').trim(); return /^printed (sheet|item) \d+$/i.test(n) ? '' : n; };
+// Several variants printed together on one sheet (e.g. 4 sunscreen cartons): each has its own quantity and ups.
+// Sheets needed = the most any one variant needs (its qty ÷ its ups); the others get extra pieces.
+const hasVars = l => Array.isArray(l.vars) && l.vars.length > 0;
+const varBase = l => l.vars.reduce((m, v) => n0(v.ups) > 0 && n0(v.qty) > 0 ? Math.max(m, Math.ceil(n0(v.qty) / n0(v.ups))) : m, 0);
+const varQty = l => l.vars.reduce((a, v) => a + n0(v.qty), 0);
 // Every box needs one of each pastel, so the pastel with the fewest ups decides the sheet count.
 function effUps(src){
+  if (hasVars(src)){ const b = varBase(src); return b ? varQty(src) / b : 0; }
   if (hasPastels(src)){ const u = src.pastels.map(p => n0(p.ups)).filter(u => u > 0); return u.length ? Math.min(...u) : 0; }
   return n0(src.ups);
 }
-const totalUps = src => hasPastels(src) ? src.pastels.reduce((a, p) => a + n0(p.ups), 0) : n0(src.ups);
+const totalUps = src => hasVars(src) ? src.vars.reduce((a, v) => a + n0(v.ups), 0) : hasPastels(src) ? src.pastels.reduce((a, p) => a + n0(p.ups), 0) : n0(src.ups);
 const pastelText = l => l.pastels.map(p => p.name + ' × ' + fmtN(n0(p.ups))).join(', ');
 function sheetsOf(src, qty){
+  if (hasVars(src)){ const b = varBase(src); return b ? Math.ceil(b * (1 + n0(src.wastage) / 100)) : 0; }
   const ups = effUps(src); if (ups <= 0 || qty <= 0) return 0;
   return Math.ceil(qty / ups * (1 + n0(src.wastage)/100));
 }
@@ -701,12 +710,12 @@ function calcLine(l, j, byId){
     const kg = n0(l.L) * n0(l.W) * n0(l.gsm) / 1550000;
     const amt = l.unit === 'sheet' ? sh * n0(l.rate) : sh * kg * n0(l.rate);
     const perSheet = l.unit === 'sheet' ? n0(l.rate) : kg * n0(l.rate);
-    const eu = effUps(l), base = eu > 0 ? Math.ceil(qty / eu) : 0;
-    const upsTxt = hasPastels(l) ? pastelText(l) + ' per sheet → qty ÷ ' + fmtN(eu) : 'qty ÷ ' + fmtN(eu) + ' ups';
+    const eu = effUps(l), base = hasVars(l) ? varBase(l) : eu > 0 ? Math.ceil(qty / eu) : 0;
+    const upsTxt = hasVars(l) ? l.vars.length + ' variants on one sheet, the largest decides' : hasPastels(l) ? pastelText(l) + ' per sheet → qty ÷ ' + fmtN(eu) : 'qty ÷ ' + fmtN(eu) + ' ups';
     let d = sh ? fmtN(base) + ' sheets (' + upsTxt + ') + ' + fmtN(n0(l.wastage),1) + '% wastage = ' + fmtN(sh) + ' sheets × ₹' + perSheet.toFixed(2) + ' per sheet' : 'Enter quantity and ups to get sheet count';
     if (gsmFor(l)) d += '  ·  GSM = ' + l.thick + ' mm × ' + fmtN(millFactor(l)) + ' = ' + fmtN(gsmFor(l));
     if (sh && l.unit !== 'sheet') d += '  ·  price per sheet = ' + fmtN(n0(l.L),2) + ' × ' + fmtN(n0(l.W),2) + ' × ' + fmtN(n0(l.gsm)) + ' GSM × ₹' + fmtN(n0(l.rate),2) + ' ÷ 15,50,000';
-    const qd = sh ? (hasPastels(l) ? pastelText(l) + ' per sheet  ·  ' : '') + fmtN(sh) + ' sheets' + (l.unit !== 'sheet' ? '  ·  ' + fmtN(sh * kg, 1) + ' kg' : '') + (gsmFor(l) ? '  ·  ' + l.thick + ' mm = ' + fmtN(gsmFor(l)) + ' GSM' : '') : d;
+    const qd = sh ? (hasVars(l) ? l.vars.length + ' variants  ·  ' : hasPastels(l) ? pastelText(l) + ' per sheet  ·  ' : '') + fmtN(sh) + ' sheets' + (l.unit !== 'sheet' ? '  ·  ' + fmtN(sh * kg, 1) + ' kg' : '') + (gsmFor(l) ? '  ·  ' + l.thick + ' mm = ' + fmtN(gsmFor(l)) + ' GSM' : '') : d;
     return {amount:amt, sheets:sh, detail:d, qd};
   }
   if (l.calc === 'area' || l.calc === 'impression'){
@@ -3024,6 +3033,46 @@ const PASTELS = {
   magnetic:['Outer','Astar','Tray outer','Tray inner'],
   slider:['Jacket outer','Jacket inner','Tray outer','Tray inner']
 };
+// Variants printed together on one sheet (mono cartons, printing jobs, corrugated).
+function varsEditor(l){
+  const j = S.draft, box = h('div',{class:'pastels'});
+  const sync = () => {
+    // With one printed item carrying variants, the job quantity is the total of the variants.
+    const withVars = j.lines.filter(x => x.calc === 'sheet' && partOf(x) === 'print' && hasVars(x));
+    if (withVars.length === 1 && hasVars(l)){ const t = varQty(l); if (t && t !== n0(j.qty)){ j.qty = t; const q = $('#j-qty'); if (q) q.value = t; } }
+    touch(); draw();
+  };
+  const draw = () => {
+    if (!hasVars(l)){
+      box.replaceChildren(h('div',{class:'row', style:'justify-content:space-between;gap:10px'},
+        h('div',{}, h('b',{}, 'Different variants on this sheet?'), h('div',{class:'note'}, 'For example 4 sunscreen cartons printed together. Add each with its quantity and ups.')),
+        h('button',{type:'button', class:'btn small', onclick:() => { const u = n0(l.ups) || 1; l.vars = [{id:uid(), name:'', qty:null, ups: Math.max(1, Math.floor(u / 2))}, {id:uid(), name:'', qty:null, ups: Math.max(1, Math.ceil(u / 2))}]; touch(); renderLines(); }}, '+ Add variants')));
+      return;
+    }
+    const base = varBase(l), sh = sheetsOf(l, 0), tu = totalUps(l);
+    const rows = l.vars.map((v, i) => {
+      const need = n0(v.ups) > 0 && n0(v.qty) > 0 ? Math.ceil(n0(v.qty) / n0(v.ups)) : 0, made = base * n0(v.ups), extra = made - n0(v.qty);
+      return h('tr',{},
+        h('td',{}, h('input',{value: v.name || '', placeholder: 'Variant ' + (i + 1), 'aria-label':'Variant ' + (i + 1) + ' name', oninput:e => { v.name = e.target.value; touch(); }})),
+        h('td',{class:'n'}, numIn(v.qty, x => { v.qty = x; sync(); }, {'aria-label':'Quantity of variant ' + (i + 1), placeholder:'pcs', style:'width:100px'})),
+        h('td',{class:'n'}, numIn(v.ups, x => { v.ups = x; sync(); }, {'aria-label':'Ups of variant ' + (i + 1), placeholder:'ups', style:'width:70px'})),
+        h('td',{class:'n'}, need ? fmtN(need) + (need === base ? ' ★' : '') : '—'),
+        h('td',{class:'n'}, base && n0(v.qty) ? (extra > 0 ? '+' + fmtN(extra) : '—') : '—'),
+        h('td',{}, h('button',{type:'button', class:'rowdel', title:'Remove', 'aria-label':'Remove variant ' + (i + 1), onclick:() => { l.vars.splice(i, 1); if (!l.vars.length) l.vars = null; sync(); renderLines(); }}, '✕')));
+    });
+    box.replaceChildren(
+      h('div',{class:'row', style:'justify-content:space-between'}, h('b',{}, 'Variants on this sheet'), h('span',{class:'note'}, tu + ' ups per sheet in total')),
+      h('div',{class:'tablebox'}, h('table',{},
+        h('thead',{}, h('tr',{}, h('th',{},'Variant'), h('th',{class:'n'},'Quantity'), h('th',{class:'n'},'Ups'), h('th',{class:'n'},'Sheets it needs'), h('th',{class:'n'},'Extra printed'), h('th',{}, h('span',{class:'sr'},'Remove')))),
+        h('tbody',{}, rows))),
+      h('div',{class:'row', style:'justify-content:space-between;gap:10px'},
+        h('button',{type:'button', class:'btn small', onclick:() => { l.vars.push({id:uid(), name:'', qty:null, ups:1}); touch(); draw(); }}, '+ Add variant'),
+        h('span',{class:'note'}, base ? 'Sheets: ' + fmtN(base) + ' (★ variant decides) + ' + fmtN(n0(l.wastage), 1) + '% wastage = ' + fmtN(sh) + '  ·  total ' + fmtN(varQty(l)) + ' pcs' : 'Enter each variant’s quantity and ups.')),
+      h('div',{class:'note'}, 'Tip: give more ups to the variant with the biggest quantity, so fewer sheets are wasted.'));
+  };
+  draw();
+  return box;
+}
 function pastelEditor(l, upd){
   const j = S.draft, all = PASTELS[j.boxType] || [];
   const list = hasPastels(l) ? l.pastels : [];
@@ -3223,7 +3272,7 @@ function addLine(calc, part, label, extra, linkTo){
     const r = findRate('Board', 'sheet', 'grey') ;
     const mill = r && /mill|grey/i.test(r.name || '') ? r : ratesSorted().find(x => x.calc === 'sheet' && /mill/i.test(x.name || ''));
     o = {part, name:'Kappa board', gsm:1200, ups:1, thick:'1.9', rateObj:mill};
-  } else if (calc === 'sheet' && part === 'print') o = {part, name:'Printed sheet ' + (j.lines.filter(x => x.calc === 'sheet' && partOf(x) === 'print').length + 1), cat:'Paper', hint:'art paper', gsm:130, pastels:[]};
+  } else if (calc === 'sheet' && part === 'print') o = {part, name:'Printed item ' + (j.lines.filter(x => x.calc === 'sheet' && partOf(x) === 'print').length + 1), cat:'Paper', hint: j.boxType === 'mono' ? 'sbs' : 'art paper', gsm: j.boxType === 'mono' ? 300 : 130, pastels:[]};
   else if (calc === 'sheet') o = {part, name:'Paper', cat:'Paper'};
   else if (calc === 'printing') o = {part, name:'Printing', colours:4};
   else if (calc === 'diecut') o = {part, name:'Die cutting', dies:1};
@@ -3259,7 +3308,7 @@ function renderLinesInner(){
   for (const p of partsFor(j)){
     boxes[p].replaceChildren();
     if (!j.lines.some(l => partOf(l) === p)) boxes[p].append(h('div',{class:'card empty', style:'padding:14px'},
-      p === 'print' ? 'No printed sheet yet. Press “+ Add a printed sheet” below.' : 'Nothing added yet. Use the buttons below if this job needs it.'));
+      p === 'print' ? 'No printed item yet. Press “+ Add a printed item” below.' : 'Nothing added yet. Use the buttons below if this job needs it.'));
   }
   // Calculator 1 is grouped by printed sheet: the sheet, then the processes that run on it.
   const printSheets = j.lines.filter(x => x.calc === 'sheet' && partOf(x) === 'print');
@@ -3270,7 +3319,7 @@ function renderLinesInner(){
       [['printing','Printing']]
         .map(([c, lab]) => h('button',{class:'btn small', onclick:() => addLine(c, 'print', lab, null, sh.id)}, '+ ' + lab)));
     boxes.print.append(h('div',{class:'sheetgrp'},
-      h('div',{class:'sghead'}, h('span',{class:'sgnum'}, 'Printed sheet ' + (i + 1)), h('span',{class:'sgamt'}, 'Sheet total ', h('b',{'data-g':sh.id}))),
+      h('div',{class:'sghead'}, h('span',{class:'sgnum'}, 'Printed item ' + (i + 1) + (itemName(sh) ? ' · ' + itemName(sh) : '')), h('span',{class:'sgamt'}, 'Sheet total ', h('b',{'data-g':sh.id}))),
       inner, addRow));
     groupBox[sh.id] = inner;
   });
@@ -3313,7 +3362,7 @@ function renderLinesInner(){
       if (millLine) f.push(fld('Thickness', sel([['','Other'], ...THICK.map(t => [t, t + ' mm'])], l.thick || '', {onchange:e => {
         l.thick = e.target.value || null; if (gsmFor(l)) l.gsm = gsmFor(l); touch(); renderLines(); }})));
       f.push(fld('Sheet size L (in)', numIn(l.L, v => upd('L', v))), fld('Sheet size W (in)', numIn(l.W, v => upd('W', v))), (millLine || l.thick) ? fld('GSM', numIn(l.gsm, v => upd('gsm', v))) : gsmField(l, upd),
-        ...(hasPastels(l) ? [fld('Wastage %', numIn(l.wastage, v => upd('wastage', v)))] : ownCount()), (lr && lr.askRate)
+        ...(hasPastels(l) || hasVars(l) ? [fld('Wastage %', numIn(l.wastage, v => upd('wastage', v)))] : ownCount()), (lr && lr.askRate)
           ? fld('Rate ₹/kg (this job)', numIn(l.rate, v => upd('rate', v), {placeholder:'enter', onchange:e => recordPrice(l.rateId, num(e.target.value), S.draft.date || today())}))
           : fld('Rate', numIn(l.rate, v => upd('rate', v))),
         fld('Per', sel([['kg','kg'],['sheet','sheet']], l.unit||'kg', {onchange:e => { upd('unit', e.target.value); }})));
@@ -3418,12 +3467,13 @@ function renderLinesInner(){
               l.coat = e.target.value || null; l.name = l.coat === 'none' ? 'No coating' : l.coat ? COATS[l.coat] : 'Coating';
               l.rateId = null; l.rate = null; touch(); renderLines();
             }}), 'name coatpick')
-          : h('label',{class:'fld name'}, h('span',{class:'ctype'}, isPrintSheet ? 'Paper & sheet size' : CALC[l.calc].tag), h('input',{value:l.name||'', placeholder: isPrintSheet ? 'e.g. Printed sheet 1' : 'Line name', 'aria-label':'Line name', oninput:e => upd('name', e.target.value)})),
+          : h('label',{class:'fld name'}, h('span',{class:'ctype'}, isPrintSheet ? 'Printed item' : CALC[l.calc].tag), h('input',{value: isPrintSheet && !itemName(l) ? '' : l.name||'', placeholder: isPrintSheet ? 'e.g. Lid + Base, or Sunscreen carton' : 'Line name', 'aria-label':'Line name', oninput:e => upd('name', e.target.value)})),
         l.calc === 'printing' || l.calc === 'diecut' || (isCoat && (!l.coat || l.coat === 'none')) || isIns || l.jobRate || (isFx && l.fxKind !== 'spotuv') ? null : fld(isPrintSheet ? 'Paper' : isCoat || isFx ? 'Type' : 'Rate from list', rateSel, 'rsel'),
         h('div',{class:'row', style:'gap:4px'},
           del)),
       h('div',{class:'fields'}, f),
-      l.calc === 'sheet' && partOf(l) !== 'board' && j.boxType !== 'mono' ? pastelEditor(l, upd) : null,
+      l.calc === 'sheet' && partOf(l) !== 'board' && RIGID.has(j.boxType) ? pastelEditor(l, upd) : null,
+      l.calc === 'sheet' && partOf(l) === 'print' && !RIGID.has(j.boxType) ? varsEditor(l) : null,
       needsRate(l) ? h('div',{class:'note warnline', 'data-warn':l.id}, (lr && lr.askRate) ? 'This paper has no fixed rate. Type this job’s rate per kg above.' : isPrintSheet && !l.rateId ? 'Choose the paper for this sheet in “Paper”.' : l.fx && !l.fxKind ? 'Choose the special effect.' : l.fx && l.fxKind !== 'spotuv' && l.passes == null ? 'Enter the number of blocks.' : l.calc === 'diecut' && partOf(l) === 'die' && l.dies == null ? 'Enter the number of dies.' : isCoat && !l.coat ? 'Choose the coating: Lamination, Varnish or Hybrid.' : isIns && !l.insType ? 'Choose the insert type: Foam, Paper cavity or Kappa board tray.' : l.making ? 'Type the making charge per box for this job.' : l.jobRate ? 'Type the cost per piece for this job.' : isIns && l.insType === 'foam' && !l.foamMat ? 'Choose the foam material.' : isIns ? 'No rate saved yet for this insert. Add it in Rate list → Inserts, or press “Show rates” to type it.' : isCoat && !l.rateId ? 'Now choose the type.' : 'No rate set for this line. Choose one in “Rate from list”, or press “Show rates” at the top to type it.') : null,
       h('div',{class:'line-foot'},
         h('div',{class:'detail', 'data-detail':l.id}),
@@ -3527,7 +3577,7 @@ function specFromCosting(j){
   const sheets = sheetsL.map((l, i) => {
     const pr = j.lines.find(x => x.calc === 'printing' && x.link === l.id);
     return {name: l.name || 'Printed sheet ' + (i + 1), paper: rname(l), gsm: l.gsm ?? null, L: l.L ?? null, W: l.W ?? null,
-      ups: hasPastels(l) ? pastelText(l) : (l.ups != null ? String(l.ups) + ' ups' : ''), colours: pr ? (pr.colours ?? null) : null, pantone:'', count: sheetsOf(l, qty) || null};
+      ups: hasVars(l) ? l.vars.map((v, k) => (v.name || 'Variant ' + (k + 1)) + ' × ' + fmtN(n0(v.ups)) + ' (' + fmtN(n0(v.qty)) + ' pcs)').join(', ') : hasPastels(l) ? pastelText(l) : (l.ups != null ? String(l.ups) + ' ups' : ''), colours: pr ? (pr.colours ?? null) : null, pantone:'', count: sheetsOf(l, qty) || null};
   });
   const coatL = j.lines.find(l => l.calc === 'area' && inPart(l, 'finish'));
   const coat = !coatL || !coatL.coat ? '' : coatL.coat === 'none' ? 'None' : (rname(coatL) || COATS[coatL.coat]);

@@ -41,6 +41,7 @@ explain changes in plain words, never ask him to run commands, and test before p
   varnish L×W÷8 paise/sheet, hybrid ÷3.5; foil/emboss block ₹2000 + ₹0.70/up, min ₹4000; spot UV ₹1.50 / ₹3 crystal per sheet + ₹1000 positive;
   die ₹1500 each + cutting ₹1200 first 1000 sheets, ₹800 per further 1000 (on all printed sheets); magnets 2 per box if W > 170 mm else 1.
 - Mono cartons (Raj): calculators Printing & paper → Finishing → Die → Fabrication → Packaging & forwarding (numbered 1–5; `partNum` follows `partsFor`). Papers SBS / Art card / Duplex / Imported paper / Imported kraft; sheet cost (L×W×GSM÷3100 × ₹/kg ÷ 500) = same as the L×W×GSM÷1,550,000 rule; sheets = qty ÷ ups + wastage %; no pastels. Printing, coating, finishes, die same as rigid.
+  Printed sheets are called “Printed item” (name field: one name or “Lid + Base”; default names “Printed item N” are treated as unnamed). Non-rigid printed items can carry variants on one sheet (`l.vars` [{name, qty, ups}]): sheets = max(qty ÷ ups) + wastage, job qty = total of the variants (when one item has them), the rest are extras; rigid boxes keep pastels.
   Fabrication line (`calc:'fab'`): side pasting always ₹300 per 1000 cartons, Euro slot / Window pasting optional (rates per 1000 from the rate list by name, else last typed, kept in settings). Packaging line (`calc:'pack'`): in sheet ₹10 per 2000 pcs (part 2000 = full) or in carton: ceil(qty/1000) × ₹ per carton.
 
 ## Making a change
