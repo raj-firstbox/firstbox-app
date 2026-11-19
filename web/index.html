@@ -36,10 +36,10 @@ h1{font-size:22px} h2{font-size:17px} h3{font-size:14px}
 /* Home tiles */
 .brand.home-link{cursor:pointer}
 .hgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px;margin-bottom:22px}
-.htile{display:grid;grid-template-columns:auto 1fr;grid-template-rows:auto auto;column-gap:16px;row-gap:12px;align-items:start;text-align:left;background:var(--surface);border:1px solid var(--line);border-top:4px solid var(--brand);border-radius:10px;padding:22px;font:inherit;color:var(--fg);cursor:pointer;min-height:150px;transition:box-shadow .15s,border-color .15s,transform .15s}
+.htile{display:grid;grid-template-columns:auto 1fr;column-gap:16px;align-items:center;text-align:left;background:var(--surface);border:1px solid var(--line);border-top:4px solid var(--brand);border-radius:10px;padding:22px;font:inherit;color:var(--fg);cursor:pointer;min-height:120px;transition:box-shadow .15s,border-color .15s,transform .15s}
 .htile:hover,.htile:focus-visible{border-color:var(--brand);box-shadow:0 8px 24px rgba(31,26,22,.10);transform:translateY(-1px)}
 .htile:focus-visible{outline:2px solid var(--brand);outline-offset:2px}
-.hicon{display:grid;place-items:center;width:54px;height:54px;border-radius:12px;background:var(--accent-soft);color:var(--accent);grid-row:span 2}
+.hicon{display:grid;place-items:center;width:54px;height:54px;border-radius:12px;background:var(--accent-soft);color:var(--accent)}
 .htext{display:grid;gap:4px}
 .htitle{font-family:var(--font-display);font-weight:700;font-size:21px}
 .hdesc{font-size:14px;color:var(--muted)}
@@ -867,8 +867,7 @@ function renderHome(){
   const lastCard = cards.sort((a, b) => n0(b.createdAt) - n0(a.createdAt))[0];
   const icon = k => { const s = h('span',{class:'hicon', 'aria-hidden':'true'}); s.innerHTML = '<svg viewBox="0 0 24 24" width="30" height="30" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">' + ICONS[k] + '</svg>'; return s; };
   const tile = (k, view, title, desc, stat, alert, small) => h('button',{type:'button', class:'htile' + (small ? ' small' : ''), onclick:() => go(view)},
-    icon(k), h('span',{class:'htext'}, h('span',{class:'htitle'}, title), h('span',{class:'hdesc'}, desc)),
-    stat ? h('span',{class:'hstat' + (alert ? ' alert' : '')}, stat) : '');
+    icon(k), h('span',{class:'htext'}, h('span',{class:'htitle'}, title), h('span',{class:'hdesc'}, desc)));
   const hr = new Date().getHours();
   root.append(h('div',{class:'head'}, h('div',{}, h('h1',{}, (hr < 12 ? 'Good morning' : hr < 17 ? 'Good afternoon' : 'Good evening')), h('div',{class:'note'}, 'What would you like to work on?'))));
   root.append(h('div',{class:'hgrid'},
