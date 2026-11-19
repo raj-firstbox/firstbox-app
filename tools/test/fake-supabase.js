@@ -11,8 +11,8 @@
   let session = JSON.parse(sessionStorage.getItem(AU) || 'null');
   const authCbs = [];
   const role = () => { const d = load(); const m = session && d.members.find(x => x.user_id === session.user.id); return m ? m.role : ''; };
-  const canRead = (r) => role() === 'owner' || (['inventory','jobcards'].includes(role()) && ['jobcards','stock','stockLog','shared'].includes(r.col)) || (role() === 'jobcards' && ['orders','invoices','clients'].includes(r.col));
-  const canWrite = (col) => role() === 'owner' || (role() === 'jobcards' && ['jobcards','stock','stockLog','orders','invoices','clients'].includes(col)) || (role() === 'inventory' && ['stock','stockLog'].includes(col));
+  const canRead = (r) => role() === 'owner' || (['inventory','jobcards'].includes(role()) && ['jobcards','stock','stockLog','shared'].includes(r.col)) || (role() === 'jobcards' && ['orders','invoices','clients','billItems'].includes(r.col));
+  const canWrite = (col) => role() === 'owner' || (role() === 'jobcards' && ['jobcards','stock','stockLog','orders','invoices','clients','billItems'].includes(col)) || (role() === 'inventory' && ['stock','stockLog'].includes(col));
   function q(table){
     const st = {table, filters:[], op:'select', range:null, single:false};
     const api = {
@@ -69,6 +69,10 @@
           const u = String(args.p_username).toLowerCase(); if (d.members.some(m => m.username === u)) return {error:{message:'P0001: The username "' + u + '" is already taken'}};
           const id = 'u-' + Math.random().toString(36).slice(2, 10); d.users.push({id, email: u + '@firstbox.local', password: args.p_password});
           d.members.push({user_id:id, email:u + '@firstbox.local', name:args.p_name, username:u, role:args.p_role, created_at:new Date().toISOString()}); save(d); notify('members', {eventType:'INSERT', new:{}, old:{}}); return {data:id, error:null}; }
+        if (name === 'set_gst_api_key'){ if (role() !== 'owner') return {error:{message:'Only the owner can set the GST lookup key'}}; d.gstKey = args.p_key || null; save(d); return {data:null, error:null}; }
+        if (name === 'gst_key_set'){ return {data: !!d.gstKey && ['owner','jobcards'].includes(role()), error:null}; }
+        if (name === 'gst_lookup'){ if (!['owner','jobcards'].includes(role())) return {error:{message:'Not allowed'}}; if (!d.gstKey) return {error:{message:'P0001: GST lookup is not set up yet'}};
+          return {data:{gstin:args.p_gstin, lgnm:'BABYAURA ESSENTIALS PRIVATE LIMITED', tradeNam:'BABYAURA', sts:'Active', pradr:{addr:{bno:'1103-A', bnm:'SAS Tower', st:'Sector 38', loc:'Gurugram', dst:'Gurugram', stcd:'Haryana', pncd:'122001'}}}, error:null}; }
         if (name === 'set_member_password'){ if (role() !== 'owner') return {error:{message:'no'}}; const us = d.users.find(x => x.id === args.p_user); us.password = args.p_password; save(d); return {data:null, error:null}; }
         if (name === 'delete_member'){ if (role() !== 'owner') return {error:{message:'no'}}; d.users = d.users.filter(x => x.id !== args.p_user); d.members = d.members.filter(x => x.user_id !== args.p_user); save(d); notify('members', {eventType:'DELETE', new:{}, old:{}}); return {data:null, error:null}; } const m = d.members.find(x => session && x.user_id === session.user.id); if (m && ['removed','pending'].includes(m.role)){ m.role = 'pending'; if (args.p_name) m.name = args.p_name; save(d); notify('members', {eventType:'UPDATE', new:m, old:{}}); } return {data:null, error:null}; },
       channel(){ const ch = { on(kind, opt, fn){ handlers.push({table: opt.table, fn}); return ch; }, subscribe(cb){ setTimeout(() => cb('SUBSCRIBED'), 5); return ch; } }; return ch; }

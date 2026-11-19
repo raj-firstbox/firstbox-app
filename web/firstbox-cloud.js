@@ -315,6 +315,24 @@
     }
   });
 
+  // Client details from a GSTIN, through the database (the service key never reaches the browser). See supabase/gst-lookup.sql.
+  window.firstboxGst = Object.freeze({
+    async lookup(gstin) {
+      const { data, error } = await sb.rpc('gst_lookup', { p_gstin: gstin });
+      if (error) rpcErr(error);
+      return data;
+    },
+    async setKey(key) {
+      const { error } = await sb.rpc('set_gst_api_key', { p_key: key });
+      if (error) rpcErr(error);
+    },
+    async isSet() {
+      const { data, error } = await sb.rpc('gst_key_set');
+      if (error) return false;
+      return !!data;
+    }
+  });
+
   window.claude = Object.freeze({
     async use(name) {
       if (!['db', 'user', 'downloads'].includes(name)) return null;

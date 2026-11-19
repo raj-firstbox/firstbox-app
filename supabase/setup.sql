@@ -57,7 +57,7 @@ begin
 end $$;
 
 -- 6. Rules. Costings, rates, price history and settings: owner only.
---    Job cards role: job cards + stock + client POs (orders; PO rates in poRates stay owner only) + invoices and the client list. Inventory role: stock (reads job cards to see what is needed).
+--    Job cards role: job cards + stock + client POs (orders; PO rates in poRates stay owner only) + invoices, the client list and saved invoice items. Inventory role: stock (reads job cards to see what is needed).
 alter table public.members enable row level security;
 alter table public.docs    enable row level security;
 
@@ -79,22 +79,22 @@ drop policy if exists docs_delete on public.docs;
 create policy docs_read on public.docs for select to authenticated using (
   public.my_role() = 'owner'
   or (public.my_role() in ('inventory','jobcards') and col in ('jobcards','stock','stockLog','shared'))
-  or (public.my_role() = 'jobcards' and col in ('orders','invoices','clients'))
+  or (public.my_role() = 'jobcards' and col in ('orders','invoices','clients','billItems'))
 );
 create policy docs_insert on public.docs for insert to authenticated with check (
   public.my_role() = 'owner'
-  or (public.my_role() = 'jobcards'  and col in ('jobcards','stock','stockLog','orders','invoices','clients'))
+  or (public.my_role() = 'jobcards'  and col in ('jobcards','stock','stockLog','orders','invoices','clients','billItems'))
   or (public.my_role() = 'inventory' and col in ('stock','stockLog'))
 );
 create policy docs_update on public.docs for update to authenticated
   using (
     public.my_role() = 'owner'
-    or (public.my_role() = 'jobcards'  and col in ('jobcards','stock','stockLog','orders','invoices','clients'))
+    or (public.my_role() = 'jobcards'  and col in ('jobcards','stock','stockLog','orders','invoices','clients','billItems'))
     or (public.my_role() = 'inventory' and col in ('stock','stockLog'))
   )
   with check (
     public.my_role() = 'owner'
-    or (public.my_role() = 'jobcards'  and col in ('jobcards','stock','stockLog','orders','invoices','clients'))
+    or (public.my_role() = 'jobcards'  and col in ('jobcards','stock','stockLog','orders','invoices','clients','billItems'))
     or (public.my_role() = 'inventory' and col in ('stock','stockLog'))
   );
 create policy docs_delete on public.docs for delete to authenticated using (
