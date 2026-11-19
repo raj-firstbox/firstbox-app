@@ -2281,8 +2281,12 @@ function challanFromLot(o, d){
 
 // ----- Payments received -----
 // payments/<id>: no, num, date, client{name,gstin,...}, amount, tds, mode, ref, bank, kind, billId (proforma or tax invoice it is for, or ''), note, by.
-const PAY_KINDS = {advance:'Advance', full:'Full payment', part:'Part payment', other:'Other'};
-const PAY_MODES = ['Bank transfer (NEFT / RTGS / IMPS)', 'UPI', 'Cheque', 'Cash', 'Card', 'Other'];
+const PAY_KINDS = {advance:'Advance', full:'Balance clearance', part:'Part payment', other:'Other'};
+const PAY_KIND_OPTS = ['advance', 'full', 'part'];
+const PAY_MODES = ['Bank transfer (NEFT / RTGS / IMPS)', 'UPI', 'Cheque', 'Cash', 'Other'];
+// The detail asked for each mode (UPI: account number, as Raj asked).
+const payRefLabel = mode => /UPI/.test(mode || '') ? 'Account number / UPI ID' : /Cheque/.test(mode || '') ? 'Cheque no.' : /Bank/.test(mode || '') ? 'UTR / reference no.' : '';
+const payRef = p => /UPI/.test(p.mode || '') ? (p.upiAcc || p.ref || '') : (p.ref || '');
 function nextPayNo(){
   const c = billCfg(), prefix = String(c.rcPrefix || '').trim(); let n = n0(c.rcNext) || 1;
   for (const p of S.payments.values()) if (String(p.no || '').startsWith(prefix)){ const m = /(\d+)$/.exec(String(p.no).slice(prefix.length)); if (m) n = Math.max(n, +m[1] + 1); }
@@ -2323,7 +2327,7 @@ function paymentsPanel(b){
       h('thead',{}, h('tr',{}, h('th',{},'Date'), h('th',{},'Receipt no.'), h('th',{},'For'), h('th',{},'Mode / reference'), h('th',{class:'n'},'Amount'))),
       h('tbody',{}, st.ps.map(p => h('tr',{},
         h('td',{}, fmtDate(p.date)), h('td',{}, h('button',{class:'linkbtn', onclick:() => go('pay', p.id)}, p.no || 'Receipt')),
-        h('td',{}, payFor(p)), h('td',{}, [p.mode, p.ref].filter(Boolean).join(' · ')),
+        h('td',{}, payFor(p)), h('td',{}, [p.mode, payRef(p)].filter(Boolean).join(' · ')),
         h('td',{class:'n'}, h('b',{}, rs2(paySettled(p))), n0(p.tds) ? h('div',{class:'sub'}, 'incl. TDS ' + rs2(p.tds)) : null)))))) : h('div',{class:'note'}, b.type === 'proforma' ? 'Record the advance here when the client pays. It carries over to the tax invoice made from this proforma.' : 'Record each payment the client makes against this invoice.'),
     h('div',{class:'row'}, h('button',{class:'btn primary', onclick:() => newPaymentFor(b)}, '+ Record payment')));
   return box;
@@ -2373,7 +2377,7 @@ function renderPay(){
     nameIn.value = c.name; phoneIn.value = c.phone || ''; touch(); fillFor(); }});
   const nameIn = h('input',{value:p.client.name || '', placeholder:'Client name', oninput:e => { p.client.name = e.target.value; touch(); fillFor(); }});
   const phoneIn = h('input',{type:'tel', value:p.client.phone || '', placeholder:'For WhatsApp, e.g. 98100 12345', oninput:e => { p.client.phone = e.target.value; touch(); }});
-  const kindSel = sel(Object.entries(PAY_KINDS), p.kind || 'advance', {onchange:e => { p.kind = e.target.value; p.kindTouched = true; touch(); }});
+  const kindSel = sel([...new Set([...PAY_KIND_OPTS, p.kind || 'advance'])].map(k => [k, PAY_KINDS[k] || k]), p.kind || 'advance', {onchange:e => { p.kind = e.target.value; p.kindTouched = true; touch(); }});
   // For a tax invoice the type follows the amount (full or part) until it is chosen by hand.
   const autoKind = () => { const b = p.billId && S.bills.get(p.billId); if (p.kindTouched || !b || b.type !== 'invoice') return; const st = billPaid(b, p.id); p.kind = paySettled(p) >= st.bal - 0.5 ? 'full' : 'part'; if (kindSel) kindSel.value = p.kind; };
   const amtIn = numIn(p.amount, v => { p.amount = v; autoKind(); touch(); }, {placeholder:'₹ received'});
@@ -2382,16 +2386,20 @@ function renderPay(){
     h('section',{class:'inv-party'}, h('h2',{}, 'Received From ', h('span',{}, '(Client)')), clientPick,
       h('div',{class:'inv-pbox', style:'gap:10px'}, h('div',{class:'grid'}, fld('Client', nameIn, 'wide'), fld('WhatsApp / phone', phoneIn)))),
     h('section',{class:'inv-party'}, h('h2',{}, 'Payment Details'),
-      h('div',{class:'inv-pbox', style:'gap:10px'},
-        fld('Payment is for', forSel),
-        h('div',{class:'grid'},
-          fld('Type', kindSel),
-          fld('Amount received (₹)', amtIn),
-          fld('TDS deducted by client (₹)', numIn(p.tds, v => { p.tds = v; autoKind(); touch(); }, {placeholder:'Optional'})),
-          fld('Mode', sel(PAY_MODES.map(m => [m, m]), p.mode || PAY_MODES[0], {onchange:e => { p.mode = e.target.value; touch(); }})),
-          fld('UTR / cheque / reference no.', h('input',{value:p.ref || '', placeholder:'Optional', oninput:e => { p.ref = e.target.value; touch(); }})),
-          fld('Bank / UPI app', h('input',{value:p.bank || '', placeholder:'Optional', oninput:e => { p.bank = e.target.value; touch(); }}))),
-        fld('Note (prints on the receipt)', h('input',{value:p.note || '', placeholder:'Optional', oninput:e => { p.note = e.target.value; touch(); }}))))));
+      payDetails())));
+  // Order Raj asked for: payment against, amount, type, mode, (UPI: account number), notes.
+  function payDetails(){
+    const refBox = h('div',{});
+    const drawRef = () => { const l = payRefLabel(p.mode); const up = /UPI/.test(p.mode || '');
+      refBox.replaceChildren(l ? fld(l, h('input',{value: up ? (p.upiAcc || '') : (p.ref || ''), placeholder: up ? 'Account no. or UPI ID the money came to' : 'Optional', oninput:e => { if (up) p.upiAcc = e.target.value; else p.ref = e.target.value; touch(); }})) : ''); };
+    drawRef();
+    return h('div',{class:'inv-pbox', style:'gap:12px'},
+      fld('1. Payment against', forSel),
+      h('div',{class:'grid'}, fld('2. Amount received (₹)', amtIn), fld('3. Type', kindSel)),
+      h('div',{class:'grid'}, fld('4. Mode', sel([...new Set([...PAY_MODES, p.mode || PAY_MODES[0]])].map(m => [m, m]), p.mode || PAY_MODES[0], {onchange:e => { p.mode = e.target.value; drawRef(); touch(); }})), refBox),
+      n0(p.tds) ? fld('TDS deducted by client (₹)', numIn(p.tds, v => { p.tds = v; autoKind(); touch(); })) : null,
+      fld('5. Notes (if any, prints on the receipt)', h('textarea',{rows:'2', placeholder:'Optional', oninput:e => { p.note = e.target.value; touch(); }}, p.note || '')));
+  }
   const sum = h('div',{class:'inv-tot'});
   const refresh = () => {
     topSum.replaceChildren(h('span',{class:'inv-sum-l'}, 'Amount received'), h('span',{class:'inv-sum-v'}, rs2(p.amount)), h('span',{class:'inv-sum-s'}, payFor(p)), (p.client || {}).name ? h('span',{class:'inv-sum-c'}, p.client.name) : null);
@@ -2411,7 +2419,7 @@ function renderPay(){
 const payDocTxt = p => { const b = p.billId && S.bills.get(p.billId); return b ? (p.kind === 'advance' ? 'as advance against ' : 'towards ') + BILL_TYPE[b.type].toLowerCase() + ' no. ' + b.no : p.kind === 'advance' ? 'as advance' : ''; };
 function payMessage(p){
   const cfg = billCfg();
-  return 'Dear ' + ((p.client || {}).name || 'Sir/Madam') + ',\nWe have received ' + rsN(p.amount) + ' on ' + fmtDate(p.date) + (p.mode ? ' by ' + p.mode : '') + (p.ref ? ' (ref. ' + p.ref + ')' : '') + (payDocTxt(p) ? ' ' + payDocTxt(p) : '') + '.' +
+  return 'Dear ' + ((p.client || {}).name || 'Sir/Madam') + ',\nWe have received ' + rsN(p.amount) + ' on ' + fmtDate(p.date) + (p.mode ? ' by ' + p.mode : '') + (payRef(p) ? ' (' + (/UPI/.test(p.mode || '') ? 'a/c ' : 'ref. ') + payRef(p) + ')' : '') + (payDocTxt(p) ? ' ' + payDocTxt(p) : '') + '.' +
     (n0(p.tds) ? '\nTDS deducted: ' + rsN(p.tds) + '.' : '') + '\nPayment receipt no. ' + (p.no || '') + ' is attached.\nThank you!\n' + (cfg.name || 'Firstbox');
 }
 async function copyPayMsg(p, btn){
@@ -2473,8 +2481,8 @@ async function buildReceiptPdf(p){
   const aw = wrap(amountWords(n0(p.amount)), FB, 8.5, BW - 230); aw.forEach((l, i) => text(l, M + 18, y - 44 - i * 11, FB, 8.5, rgb(1, 1, 1)));
   y -= 74 + 22;
   // Details
-  const rows = [['Payment for', (PAY_KINDS[p.kind] || 'Payment') + (b ? (p.kind === 'advance' ? ' against ' : ' for ') + BILL_TITLE[b.type] + ' No. ' + b.no + (b.date ? ' dated ' + billDate(b.date) : '') : '')],
-    ['Payment date', billDate(p.date)], ['Payment mode', p.mode], ['Reference no.', p.ref], ['Bank / UPI', p.bank], ['TDS deducted', n0(p.tds) ? money(p.tds) : ''], ['Total settled', n0(p.tds) ? money(paySettled(p)) : ''], ['Note', p.note]].filter(r => String(r[1] || '').trim());
+  const rows = [['Payment against', (PAY_KINDS[p.kind] || 'Payment') + (b ? (p.kind === 'advance' ? ' against ' : ' for ') + BILL_TITLE[b.type] + ' No. ' + b.no + (b.date ? ' dated ' + billDate(b.date) : '') : '')],
+    ['Payment date', billDate(p.date)], ['Payment mode', p.mode], [payRefLabel(p.mode) || 'Reference no.', payRef(p)], ['Bank / UPI', p.bank], ['TDS deducted', n0(p.tds) ? money(p.tds) : ''], ['Total settled', n0(p.tds) ? money(paySettled(p)) : ''], ['Note', p.note]].filter(r => String(r[1] || '').trim());
   text('Payment Details', M, y, F, 12, OR); y -= 18;
   rows.forEach(([k, v], i) => { const ls = wrap(v, F, 10, BW - 150); if (i % 2 === 0) page.drawRectangle({x: M, y: y - 6 - (ls.length - 1) * 13, width: BW, height: 20 + (ls.length - 1) * 13, color: rgb(1, 0.973, 0.953)});
     text(k, M + 10, y, FB, 10); ls.forEach((l, j) => text(l, M + 150, y - j * 13, F, 10)); y -= 20 + (ls.length - 1) * 13; });
@@ -2518,13 +2526,13 @@ function paymentsList(box){
     tbox.replaceChildren();
     if (!all.length){ tbox.append(h('div',{class:'empty'}, S.payments.size && (S.billPeriod || 'fy') !== 'all' ? 'No payments in this period. Choose another period above, or “All time”.' : 'No payments recorded yet. Press “+ Record payment”, or use the button on a proforma or tax invoice.')); return; }
     const q = S.billQ.trim().toLowerCase();
-    const rows = all.filter(p => !q || [p.no, (p.client || {}).name, p.ref, payFor(p)].join(' ').toLowerCase().includes(q)).sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')) || n0(b.createdAt) - n0(a.createdAt));
+    const rows = all.filter(p => !q || [p.no, (p.client || {}).name, payRef(p), payFor(p)].join(' ').toLowerCase().includes(q)).sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')) || n0(b.createdAt) - n0(a.createdAt));
     if (!rows.length){ tbox.append(h('div',{class:'empty'},'Nothing matches.')); return; }
     tbox.append(h('table',{class:'jobs'},
       h('thead',{}, h('tr',{}, h('th',{},'Receipt no.'), h('th',{},'Date'), h('th',{},'Client'), h('th',{},'For'), h('th',{},'Mode'), h('th',{class:'n'},'Amount'), own ? h('th',{class:'act'}, h('span',{class:'sr'},'Delete')) : null)),
       h('tbody',{}, rows.map(p => h('tr',{tabindex:'0', onclick:() => go('pay', p.id), onkeydown:e => { if (e.key === 'Enter') go('pay', p.id); }},
         h('td',{}, h('span',{class:'jcno'}, p.no || '—')), h('td',{}, fmtDate(p.date)), h('td',{}, h('div',{class:'jobno'}, (p.client || {}).name || '(no client)')),
-        h('td',{}, payFor(p)), h('td',{}, h('div',{}, p.mode || ''), p.ref ? h('div',{class:'sub'}, p.ref) : null),
+        h('td',{}, payFor(p)), h('td',{}, h('div',{}, p.mode || ''), payRef(p) ? h('div',{class:'sub'}, payRef(p)) : null),
         h('td',{class:'n'}, h('b',{}, rs2(p.amount)), n0(p.tds) ? h('div',{class:'sub'}, '+ TDS ' + rs2(p.tds)) : null),
         own ? h('td',{class:'act'}, rowDelete('payment receipt ' + (p.no || ''), async () => { S.payments.delete(p.id); await removeDoc('payments/' + p.id); renderBills(); })) : null)))));
   };
