@@ -1,6 +1,7 @@
 name: Build Firstbox
 
-# Push a tag like v1.0.1 to build the Mac and Windows apps and publish them as a release.
+# To publish new installers: raise "version" in package.json, push to main, then run this workflow
+# (Actions › Build Firstbox › Run workflow) with "Publish a release" ticked. A tag vX.Y.Z also works.
 # Every push to main also publishes the page online (when the repository is public),
 # so the installed apps pick up changes without reinstalling.
 on:
@@ -8,6 +9,11 @@ on:
     branches: [main]
     tags: ['v*']
   workflow_dispatch:
+    inputs:
+      publish:
+        description: 'Publish a release with the installers'
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -58,7 +64,7 @@ jobs:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
         run: |
           if [ "${{ runner.os }}" = "macOS" ]; then T=--mac; else T=--win; fi
-          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then P=always; else P=never; fi
+          if [[ "$GITHUB_REF" == refs/tags/v* || "${{ inputs.publish }}" == "true" ]]; then P=always; else P=never; fi
           npx electron-builder $T --publish $P
       - name: Check the app starts
         shell: bash
