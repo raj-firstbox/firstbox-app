@@ -29,25 +29,29 @@ h1{font-size:22px} h2{font-size:17px} h3{font-size:14px}
 .setwrap{position:relative}
 /* Home tiles */
 .brand.home-link{cursor:pointer}
-.hgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px;margin-bottom:22px}
-.htile{display:grid;grid-template-columns:auto 1fr;column-gap:16px;align-items:center;text-align:left;background:var(--surface);border:1px solid var(--line);border-top:4px solid var(--brand);border-radius:10px;padding:22px;font:inherit;color:var(--fg);cursor:pointer;min-height:120px;transition:box-shadow .15s,border-color .15s,transform .15s}
-.htile:hover,.htile:focus-visible{border-color:var(--brand);box-shadow:0 8px 24px rgba(31,26,22,.10);transform:translateY(-1px)}
-.htile:focus-visible{outline:2px solid var(--brand);outline-offset:2px}
-.hicon{display:grid;place-items:center;width:54px;height:54px;border-radius:12px;background:var(--accent-soft);color:var(--accent)}
-.htext{display:grid;gap:4px}
-.htitle{font-family:var(--font-display);font-weight:700;font-size:21px}
-.hdesc{font-size:14px;color:var(--muted)}
-.hstat{grid-column:2;font-size:13px;font-weight:600;color:var(--accent);background:var(--accent-soft);border-radius:999px;padding:4px 10px;justify-self:start}
-.hstat.alert{color:#fff;background:#B42318}
-.htile.small{min-height:0;padding:16px;border-top-width:3px}
-.htile.small .hicon{width:42px;height:42px;border-radius:10px}
-.htile.small .htitle{font-size:17px}
+#view-home{max-width:1000px;margin:0 auto}
 .on-home .bar{display:none}
-.hhero{position:relative;display:grid;justify-items:center;text-align:center;gap:6px;padding:28px 0 26px}
-.hlogo{width:min(420px,80vw);height:auto;margin-bottom:14px}
-.hhero h1{font-size:24px}
+.hhero{position:relative;display:grid;justify-items:center;text-align:center;gap:4px;padding:18px 0 0}
+.hlogo{width:min(260px,64vw);height:auto;margin-bottom:18px}
+.hhero h1{font-size:22px}
+.hhero .note{font-size:14px}
 .hsignout{position:absolute;top:0;right:0}
-.hsub{font-size:13px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin:4px 0 10px}
+.hdivider{border:0;height:1px;background:var(--line);margin:26px 0 22px;position:relative;overflow:visible}
+.hdivider::after{content:"";position:absolute;left:50%;top:-1px;width:56px;height:3px;margin-left:-28px;background:var(--brand);border-radius:2px}
+.hsub{display:flex;align-items:center;gap:12px;font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin:0 0 12px}
+.hsub::after{content:"";flex:1;height:1px;background:var(--line)}
+.hgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:26px}
+@media (max-width:760px){.hgrid{grid-template-columns:1fr}}
+.htile{display:flex;align-items:center;gap:16px;text-align:left;background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:18px;font:inherit;color:var(--fg);cursor:pointer;min-height:108px;transition:box-shadow .15s,border-color .15s,transform .15s}
+.htile:hover,.htile:focus-visible{border-color:var(--brand);box-shadow:0 8px 24px rgba(31,26,22,.08);transform:translateY(-1px)}
+.htile:focus-visible{outline:2px solid var(--brand);outline-offset:2px}
+.hicon{flex:none;display:grid;place-items:center;width:50px;height:50px;border-radius:12px;background:var(--accent-soft);color:var(--accent)}
+.htext{display:grid;gap:3px}
+.htitle{font-family:var(--font-display);font-weight:700;font-size:19px}
+.hdesc{font-size:13.5px;color:var(--muted);line-height:1.4}
+.htile.small{min-height:84px;padding:14px 16px}
+.htile.small .hicon{width:40px;height:40px;border-radius:10px}
+.htile.small .htitle{font-size:16px}
 .rowdel{display:inline-grid;place-items:center;min-width:34px;height:34px;padding:0 8px;border:1px solid transparent;border-radius:6px;background:none;color:var(--muted);cursor:pointer;font:inherit;font-size:13px;font-weight:600;white-space:nowrap}
 .rowdel:hover,.rowdel:focus-visible{color:var(--neg,#B42318);border-color:var(--line);background:var(--surface)}
 .rowdel.armed{color:#fff;background:#B42318;border-color:#B42318}
@@ -870,6 +874,7 @@ function renderHome(){
     h('img',{class:'hlogo', src:($('#logo') || {}).src || '', alt:'Firstbox'}),
     h('h1',{}, (S.myName ? 'Hi ' + S.myName + ', ' : '') + (hr < 12 ? (S.myName ? 'good morning' : 'Good morning') : hr < 17 ? (S.myName ? 'good afternoon' : 'Good afternoon') : (S.myName ? 'good evening' : 'Good evening'))),
     h('div',{class:'note'}, 'What would you like to work on?')));
+  root.append(h('hr',{class:'hdivider'}), h('h2',{class:'hsub'}, 'Work'));
   root.append(h('div',{class:'hgrid'},
     tile('jobs', 'jobs', 'Costings', 'Work out cost and quote for an order',
       S.loaded.jobs ? jobs.length + ' costing' + (jobs.length === 1 ? '' : 's') + ' · ' + jobs.filter(j => (j.date || '').slice(0, 7) === month).length + ' this month' : loading),
