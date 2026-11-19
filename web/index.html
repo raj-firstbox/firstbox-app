@@ -239,7 +239,7 @@ tbody tr:last-child td{border-bottom:0}
 .jcrow .fld{flex:1 1 110px}
 .jcrow .fld.w2{flex:2 1 200px}
 .jcrow .fld.w0{flex:0 1 80px}
-.card .grid,.billitem .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
+.card .grid,.billitem .grid,.inv-pbox .grid,.inv-party .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
 .grid .fld.wide{grid-column:span 2}
 @media (max-width:520px){.grid .fld.wide{grid-column:auto}}
 .billitem{border:1px solid var(--line);border-radius:8px;padding:10px 12px;display:grid;gap:8px;background:var(--surface)}
@@ -1470,9 +1470,11 @@ function newBill(type, extra){
 }
 const blankItem = () => { const c = billCfg(); return {id: uid(), name:'', hsn: c.hsn, size:'', desc:'', qty: null, unit: c.unit, rate: null, gst: n0(c.gst)}; };
 function saveBill(b){ b.updatedAt = Date.now(); S.bills.set(b.id, b); const snap = clone(b); scheduleSave('invoices/' + b.id, () => snap, 500); }
+const realClients = () => [...S.clients.values()].filter(c => c.kind !== 'transporter');
+const transporters = () => [...S.clients.values()].filter(c => c.kind === 'transporter').sort((a, b) => String(a.name).localeCompare(String(b.name)));
 function findClient(name, gstin){
   const g = String(gstin || '').trim().toUpperCase(), n = normC(name);
-  const all = [...S.clients.values()];
+  const all = realClients();
   return (g && all.find(c => String(c.gstin || '').toUpperCase() === g)) || (n && all.find(c => normC(c.name) === n)) || null;
 }
 let clientT = null;
@@ -1567,7 +1569,7 @@ function renderBills(){
       kpi('Tax invoices', String(all.length), 'in total')] : [
       kpi('Open proformas', String(all.filter(r => !(r.b.toId && S.bills.has(r.b.toId))).length), 'not yet turned into a tax invoice'),
       kpi('Proformas this month', String(mon.length), rs(mon.reduce((a, r) => a + r.c.total, 0)) + ' incl. GST'),
-      kpi('Clients saved', String(S.clients.size), 'filled in automatically next time')]));
+      kpi('Clients saved', String(realClients().length), 'filled in automatically next time')]));
   const search = h('input',{type:'search', placeholder:'Search no., client, GSTIN or item', value:S.billQ, style:'flex:1 1 240px'});
   const tbox = h('div',{class:'tablebox'});
   box.append(h('div',{class:'row', style:'margin-bottom:10px'}, search), tbox);
@@ -1641,7 +1643,8 @@ function renderBill(){
   const own = isOwnerRole(), cfg = billCfg(), pf = b.type === 'proforma';
   b.client = b.client || {}; b.items = b.items || [];
   if (b.showBank == null) b.showBank = true;
-  const touch = () => { saveBill(b); refreshTotals(); };
+  let lastInter = billInter(b);
+  const touch = () => { saveBill(b); refreshTotals(); if (billInter(b) !== lastInter){ lastInter = billInter(b); drawItems(); } };
   const cl = b.client;
   const to = b.toId && S.bills.get(b.toId), from = b.fromId && S.bills.get(b.fromId);
   root.append(h('div',{class:'head'},
@@ -1671,7 +1674,7 @@ function renderBill(){
   const party = h('section',{class:'inv-party'});
   const drawParty = () => {
     const edit = !!S.clientEdit;
-    const opts = [...S.clients.values()].sort((a, c) => String(a.name).localeCompare(String(c.name)));
+    const opts = realClients().sort((a, c) => String(a.name).localeCompare(String(c.name)));
     const pick = sel([['', 'Select a client'], ...opts.map(c => [c.id, c.name + (c.gstin ? ' · ' + c.gstin : '')])], (findClient(cl.name, cl.gstin) || {}).id || '', {'aria-label':'Select a client', onchange:e => {
       const c = S.clients.get(e.target.value); if (!c) return;
       Object.assign(cl, {name:c.name, address:c.address || '', state:c.state || '', pin:c.pin || '', gstin:c.gstin || '', pan:c.pan || '', email:c.email || '', phone:c.phone || ''});
@@ -1732,7 +1735,8 @@ function renderBill(){
     return wrap;
   };
   drawParty();
-  paper.append(h('div',{class:'inv-two'}, party, h('div',{})));
+  paper.append(h('div',{class:'inv-two'}, party, pf ? h('div',{}) : shipCard(b, touch)));
+  if (!pf) paper.append(transportCard(b, touch));
 
   // Items
   const inter = () => billInter(b);
@@ -1914,6 +1918,10 @@ async function buildBillPdf(b){
   text(pf ? 'Proforma Invoice' : 'TAX INVOICE', M, H - 60, F, 24, BLUE);
   text('Invoice No', M + 1, H - 90, F, 9, GREY); text(b.no || '', M + 70, H - 90, FB, 9);
   text('Invoice Date', M + 1, H - 108, F, 9, GREY); text(billDate(b.date), M + 70, H - 108, FB, 9);
+  const pos = GST_STATES[cl.state] ? GST_STATES[cl.state] + ' (' + cl.state + ')' : '';
+  const ewb = !pf && b.transport && b.transport.on ? String(b.transport.eway || '').trim() : '';
+  if (pos) { text('Place of Supply', M + 190, H - 90, F, 9, GREY); text(pos, M + 270, H - 90, FB, 9); }
+  if (ewb) { text('E-Way Bill No', M + 190, H - 108, F, 9, GREY); text(ewb, M + 270, H - 108, FB, 9); }
   try {
     const src = ($('#logo') || {}).src || '';
     if (src.startsWith('data:image/')){
@@ -1949,6 +1957,18 @@ async function buildBillPdf(b){
     L.forEach((ln, i) => { const yy = y - 43 - i * lh; let cx = x + pad; if (ln.k) cx = text(ln.k + ' ', cx, yy, FB, 9); text(ln.t, cx, yy, ln.f || F, 9); });
   });
   y -= boxH + 14;
+  // Shipped To and Transport Details (tax invoices)
+  const sh = shipTo(b), tl = transportLines(b);
+  if (sh || tl.length){
+    const shipL = sh ? partyLines({...sh, name: String(sh.name || '').toUpperCase(), pan: '', email: ''}, false) : [];
+    const rows2 = Math.max(shipL.length, tl.length);
+    const bh2 = 40 + rows2 * lh + 6;
+    if (sh){ const x = M; rrect(x, y, boxW, bh2, SOFT); text('Shipped To', x + pad, y - 26, F, 14, BLUE);
+      shipL.forEach((ln, i) => { const yy = y - 43 - i * lh; let cx = x + pad; if (ln.k) cx = text(ln.k + ' ', cx, yy, FB, 9); text(ln.t, cx, yy, ln.f || F, 9); }); }
+    if (tl.length){ const x = sh ? M + boxW + 10 : M, w = sh ? boxW : BW; rrect(x, y, w, bh2, SOFT); text('Transport Details', x + pad, y - 26, F, 14, BLUE);
+      tl.forEach(([k, v], i) => { const yy = y - 43 - i * lh; text(k, x + pad, yy, FB, 9); text(v, x + pad + 92, yy, F, 9); }); }
+    y -= bh2 + 14;
+  }
 
   // Items table
   const cols = (inter ? [['#',22,'l'],['Item',140,'l'],['HSN/SAC',50,'c'],['Quantity',45,'c'],['Unit',32,'c'],['Rate',40,'c'],['Amount',65,'c'],['GST Rate',32,'c'],['IGST',50,'c'],['Total',63,'c']]
@@ -2034,6 +2054,88 @@ async function buildBillPdf(b){
   }
   if (!pf){ const pages = doc.getPages(); const lp = pages[pages.length - 1]; const s = 'This is an electronically generated document, no signature is required.'; lp.drawText(s, {x: W / 2 - F.widthOfTextAtSize(s, 6) / 2, y: 22, size: 6, font: F, color: INK}); }
   return await doc.save();
+}
+
+
+
+// ----- Tax invoice: Shipped To (bill to / ship to) and transport details -----
+function shipCard(b, touch){
+  b.ship = b.ship || {on:false, same:true};
+  const sp = b.ship, box = h('section',{class:'inv-party'});
+  const draw = () => {
+    const kids = [h('h2',{}, 'Shipped To ', h('span',{}, '(Delivery address)')),
+      h('label',{class:'row', style:'gap:8px'}, h('input',{type:'checkbox', checked: sp.on ? true : null, onchange:e => { sp.on = e.target.checked; touch(); draw(); }}), 'Add shipping details')];
+    if (sp.on){
+      kids.push(h('label',{class:'row', style:'gap:8px'}, h('input',{type:'checkbox', checked: sp.same ? true : null, onchange:e => { sp.same = e.target.checked; touch(); draw(); }}), 'Same as Billed To'));
+      if (sp.same) kids.push(h('div',{class:'note'}, 'Goods go to the billing address. Untick to deliver somewhere else (bill to one place, ship to another).'));
+      else {
+        const f = {};
+        const inp = (k, ph, extra) => (f[k] = h('input',{value: sp[k] || '', placeholder: ph || '', ...(extra || {}), oninput:e => { sp[k] = e.target.value; if (k === 'gstin'){ sp.gstin = sp.gstin.trim().toUpperCase(); const g = gstinInfo(sp.gstin); if (g){ sp.state = g.code; f.state.value = g.code; } } touch(); }}));
+        f.state = sel(stateOptions(), sp.state || '', {onchange:e => { sp.state = e.target.value; touch(); }});
+        const pick = sel([['', 'Pick a saved client or address'], ...realClients().sort((a, c) => String(a.name).localeCompare(String(c.name))).map(c => [c.id, c.name])], '', {'aria-label':'Pick a saved client for the delivery address', onchange:e => {
+          const c = S.clients.get(e.target.value); if (!c) return; Object.assign(sp, {name:c.name, address:c.address || '', state:c.state || '', pin:c.pin || '', gstin:c.gstin || '', phone:c.phone || ''}); touch(); draw(); }});
+        kids.push(pick, h('div',{class:'inv-pbox', style:'gap:10px'},
+          h('div',{class:'grid'}, fld('Name', inp('name', 'Business or person'), 'wide'), fld('GSTIN (optional)', inp('gstin', '15 characters', {style:'text-transform:uppercase'}))),
+          fld('Address', h('textarea',{rows:'2', placeholder:'Street, area, city', oninput:e => { sp.address = e.target.value; touch(); }}, sp.address || '')),
+          h('div',{class:'grid'}, fld('State', f.state), fld('PIN code', inp('pin', 'e.g. 122001', {inputmode:'numeric'})), fld('Phone (optional)', inp('phone', '', {type:'tel'})))));
+      }
+    }
+    box.replaceChildren(...kids);
+  };
+  draw();
+  return box;
+}
+const TRANSPORT_MODES = ['Road','Rail','Air','Ship'];
+function transportCard(b, touch){
+  b.transport = b.transport || {on:false, mode:'Road'};
+  const tr = b.transport, box = h('section',{class:'inv-party'});
+  let saveT = null;
+  const remember = () => { clearTimeout(saveT); saveT = setTimeout(() => {
+    const name = String(tr.name || '').trim(); if (!name) return;
+    const id = 't-' + (String(tr.id || '').trim().toUpperCase() || normC(name).replace(/[^a-z0-9]+/g, '-')).slice(0, 60);
+    const ex = S.clients.get(id), doc = {kind:'transporter', name, transId: String(tr.id || '').trim().toUpperCase(), updatedAt: Date.now()};
+    if (ex && ex.name === doc.name && ex.transId === doc.transId) return;
+    S.clients.set(id, {...doc, id}); flush('clients/' + id, () => doc); }, 1200); };
+  const draw = () => {
+    const kids = [h('div',{class:'row', style:'justify-content:space-between'}, h('h2',{}, 'Transport Details'),
+      h('label',{class:'row', style:'gap:8px'}, h('input',{type:'checkbox', checked: tr.on ? true : null, onchange:e => { tr.on = e.target.checked; touch(); draw(); }}), 'Add transport details'))];
+    if (tr.on){
+      const f = {};
+      const inp = (k, ph, extra) => (f[k] = h('input',{value: tr[k] ?? '', placeholder: ph || '', ...(extra || {}), oninput:e => { tr[k] = e.target.value; touch(); if (k === 'name' || k === 'id') remember(); if (k === 'id') idNote(); }}));
+      const note = h('div',{class:'note'});
+      const idNote = () => { const v = String(tr.id || '').trim().toUpperCase(); const g = gstinInfo(v);
+        note.className = 'note' + (v && !(g && g.ok) && !/^[0-9A-Z]{15}$/.test(v) ? ' warnline' : '');
+        note.textContent = !v ? 'Transporter ID is the 15-character GSTIN or TRANSIN of the transporter, as used on the e-way bill.' : g && g.ok ? '✓ Valid transporter GSTIN · ' + g.state : /^[0-9A-Z]{15}$/.test(v) ? 'Transporter ID noted (TRANSIN).' : 'A transporter ID has 15 letters and numbers.'; };
+      const ts = transporters();
+      const pick = ts.length ? sel([['', 'Pick a saved transporter'], ...ts.map(t => [t.id, t.name + (t.transId ? ' · ' + t.transId : '')])], '', {'aria-label':'Pick a saved transporter', onchange:e => {
+        const t = S.clients.get(e.target.value); if (!t) return; tr.name = t.name; tr.id = t.transId || ''; touch(); draw(); }}) : null;
+      kids.push(pick, h('div',{class:'inv-pbox', style:'gap:10px'},
+        h('div',{class:'grid'},
+          fld('Transporter name', inp('name', 'e.g. VRL Logistics'), 'wide'),
+          fld('Transporter ID', inp('id', 'GSTIN / TRANSIN', {style:'text-transform:uppercase'})),
+          fld('Mode', sel(TRANSPORT_MODES.map(m => [m, m]), tr.mode || 'Road', {onchange:e => { tr.mode = e.target.value; touch(); }})),
+          fld('Vehicle no.', inp('vehicle', 'e.g. DL01AB1234', {style:'text-transform:uppercase'})),
+          fld('LR / GR / Doc no.', inp('docNo', 'Lorry receipt no.')),
+          fld('LR date', h('input',{type:'date', value: String(tr.docDate || '').slice(0, 10), onchange:e => { tr.docDate = e.target.value; touch(); }})),
+          fld('E-way bill no.', inp('eway', '12 digits', {inputmode:'numeric'})),
+          fld('Distance (km)', inp('distance', 'Optional', {inputmode:'numeric'}))),
+        note));
+      idNote();
+    }
+    box.replaceChildren(...kids.filter(Boolean));
+  };
+  draw();
+  return box;
+}
+// What prints in the PDF for shipping and transport (tax invoices only).
+function shipTo(b){
+  const sp = b.ship || {}; if (b.type === 'proforma' || !sp.on) return null;
+  return sp.same ? {...(b.client || {}), same: true} : sp;
+}
+function transportLines(b){
+  const tr = b.transport || {}; if (b.type === 'proforma' || !tr.on) return [];
+  return [['Transporter', tr.name], ['Transporter ID', String(tr.id || '').toUpperCase()], ['Mode', tr.mode], ['Vehicle No', String(tr.vehicle || '').toUpperCase()],
+    ['LR / GR No', tr.docNo], ['LR Date', tr.docDate ? billDate(tr.docDate) : ''], ['E-Way Bill No', tr.eway], ['Distance', tr.distance ? tr.distance + ' km' : '']].filter(r => String(r[1] || '').trim());
 }
 
 // ---------- Home: big tiles for the main sections ----------
