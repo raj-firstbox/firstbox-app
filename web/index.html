@@ -869,7 +869,7 @@ function renderHome(){
   const tile = (k, view, title, desc, stat, alert, small) => h('button',{type:'button', class:'htile' + (small ? ' small' : ''), onclick:() => go(view)},
     icon(k), h('span',{class:'htext'}, h('span',{class:'htitle'}, title), h('span',{class:'hdesc'}, desc)));
   const hr = new Date().getHours();
-  root.append(h('div',{class:'head'}, h('div',{}, h('h1',{}, (hr < 12 ? 'Good morning' : hr < 17 ? 'Good afternoon' : 'Good evening')), h('div',{class:'note'}, 'What would you like to work on?'))));
+  root.append(h('div',{class:'head'}, h('div',{}, h('h1',{}, (S.myName ? 'Hi ' + S.myName + ', ' : '') + (hr < 12 ? (S.myName ? 'good morning' : 'Good morning') : hr < 17 ? (S.myName ? 'good afternoon' : 'Good afternoon') : (S.myName ? 'good evening' : 'Good evening'))), h('div',{class:'note'}, 'What would you like to work on?'))));
   root.append(h('div',{class:'hgrid'},
     tile('jobs', 'jobs', 'Costings', 'Work out cost and quote for an order',
       S.loaded.jobs ? jobs.length + ' costing' + (jobs.length === 1 ? '' : 's') + ' · ' + jobs.filter(j => (j.date || '').slice(0, 7) === month).length + ' this month' : loading),
@@ -2929,6 +2929,7 @@ async function boot(){
   const user = window.claude.use ? await window.claude.use('user') : null;
   S.user = user;
   const owner = user ? await user.isOwner() : false;
+  if (user && user.me) user.me().then(m => { S.myName = String((m && m.name) || '').trim().split(/[\s,–-]+/)[0] || ''; homeSoon(); }).catch(() => {});
   db.doc('shared/lists').onSnapshot(s => {
     if (!busy('shared/lists')) S.shared = s.exists ? (s.data() || {}) : {};
     S.loaded.shared = true; publishSharedLists();
