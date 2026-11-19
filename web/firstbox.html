@@ -457,6 +457,7 @@ const STATUSES = ['Estimate','Quoted','Confirmed','Completed','Lost'];
 // Names match the Firstbox Works job card (product + rigid box type).
 const BOX = {rigid:'Rigid box – Top & bottom',shoulder:'Rigid box – Shoulder neck',magnetic:'Rigid box – Magnetic',slider:'Rigid box – Slider',mono:'Mono carton',corrugated:'Corrugated box',mdf:'MDF box',custom:'Custom box',printing:'Printing service'};
 const RIGID = new Set(['rigid','shoulder','magnetic','slider']);
+const CORR_STYLES = {mailer:'Mailer box', peti:'Peti shape', handle:'With handle', custom:'Custom box'};
 // Types no longer offered; older costings that use one still show it.
 const RETIRED = ['custom'];
 // Papers allowed on printed sheets, by product. Products not listed can use any paper.
@@ -508,9 +509,8 @@ const TEMPLATES = {
     {k:'sheet',name:'Printed item 1',calc:'sheet',cat:'Paper',hint:'kraft',L:40,W:50,ups:1,gsm:150},
     {name:'Printing',calc:'impression',cat:'Printing',link:'sheet',passes:4},
     {name:'Coating',calc:'area',link:'sheet',part:'finish'},
-    {name:'Corrugated board sheet',calc:'sheet',cat:'Board',hint:'corrug',L:40,W:50,ups:1,gsm:550,part:'board'},
-    {name:'Die & die cutting',calc:'diecut',dies:null,part:'die'},
-    {name:'Making charges',calc:'piece',making:true,jobRate:true,part:'make'}],
+    {name:'Corrugated board',calc:'sheet',cat:'Board',hint:'corrug',L:40,W:50,ups:1,gsm:null,part:'board',corr:true},
+    {name:'Die & die cutting',calc:'diecut',dies:null,part:'die'}],
   mdf:[
     {name:'MDF panels',calc:'piece',cat:'Board'},
     {name:'CNC cutting',calc:'piece',cat:'Other'},
@@ -552,10 +552,10 @@ const PART_KEYS = Object.keys(PARTS);
 // Calculators every product gets unless PARTS_FOR says otherwise (fabrication and packaging are mono-carton only).
 const DEFAULT_PARTS = ['print','finish','board','insert','acc','die','make'];
 // Calculators shown for each product; anything not listed shows all.
-const PARTS_FOR = {mono:['print','finish','die','fab','pack'], printing:['print','finish','die'], corrugated:['print','finish','board','die','make']};
+const PARTS_FOR = {mono:['print','finish','die','fab','pack'], printing:['print','finish','die'], corrugated:['print','finish','board','die','fab','pack']};
 // Corrugated boxes use the board calculator for corrugated board instead of kappa board.
-const partTitle = k => k === 'board' && S.draft && S.draft.boxType === 'corrugated' ? 'Corrugated board' : PARTS[k].title;
-const partNote = k => k === 'board' && S.draft && S.draft.boxType === 'corrugated' ? 'Corrugated board sheets: board (3 ply / 5 ply), GSM, sheet size and ups. Priced by weight like paper.' : PARTS[k].note;
+const partTitle = k => k === 'board' && S.draft && S.draft.boxType === 'corrugated' ? 'Corrugation' : PARTS[k].title;
+const partNote = k => k === 'board' && S.draft && S.draft.boxType === 'corrugated' ? 'Corrugated board: choose the ply and flute, the paper GSM of the liners and the fluting, then sheet size and ups. Cost = board weight × ₹ per kg.' : PARTS[k].note;
 const partsFor = j => PARTS_FOR[j && j.boxType] || DEFAULT_PARTS;
 // Calculator numbers follow the order shown for the product (1, 2, 3 …).
 const partNum = k => String(Math.max(0, partsFor(S.draft).indexOf(k)) + 1);
@@ -677,6 +677,17 @@ const itemName = l => { const n = String(l.name || '').trim(); return /^printed 
 // Several variants printed together on one sheet (e.g. 4 sunscreen cartons): each has its own quantity and ups.
 // Sheets needed = the most any one variant needs (its qty ÷ its ups); the others get extra pieces.
 const hasVars = l => Array.isArray(l.vars) && l.vars.length > 0;
+// Corrugation: ply and flute. Board GSM = liners × liner GSM + each fluting layer × fluting GSM × take-up factor of its flute.
+const FLUTES = {A:{h:'4.8 mm', f:1.50}, C:{h:'3.6 mm', f:1.45}, B:{h:'2.5 mm', f:1.35}, E:{h:'1.5 mm', f:1.25}, F:{h:'0.8 mm', f:1.20}};
+const FLUTES_FOR = {3:['B','C','E','A','F'], 5:['BC','EB','EE','BB','CC'], 7:['BCB','EBC','BBC']};
+const fluteName = f => String(f || '').split('').map(x => x + ' flute').join(' + ');
+function corrGsm(l){
+  const ply = n0(l.ply) || 3, liners = (ply + 1) / 2, flutes = String(l.flute || '').split('').slice(0, (ply - 1) / 2);
+  if (!n0(l.linerGsm) || !n0(l.fluteGsm) || !flutes.length) return l.gsm ?? null;
+  return Math.round(liners * n0(l.linerGsm) + flutes.reduce((a, x) => a + n0(l.fluteGsm) * ((FLUTES[x] || {}).f || 1.4), 0));
+}
+const corrText = l => { const ply = n0(l.ply) || 3, liners = (ply + 1) / 2, flutes = String(l.flute || '').split('');
+  return liners + ' liners × ' + fmtN(n0(l.linerGsm)) + ' + ' + flutes.map(x => fmtN(n0(l.fluteGsm)) + ' × ' + ((FLUTES[x] || {}).f || 1.4) + ' (' + x + ')').join(' + ') + ' = ' + fmtN(corrGsm(l)) + ' GSM'; };
 const varBase = l => l.vars.reduce((m, v) => n0(v.ups) > 0 && n0(v.qty) > 0 ? Math.max(m, Math.ceil(n0(v.qty) / n0(v.ups))) : m, 0);
 const varQty = l => l.vars.reduce((a, v) => a + n0(v.qty), 0);
 // Every box needs one of each pastel, so the pastel with the fewest ups decides the sheet count.
@@ -881,6 +892,7 @@ function makeLine(calc, o){
   if (calc === 'printing'){ l.colours = o.colours ?? 4; snapPrint(l); }
   if (calc === 'diecut'){ l.dies = 'dies' in o ? o.dies : 1; snapDie(l); }
   if (calc === 'area') l.coat = o.coat || null;
+  if (o.corr){ l.corr = true; l.ply = 3; l.flute = 'B'; l.linerGsm = 150; l.fluteGsm = 120; l.gsm = corrGsm(l); }
   l.part = o.part || inferPart(l); l.pv = 2;
   return l;
 }
@@ -2946,14 +2958,22 @@ function newJobForm(){
   const client = h('input',{id:'nj-client', placeholder:'Client name'});
   const desc = h('input',{id:'nj-desc', placeholder:'e.g. Magnetic box for perfume'});
   const qty = h('input',{id:'nj-qty', type:'number', inputmode:'numeric', placeholder:'e.g. 1000'});
-  const box = sel(boxOptions(), 'rigid', {id:'nj-box', onchange:e => st.box = e.target.value});
+  const styleWrap = h('div',{class:'grid', hidden:true});
+  const drawStyle = () => {
+    styleWrap.hidden = st.box !== 'corrugated';
+    styleWrap.replaceChildren(
+      fld('Type of box', sel([['','Choose…'], ...Object.entries(CORR_STYLES)], st.corrStyle || '', {id:'nj-corrstyle', onchange:e => { st.corrStyle = e.target.value || null; drawStyle(); }})),
+      st.corrStyle === 'custom' ? fld('Custom box notes', h('input',{id:'nj-corrnote', value: st.corrNote || '', placeholder:'Describe the box', oninput:e => st.corrNote = e.target.value}), 'wide') : '');
+  };
+  const box = sel(boxOptions(), 'rigid', {id:'nj-box', onchange:e => { st.box = e.target.value; drawStyle(); }});
   const create = () => {
     if (!S.db) return;
     if (!client.value.trim()){ client.focus(); client.placeholder = 'Enter the client name'; return; }
     const id = uid();
     const job = {id, boxType: st.box, client: client.value.trim(), description: desc.value.trim(), size:'',
       qty: num(qty.value), date: today(), status:'Estimate', overheadPct: S.settings.overheadPct, marginPct: S.settings.marginPct,
-      quotePrice:null, soldPrice:null, soldQty:null, notes:'', lines: linesFromTemplate(st.box), createdAt: Date.now(), updatedAt: Date.now()};
+      quotePrice:null, soldPrice:null, soldQty:null, notes:'', lines: linesFromTemplate(st.box), createdAt: Date.now(), updatedAt: Date.now(),
+      ...(st.box === 'corrugated' ? {corrStyle: st.corrStyle || null, corrNote: st.corrStyle === 'custom' ? (st.corrNote || '') : ''} : {})};
     S.jobs.set(id, job); S.newOpen = false;
     flush('jobs/' + id, () => clone(job));
     go('job', id);
@@ -2961,6 +2981,7 @@ function newJobForm(){
   return h('div',{class:'newjob'},
     h('h2',{},'New costing'),
     h('div',{class:'grid'}, fld('Client', client), fld('Item', desc), fld('Box / job type', box), fld('Quantity (pcs)', qty)),
+    styleWrap,
     h('div',{class:'note'},'The cost sheet starts with the usual cost lines for this box type, filled from your rate list. Delete any lines that don’t apply, such as material the client supplies.'),
     h('div',{class:'row'}, h('button',{class:'btn primary', onclick:create},'Create cost sheet')));
 }
@@ -3023,6 +3044,19 @@ const PASTELS = {
   slider:['Jacket outer','Jacket inner','Tray outer','Tray inner']
 };
 // Variants printed together on one sheet (mono cartons, printing jobs, corrugated).
+// Corrugation: ply → flute → paper GSMs; board GSM follows.
+function corrEditor(l){
+  if (!l.ply){ l.ply = 3; l.flute = 'B'; l.linerGsm = l.linerGsm ?? 150; l.fluteGsm = l.fluteGsm ?? 120; l.corr = true; }
+  const set = (k, v) => { l[k] = v; if (k === 'ply' && !FLUTES_FOR[v].includes(l.flute)) l.flute = FLUTES_FOR[v][0]; l.corr = true; l.gsm = corrGsm(l); touch(); renderLines(); };
+  return h('div',{class:'pastels'},
+    h('b',{}, 'Corrugation'),
+    h('div',{class:'fields'},
+      fld('Corrugation type', sel([[3,'3 ply'],[5,'5 ply'],[7,'7 ply']], n0(l.ply) || 3, {onchange:e => set('ply', +e.target.value)})),
+      fld('Flute', sel(FLUTES_FOR[n0(l.ply) || 3].map(f => [f, fluteName(f) + (f.length === 1 ? ' (' + FLUTES[f].h + ')' : '')]), l.flute, {onchange:e => set('flute', e.target.value)})),
+      fld('Liner paper GSM', numIn(l.linerGsm, v => set('linerGsm', v))),
+      fld('Fluting paper GSM', numIn(l.fluteGsm, v => set('fluteGsm', v)))),
+    h('div',{class:'note'}, n0(l.linerGsm) && n0(l.fluteGsm) ? 'Board GSM: ' + corrText(l) + '. Flutes: A thickest (4.8 mm), C 3.6 mm, B 2.5 mm, E 1.5 mm, F thinnest (0.8 mm).' : 'Enter the liner and fluting paper GSM.'));
+}
 function varsEditor(l){
   const j = S.draft, box = h('div',{class:'pastels'});
   const sync = () => {
@@ -3202,6 +3236,8 @@ function renderJob(){
       h('div',{class:'note wide', id:'dim-other', style:'align-self:end'}),
       h('div',{class:'wide', id:'made-before', style:'align-self:end'}),
       RIGID.has(j.boxType) ? fld('Box making', sel([['','—'],['grooving','Grooving'],['halfcut','Half cut']], j.making || '', {id:'j-making', onchange:e => setJ('making', e.target.value || null)})) : null,
+      j.boxType === 'corrugated' ? fld('Type of box', sel([['','Choose…'], ...Object.entries(CORR_STYLES)], j.corrStyle || '', {id:'j-corrstyle', onchange:e => { setJ('corrStyle', e.target.value || null); renderJob(); }})) : null,
+      j.boxType === 'corrugated' && j.corrStyle === 'custom' ? fld('Custom box notes', h('input',{id:'j-corrnote', value:j.corrNote || '', placeholder:'Describe the box', oninput:e => setJ('corrNote', e.target.value)}), 'wide') : null,
       j.size ? h('div',{class:'note wide', style:'align-self:end'}, 'Old size note: ' + j.size) : null
     ),
     h('div',{class:'note warnline', id:'moq-warn', style:'margin-top:8px'}));
@@ -3256,7 +3292,7 @@ function addLine(calc, part, label, extra, linkTo){
   const j = S.draft;
   let o = {part};
   if (calc === 'sheet' && part === 'board' && j.boxType === 'corrugated'){
-    o = {part, name:'Corrugated board sheet', gsm:550, ups:1, rateObj:findRate('Board', 'sheet', 'corrug')};
+    o = {part, name:'Corrugated board', gsm:null, ups:1, corr:true, rateObj:findRate('Board', 'sheet', 'corrug')};
   } else if (calc === 'sheet' && part === 'board'){
     const r = findRate('Board', 'sheet', 'grey') ;
     const mill = r && /mill|grey/i.test(r.name || '') ? r : ratesSorted().find(x => x.calc === 'sheet' && /mill/i.test(x.name || ''));
@@ -3350,8 +3386,8 @@ function renderLinesInner(){
     if (l.calc === 'sheet'){
       if (millLine) f.push(fld('Thickness', sel([['','Other'], ...THICK.map(t => [t, t + ' mm'])], l.thick || '', {onchange:e => {
         l.thick = e.target.value || null; if (gsmFor(l)) l.gsm = gsmFor(l); touch(); renderLines(); }})));
-      f.push(fld('Sheet size L (in)', numIn(l.L, v => upd('L', v))), fld('Sheet size W (in)', numIn(l.W, v => upd('W', v))), (millLine || l.thick) ? fld('GSM', numIn(l.gsm, v => upd('gsm', v))) : gsmField(l, upd),
-        ...(hasPastels(l) || hasVars(l) ? [fld('Wastage %', numIn(l.wastage, v => upd('wastage', v)))] : ownCount()), (lr && lr.askRate)
+      f.push(fld('Sheet size L (in)', numIn(l.L, v => upd('L', v))), fld('Sheet size W (in)', numIn(l.W, v => upd('W', v))), (millLine || l.thick || l.corr) ? fld(l.corr ? 'Board GSM' : 'GSM', numIn(l.gsm, v => upd('gsm', v))) : gsmField(l, upd),
+        ...(hasPastels(l) || hasVars(l) ? [fld('Wastage %', numIn(l.wastage, v => upd('wastage', v)))] : ownCount()), (lr && lr.askRate) || (l.corr && !lr)
           ? fld('Rate ₹/kg (this job)', numIn(l.rate, v => upd('rate', v), {placeholder:'enter', onchange:e => recordPrice(l.rateId, num(e.target.value), S.draft.date || today())}))
           : fld('Rate', numIn(l.rate, v => upd('rate', v))),
         fld('Per', sel([['kg','kg'],['sheet','sheet']], l.unit||'kg', {onchange:e => { upd('unit', e.target.value); }})));
@@ -3463,7 +3499,8 @@ function renderLinesInner(){
       h('div',{class:'fields'}, f),
       l.calc === 'sheet' && partOf(l) !== 'board' && RIGID.has(j.boxType) ? pastelEditor(l, upd) : null,
       l.calc === 'sheet' && partOf(l) === 'print' && !RIGID.has(j.boxType) ? varsEditor(l) : null,
-      needsRate(l) ? h('div',{class:'note warnline', 'data-warn':l.id}, (lr && lr.askRate) ? 'This paper has no fixed rate. Type this job’s rate per kg above.' : isPrintSheet && !l.rateId ? 'Choose the paper for this sheet in “Paper”.' : l.fx && !l.fxKind ? 'Choose the special effect.' : l.fx && l.fxKind !== 'spotuv' && l.passes == null ? 'Enter the number of blocks.' : l.calc === 'diecut' && partOf(l) === 'die' && l.dies == null ? 'Enter the number of dies.' : isCoat && !l.coat ? 'Choose the coating: Lamination, Varnish or Hybrid.' : isIns && !l.insType ? 'Choose the insert type: Foam, Paper cavity or Kappa board tray.' : l.making ? 'Type the making charge per box for this job.' : l.jobRate ? 'Type the cost per piece for this job.' : isIns && l.insType === 'foam' && !l.foamMat ? 'Choose the foam material.' : isIns ? 'No rate saved yet for this insert. Add it in Rate list → Inserts, or press “Show rates” to type it.' : isCoat && !l.rateId ? 'Now choose the type.' : 'No rate set for this line. Choose one in “Rate from list”, or press “Show rates” at the top to type it.') : null,
+      l.calc === 'sheet' && partOf(l) === 'board' && j.boxType === 'corrugated' ? corrEditor(l) : null,
+      needsRate(l) ? h('div',{class:'note warnline', 'data-warn':l.id}, (lr && lr.askRate) || (l.corr && !lr) ? (l.corr ? 'Type the corrugated board rate per kg above.' : 'This paper has no fixed rate. Type this job’s rate per kg above.') : isPrintSheet && !l.rateId ? 'Choose the paper for this sheet in “Paper”.' : l.fx && !l.fxKind ? 'Choose the special effect.' : l.fx && l.fxKind !== 'spotuv' && l.passes == null ? 'Enter the number of blocks.' : l.calc === 'diecut' && partOf(l) === 'die' && l.dies == null ? 'Enter the number of dies.' : isCoat && !l.coat ? 'Choose the coating: Lamination, Varnish or Hybrid.' : isIns && !l.insType ? 'Choose the insert type: Foam, Paper cavity or Kappa board tray.' : l.making ? 'Type the making charge per box for this job.' : l.jobRate ? 'Type the cost per piece for this job.' : isIns && l.insType === 'foam' && !l.foamMat ? 'Choose the foam material.' : isIns ? 'No rate saved yet for this insert. Add it in Rate list → Inserts, or press “Show rates” to type it.' : isCoat && !l.rateId ? 'Now choose the type.' : 'No rate set for this line. Choose one in “Rate from list”, or press “Show rates” at the top to type it.') : null,
       h('div',{class:'line-foot'},
         h('div',{class:'detail', 'data-detail':l.id}),
         h('div',{class:'row', style:'gap:16px;align-items:flex-end'},
