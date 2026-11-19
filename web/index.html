@@ -251,7 +251,12 @@ tbody tr:last-child td{border-bottom:0}
 .inv-meta{display:grid;grid-template-columns:auto minmax(170px,230px);gap:8px 16px;align-items:center;margin-top:14px}
 .inv-meta label{color:var(--muted);font-size:14px}
 .req{color:var(--accent);margin-left:2px}
-.inv-logo{height:58px;width:auto;max-width:220px;object-fit:contain}
+.inv-sum{display:grid;gap:2px;justify-items:end;text-align:right;background:var(--sunk);border:1px solid var(--line);border-radius:12px;padding:14px 18px;min-width:240px}
+.inv-sum-l{font-size:13px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;font-weight:600}
+.inv-sum-v{font-size:28px;font-weight:700;color:var(--fg);font-variant-numeric:tabular-nums;line-height:1.2}
+.inv-sum-s{font-size:14px;color:var(--accent);font-weight:600}
+.inv-sum-c{font-size:13px;color:var(--muted);max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+@media (max-width:860px){.inv-sum{justify-items:start;text-align:left;width:100%}}
 .inv-two{display:grid;grid-template-columns:1fr 1fr;gap:20px;align-items:start}
 .inv-party{background:var(--sunk);border-radius:12px;padding:20px;display:grid;gap:12px}
 .inv-party h2{font-size:22px;margin:0}
@@ -1679,7 +1684,7 @@ function renderBill(){
     h('div',{}, h('button',{class:'linkbtn', onclick:() => { S.billTab = b.type; go('bills'); }}, '← All ' + (pf ? 'proforma invoices' : dc ? 'delivery challans' : 'tax invoices')),
       h('div',{class:'note', style:'margin-top:6px'}, from ? ['Made from ' + BILL_TYPE[from.type].toLowerCase() + ' ', h('button',{class:'linkbtn', onclick:() => go('bill', from.id)}, from.no), '. '] : to ? ['Turned into tax invoice ', h('button',{class:'linkbtn', onclick:() => go('bill', to.id)}, to.no), '. '] : '', 'Changes save automatically.')),
     h('div',{class:'row'},
-      pf ? h('button',{class:'btn', onclick:() => convertToInvoice(b)}, to ? 'Open tax invoice ' + to.no : 'Make tax invoice from this') : null,
+      pf ? h('button',{class:'btn', onclick:() => convertToInvoice(b)}, to ? 'Open tax invoice ' + to.no : 'Convert to Tax Invoice') : null,
       b.type === 'invoice' ? (b.challanId && S.bills.has(b.challanId) ? h('button',{class:'btn', onclick:() => go('bill', b.challanId)}, 'Open challan ' + S.bills.get(b.challanId).no) : h('button',{class:'btn', onclick:() => challanFromInvoice(b)}, 'Make delivery challan')) : null,
       !dc ? h('button',{class:'btn', onclick:() => newPaymentFor(b)}, '+ Record payment') : null,
       h('button',{class:'btn primary', onclick:e => downloadBill(b, e.currentTarget)}, 'Download PDF'),
@@ -1689,7 +1694,8 @@ function renderBill(){
   const paper = h('div',{class:'inv'}); root.append(paper);
 
   // Title, number, date and logo
-  const logo = $('#logo') ? h('img',{class:'inv-logo', src:$('#logo').src, alt:''}) : null;
+  // Top right: a live summary (total, payment status) instead of the logo.
+  const topSum = h('div',{class:'inv-sum', 'aria-live':'polite'});
   paper.append(h('div',{class:'inv-top'},
     h('div',{},
       h('div',{class:'inv-title'}, BILL_TITLE[b.type]),
@@ -1698,14 +1704,15 @@ function renderBill(){
         h('input',{id:'bill-no-in', value:b.no || '', oninput:e => { b.no = e.target.value.trim(); const m = /(\d+)$/.exec(b.no); b.num = m ? +m[1] : null; touch(); }}),
         h('label',{for:'bill-date-in'}, (pf ? 'Proforma Invoice Date' : dc ? 'Challan Date' : 'Invoice Date'), h('span',{class:'req'},'*')),
         h('input',{id:'bill-date-in', type:'date', value:String(b.date || '').slice(0, 10), onchange:e => { b.date = e.target.value; touch(); }}))),
-    logo));
+    topSum));
 
   // Billed To
   const party = h('section',{class:'inv-party'});
   const drawParty = () => {
     const edit = !!S.clientEdit;
     const opts = realClients().sort((a, c) => String(a.name).localeCompare(String(c.name)));
-    const pick = sel([['', 'Select a client'], ...opts.map(c => [c.id, c.name + (c.gstin ? ' · ' + c.gstin : '')])], (findClient(cl.name, cl.gstin) || {}).id || '', {'aria-label':'Select a client', onchange:e => {
+    const curId = (findClient(cl.name, cl.gstin) || {}).id || '', curOpt = !curId && String(cl.name || '').trim() ? [['__cur', cl.name + (cl.gstin ? ' · ' + cl.gstin : '')]] : [];
+    const pick = sel([['', 'Select a client'], ...curOpt, ...opts.map(c => [c.id, c.name + (c.gstin ? ' · ' + c.gstin : '')])], curId || (curOpt.length ? '__cur' : ''), {'aria-label':'Select a client', onchange:e => {
       const c = S.clients.get(e.target.value); if (!c) return;
       Object.assign(cl, {name:c.name, address:c.address || '', state:c.state || '', pin:c.pin || '', gstin:c.gstin || '', pan:c.pan || '', email:c.email || '', phone:c.phone || ''});
       S.clientEdit = false; touch(); drawParty(); }});
@@ -1822,6 +1829,10 @@ function renderBill(){
   // Bank details (left) and totals (right)
   const totBox = h('div',{class:'inv-tot'});
   const refreshTotals = () => {
+    { const c = billCalc(b), st = dc ? null : billPaid(b), q = b.items.reduce((a, it) => a + n0(it.qty), 0);
+      topSum.replaceChildren(h('span',{class:'inv-sum-l'}, dc ? 'Total quantity' : 'Total (INR)'), h('span',{class:'inv-sum-v'}, dc ? fmtN(q, 3) : rs2(c.total)),
+        h('span',{class:'inv-sum-s'}, dc ? (b.items.length + (b.items.length === 1 ? ' item' : ' items')) : pf ? (st.got > 0 ? 'Advance received ' + rs(st.got) : 'No advance yet') : st.status === 'paid' ? 'Fully paid' : st.got > 0 ? 'Balance due ' + rs(st.bal) : 'Not paid yet'),
+        (b.client || {}).name ? h('span',{class:'inv-sum-c'}, b.client.name) : null); }
     if (dc){ const q = b.items.reduce((a, it) => a + n0(it.qty), 0); totBox.replaceChildren(h('div',{class:'row inv-tline big', style:'justify-content:space-between;border:0;padding:0'}, h('span',{}, 'Total quantity'), h('span',{}, fmtN(q, 3)))); return; }
     const c = billCalc(b), half = r => r2(r / 2);
     const line = (l, v, cls) => h('div',{class:'row inv-tline' + (cls ? ' ' + cls : ''), style:'justify-content:space-between'}, h('span',{}, l), h('span',{}, v));
@@ -2256,8 +2267,8 @@ function paymentsFor(b){
   const ids = new Set([b.id]); if (b.type === 'invoice' && b.fromId) ids.add(b.fromId);
   return [...S.payments.values()].filter(p => p.billId && ids.has(p.billId)).sort((a, c) => String(a.date || '').localeCompare(String(c.date || '')) || n0(a.createdAt) - n0(c.createdAt));
 }
-function billPaid(b){
-  const ps = paymentsFor(b), got = r2(ps.reduce((a, p) => a + paySettled(p), 0)), total = billCalc(b).total, bal = r2(total - got);
+function billPaid(b, exceptId){
+  const ps = paymentsFor(b).filter(p => p.id !== exceptId), got = r2(ps.reduce((a, p) => a + paySettled(p), 0)), total = billCalc(b).total, bal = r2(total - got);
   return {ps, got, total, bal, status: got <= 0 ? 'unpaid' : bal <= 0.5 ? 'paid' : 'part'};
 }
 const PAID_PILL = {unpaid:['Unpaid','Quoted'], part:['Part paid','Confirmed'], paid:['Paid','Completed']};
@@ -2307,12 +2318,13 @@ function renderPay(){
       own ? rowDelete('payment receipt ' + (p.no || ''), async () => { S.payments.delete(p.id); S.paydraft = null; await removeDoc('payments/' + p.id); S.billTab = 'payments'; go('bills'); }) : null)));
   root.append(h('div',{id:'bill-alert'}));
   const paper = h('div',{class:'inv'}); root.append(paper);
+  const topSum = h('div',{class:'inv-sum', 'aria-live':'polite'});
   paper.append(h('div',{class:'inv-top'},
     h('div',{}, h('div',{class:'inv-title'}, 'Payment Receipt'),
       h('div',{class:'inv-meta'},
         h('label',{for:'pay-no'}, 'Receipt No', h('span',{class:'req'},'*')), h('input',{id:'pay-no', value:p.no || '', oninput:e => { p.no = e.target.value.trim(); touch(); }}),
         h('label',{for:'pay-date'}, 'Payment Date', h('span',{class:'req'},'*')), h('input',{id:'pay-date', type:'date', value:String(p.date || '').slice(0, 10), onchange:e => { p.date = e.target.value; touch(); }}))),
-    $('#logo') ? h('img',{class:'inv-logo', src:$('#logo').src, alt:''}) : null));
+    topSum));
   // Received from + what it is for
   const docs = () => { const c = normC(p.client.name), g = String(p.client.gstin || '').toUpperCase();
     return [...S.bills.values()].filter(b => b.type !== 'challan' && ((g && String((b.client || {}).gstin || '').toUpperCase() === g) || (c && normC((b.client || {}).name) === c)))
@@ -2320,13 +2332,14 @@ function renderPay(){
   const forSel = h('select',{'aria-label':'Payment is for'});
   const fillFor = () => {
     const ds = docs(); forSel.replaceChildren(h('option',{value:''}, 'Advance / on account (no document)'),
-      ...ds.map(b => { const st = billPaid(b); return h('option',{value:b.id}, BILL_TYPE[b.type] + ' ' + b.no + ' · ' + fmtDate(b.date) + ' · total ' + rs(st.total) + ' · balance ' + rs(Math.max(0, st.bal))); }));
+      ...ds.map(b => { const st = billPaid(b, p.id); return h('option',{value:b.id}, BILL_TYPE[b.type] + ' ' + b.no + ' · ' + fmtDate(b.date) + ' · total ' + rs(st.total) + ' · balance ' + rs(Math.max(0, st.bal))); }));
     if (p.billId && !ds.some(b => b.id === p.billId) && S.bills.has(p.billId)){ const b = S.bills.get(p.billId); forSel.append(h('option',{value:b.id}, BILL_TYPE[b.type] + ' ' + b.no)); }
     forSel.value = p.billId || '';
   };
   forSel.onchange = e => { p.billId = e.target.value; const b = S.bills.get(p.billId);
     if (!p.kindTouched) p.kind = !b || b.type === 'proforma' ? 'advance' : 'full';
-    if (b && (p.amount == null || p.amount === '')){ const st = billPaid(b); if (st.bal > 0){ p.amount = st.bal; amtIn.value = st.bal; } }
+    if (b && b.type === 'invoice' && p.amount != null && p.amount !== '') autoKind();
+    if (b && (p.amount == null || p.amount === '')){ const st = billPaid(b, p.id); if (st.bal > 0){ p.amount = st.bal; amtIn.value = st.bal; } }
     kindSel.value = p.kind; touch(); };
   const clientPick = sel([['', 'Select a client'], ...realClients().sort((a, c) => String(a.name).localeCompare(String(c.name))).map(c => [c.id, c.name + (c.gstin ? ' · ' + c.gstin : '')])], (findClient(p.client.name, p.client.gstin) || {}).id || '', {'aria-label':'Select a client', onchange:e => {
     const c = S.clients.get(e.target.value); if (!c) return; p.client = {name:c.name, address:c.address || '', state:c.state || '', pin:c.pin || '', gstin:c.gstin || '', pan:c.pan || '', email:c.email || '', phone:c.phone || ''};
@@ -2334,7 +2347,9 @@ function renderPay(){
   const nameIn = h('input',{value:p.client.name || '', placeholder:'Client name', oninput:e => { p.client.name = e.target.value; touch(); fillFor(); }});
   const phoneIn = h('input',{type:'tel', value:p.client.phone || '', placeholder:'For WhatsApp, e.g. 98100 12345', oninput:e => { p.client.phone = e.target.value; touch(); }});
   const kindSel = sel(Object.entries(PAY_KINDS), p.kind || 'advance', {onchange:e => { p.kind = e.target.value; p.kindTouched = true; touch(); }});
-  const amtIn = numIn(p.amount, v => { p.amount = v; touch(); }, {placeholder:'₹ received'});
+  // For a tax invoice the type follows the amount (full or part) until it is chosen by hand.
+  const autoKind = () => { const b = p.billId && S.bills.get(p.billId); if (p.kindTouched || !b || b.type !== 'invoice') return; const st = billPaid(b, p.id); p.kind = paySettled(p) >= st.bal - 0.5 ? 'full' : 'part'; if (kindSel) kindSel.value = p.kind; };
+  const amtIn = numIn(p.amount, v => { p.amount = v; autoKind(); touch(); }, {placeholder:'₹ received'});
   fillFor();
   paper.append(h('div',{class:'inv-two'},
     h('section',{class:'inv-party'}, h('h2',{}, 'Received From ', h('span',{}, '(Client)')), clientPick,
@@ -2345,13 +2360,14 @@ function renderPay(){
         h('div',{class:'grid'},
           fld('Type', kindSel),
           fld('Amount received (₹)', amtIn),
-          fld('TDS deducted by client (₹)', numIn(p.tds, v => { p.tds = v; touch(); }, {placeholder:'Optional'})),
+          fld('TDS deducted by client (₹)', numIn(p.tds, v => { p.tds = v; autoKind(); touch(); }, {placeholder:'Optional'})),
           fld('Mode', sel(PAY_MODES.map(m => [m, m]), p.mode || PAY_MODES[0], {onchange:e => { p.mode = e.target.value; touch(); }})),
           fld('UTR / cheque / reference no.', h('input',{value:p.ref || '', placeholder:'Optional', oninput:e => { p.ref = e.target.value; touch(); }})),
           fld('Bank / UPI app', h('input',{value:p.bank || '', placeholder:'Optional', oninput:e => { p.bank = e.target.value; touch(); }}))),
         fld('Note (prints on the receipt)', h('input',{value:p.note || '', placeholder:'Optional', oninput:e => { p.note = e.target.value; touch(); }}))))));
   const sum = h('div',{class:'inv-tot'});
   const refresh = () => {
+    topSum.replaceChildren(h('span',{class:'inv-sum-l'}, 'Amount received'), h('span',{class:'inv-sum-v'}, rs2(p.amount)), h('span',{class:'inv-sum-s'}, payFor(p)), (p.client || {}).name ? h('span',{class:'inv-sum-c'}, p.client.name) : null);
     const b = p.billId && S.bills.get(p.billId), line = (l, v, cls) => h('div',{class:'row inv-tline' + (cls ? ' ' + cls : ''), style:'justify-content:space-between'}, h('span',{}, l), h('span',{}, v));
     const kids = [line('Amount received', h('b',{}, rs2(p.amount)))];
     if (n0(p.tds)) kids.push(line('TDS deducted', rs2(p.tds), 'sub2'), line('Total settled', rs2(paySettled(p)), 'sub2'));
