@@ -64,7 +64,13 @@
         async signOut(){ setSession(null, 'SIGNED_OUT'); return {error:null}; }
       },
       from: q,
-      async rpc(name, args){ const d = load(); const m = d.members.find(x => session && x.user_id === session.user.id); if (m && ['removed','pending'].includes(m.role)){ m.role = 'pending'; if (args.p_name) m.name = args.p_name; save(d); notify('members', {eventType:'UPDATE', new:m, old:{}}); } return {data:null, error:null}; },
+      async rpc(name, args){ const d = load();
+        if (name === 'create_member'){ if (role() !== 'owner') return {error:{message:'Only the owner can add team members'}};
+          const u = String(args.p_username).toLowerCase(); if (d.members.some(m => m.username === u)) return {error:{message:'P0001: The username "' + u + '" is already taken'}};
+          const id = 'u-' + Math.random().toString(36).slice(2, 10); d.users.push({id, email: u + '@firstbox.local', password: args.p_password});
+          d.members.push({user_id:id, email:u + '@firstbox.local', name:args.p_name, username:u, role:args.p_role, created_at:new Date().toISOString()}); save(d); notify('members', {eventType:'INSERT', new:{}, old:{}}); return {data:id, error:null}; }
+        if (name === 'set_member_password'){ if (role() !== 'owner') return {error:{message:'no'}}; const us = d.users.find(x => x.id === args.p_user); us.password = args.p_password; save(d); return {data:null, error:null}; }
+        if (name === 'delete_member'){ if (role() !== 'owner') return {error:{message:'no'}}; d.users = d.users.filter(x => x.id !== args.p_user); d.members = d.members.filter(x => x.user_id !== args.p_user); save(d); notify('members', {eventType:'DELETE', new:{}, old:{}}); return {data:null, error:null}; } const m = d.members.find(x => session && x.user_id === session.user.id); if (m && ['removed','pending'].includes(m.role)){ m.role = 'pending'; if (args.p_name) m.name = args.p_name; save(d); notify('members', {eventType:'UPDATE', new:m, old:{}}); } return {data:null, error:null}; },
       channel(){ const ch = { on(kind, opt, fn){ handlers.push({table: opt.table, fn}); return ch; }, subscribe(cb){ setTimeout(() => cb('SUBSCRIBED'), 5); return ch; } }; return ch; }
     };
   } };

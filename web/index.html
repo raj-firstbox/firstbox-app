@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<style>*,*::before,*::after{box-sizing:border-box}html,body{margin:0}</style>
+<style>*,*::before,*::after{box-sizing:border-box}html,body{margin:0}[hidden]{display:none!important}</style>
 <title>Firstbox Costing</title>
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -965,7 +965,82 @@ function renderAccess(){
 }
 
 // Owner: Team & access page.
+// App version: the owner creates each login (username + password); nobody signs up by themselves.
+function makePassword(){
+  const words = ['Box','Kite','Lamp','Ink','Foil','Sheet','Board','Gold','Mint','Leaf','Star','Wave','Rose','Sky','Pine','Moon'];
+  const r = new Uint32Array(3); crypto.getRandomValues(r);
+  return words[r[0] % words.length] + '-' + String(1000 + r[1] % 9000) + '-' + words[r[2] % words.length];
+}
+function loginText(name, username, password){
+  return 'Firstbox app login for ' + (name || username) + '\nUsername: ' + username + '\nPassword: ' + password +
+    '\n\nOpen the Firstbox app and sign in with these. Please keep them private.';
+}
+function credentialsCard(title, name, username, password){
+  const text = loginText(name, username, password);
+  const copy = h('button',{class:'btn primary'}, 'Copy for WhatsApp');
+  copy.addEventListener('click', async () => { try { await navigator.clipboard.writeText(text); copy.textContent = 'Copied'; setTimeout(() => copy.textContent = 'Copy for WhatsApp', 2000); } catch(e){ ta.select(); } });
+  const ta = h('textarea',{readonly:true, rows:'5', 'aria-label':'Login details', style:'font-family:inherit'}, text);
+  return h('section',{class:'card', style:'display:grid;gap:10px;margin-bottom:16px;border-color:var(--brand)'},
+    h('h2',{}, title), h('div',{class:'note'}, 'Send these to ' + (name || username) + '. The password is shown only now; if it gets lost, set a new one.'),
+    ta, h('div',{class:'row'}, copy, h('button',{class:'btn', onclick:() => { S.teamCred = null; renderTeam(); }}, 'Done')));
+}
+function renderTeamCloud(){
+  const root = $('#view-team'); root.replaceChildren();
+  const team = [...S.team.values()].sort((a, b) => String(a.label || '').localeCompare(String(b.label || '')));
+  root.append(h('div',{class:'head'}, h('div',{}, h('h1',{},'Team & access'), h('div',{class:'note'},'You have full access. Create a login for each team member and give them one role; they only see that part of the software. Costings, quotes, rates and profits stay visible to you only.'))));
+  root.append(h('div',{class:'kpis'}, kpi('Full access', 'You', 'Costings, rates, job cards, stock, settings'),
+    Object.entries(ROLES).map(([k, r]) => kpi(r.n + ' role', String(team.filter(t => t.role === k).length), r.d))));
+  if (S.teamCred) root.append(credentialsCard(S.teamCred.title, S.teamCred.name, S.teamCred.username, S.teamCred.password));
+
+  // Add a team member
+  const f = S.teamNew = S.teamNew || {name:'', username:'', password: makePassword(), role:'jobcards'};
+  const out = h('div',{});
+  const nameIn = h('input',{value:f.name, placeholder:'e.g. Ramesh – store', oninput:e => { f.name = e.target.value; if (!f.userTouched){ f.username = e.target.value.toLowerCase().split(/[^a-z0-9]+/).filter(Boolean)[0] || ''; userIn.value = f.username; } }});
+  const userIn = h('input',{value:f.username, placeholder:'e.g. ramesh', autocapitalize:'off', spellcheck:'false', oninput:e => { f.username = e.target.value.trim().toLowerCase(); f.userTouched = true; }});
+  const passIn = h('input',{value:f.password, spellcheck:'false', oninput:e => f.password = e.target.value});
+  const addBtn = h('button',{class:'btn primary'}, 'Create login');
+  addBtn.addEventListener('click', async () => {
+    const say = t => out.replaceChildren(h('div',{class:'banner err'}, t));
+    if (!f.name.trim()) return say('Enter their name.');
+    if (!/^[a-z0-9][a-z0-9._-]{2,29}$/.test(f.username)) return say('Username: 3 to 30 small letters or numbers, no spaces (dots and dashes are fine).');
+    if ((f.password || '').length < 8) return say('Password: at least 8 characters.');
+    addBtn.disabled = true; addBtn.textContent = 'Creating…';
+    try {
+      await window.firstboxTeam.create(f.username, f.password, f.name.trim(), f.role);
+      S.teamCred = {title:'Login created for ' + f.name.trim(), name:f.name.trim(), username:f.username, password:f.password};
+      S.teamNew = null; renderTeam();
+    } catch(e){ addBtn.disabled = false; addBtn.textContent = 'Create login'; say(String(e && e.message || e).replace(/^.*?:\s*(?=[A-Z])/, '')); }
+  });
+  root.append(h('section',{class:'card', style:'display:grid;gap:10px;margin-bottom:16px'}, h('h2',{},'Add a team member'),
+    h('div',{class:'row', style:'align-items:flex-end'},
+      fld('Name', nameIn), fld('Username', userIn),
+      fld('Password', h('div',{class:'row', style:'gap:6px;flex-wrap:nowrap'}, passIn, h('button',{class:'btn small', title:'Make a new password', onclick:() => { f.password = makePassword(); passIn.value = f.password; }}, 'New'))),
+      fld('Role', sel(Object.entries(ROLES).map(([k, r]) => [k, r.n]), f.role, {onchange:e => f.role = e.target.value})),
+      addBtn), out));
+
+  // People with access
+  const box = h('div',{});
+  root.append(h('section',{class:'card', style:'display:grid;gap:10px'}, h('h2',{},'People with access (' + team.length + ')'), box));
+  box.replaceChildren(team.length ? h('div',{class:'tablebox'}, h('table',{},
+    h('thead',{}, h('tr',{}, h('th',{},'Person'), h('th',{},'Username'), h('th',{},'Role'), h('th',{},'Password'), h('th',{}))),
+    h('tbody',{}, team.map(x => {
+      const reset = h('button',{class:'btn small'}, 'Set new password');
+      reset.addEventListener('click', async () => {
+        if (!reset.classList.contains('armed')){ reset.classList.add('armed'); reset.textContent = 'Tap again to change it'; setTimeout(() => { reset.classList.remove('armed'); reset.textContent = 'Set new password'; }, 4000); return; }
+        const pw = makePassword(); reset.disabled = true; reset.textContent = 'Saving…';
+        try { await window.firstboxTeam.setPassword(x.id, pw); S.teamCred = {title:'New password for ' + (x.label || x.username), name:x.label, username:x.username, password:pw}; renderTeam(); window.scrollTo(0, 0); }
+        catch(e){ reset.disabled = false; reset.textContent = 'Couldn’t change it. Try again'; }
+      });
+      return h('tr',{},
+        h('td',{style:'white-space:normal'}, h('div',{class:'jobno'}, x.label || x.username || 'Someone')),
+        h('td',{}, x.username || '—'),
+        h('td',{}, sel(Object.entries(ROLES).map(([k, r]) => [k, r.n]), x.role, {'aria-label':'Role', onchange:e => setMember(x.id, e.target.value, x.label)})),
+        h('td',{}, reset),
+        h('td',{class:'act'}, rowDelete('login for ' + (x.label || 'this person'), async () => { await window.firstboxTeam.remove(x.id); S.team.delete(x.id); renderTeam(); })));
+    })))) : h('div',{class:'note'},'Nobody else has access yet. Add your first team member above.'));
+}
 function renderTeam(){
+  if (window.FIRSTBOX_CLOUD && window.firstboxTeam) return renderTeamCloud();
   const root = $('#view-team'); root.replaceChildren();
   const reqs = [...S.requests.values()].sort((a, b) => n0(b.at) - n0(a.at));
   const team = [...S.team.values()].sort((a, b) => String(a.label || '').localeCompare(String(b.label || '')));
@@ -1002,7 +1077,7 @@ function renderTeam(){
 }
 async function setMember(id, role, label){
   const doc = {role, label: label || '', addedAt: (S.team.get(id) || {}).addedAt || Date.now()};
-  S.team.set(id, {...doc, id}); flush('team/' + id, () => doc);
+  S.team.set(id, {...(S.team.get(id) || {}), ...doc, id}); flush('team/' + id, () => doc);
   if (S.requests.has(id)){ S.requests.delete(id); await removeDoc('requests/' + id); }
   renderTeam();
 }

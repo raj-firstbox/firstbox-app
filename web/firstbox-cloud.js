@@ -65,59 +65,47 @@
   }
   function logoSrc() { const l = document.getElementById('logo'); return l ? l.src : ''; }
 
+  // Logins are created by the owner (Team & access). Team members sign in with a username;
+  // the owner can also use the email address the owner account was made with.
+  const loginEmail = v => (v.includes('@') ? v : v.toLowerCase() + '@firstbox.local');
   function showAuth(mode, note) {
     css();
     let root = document.getElementById('fbc-auth');
     if (!root) { root = el('div', { id: 'fbc-auth', role: 'dialog', 'aria-modal': 'true', 'aria-label': 'Sign in to Firstbox' }); document.body.append(root); }
-    const signUp = mode === 'signup';
-    const name = el('input', { type: 'text', autocomplete: 'name', placeholder: 'e.g. Ramesh – store' });
-    const email = el('input', { type: 'email', autocomplete: 'email', placeholder: 'you@example.com' });
-    const pass = el('input', { type: 'password', autocomplete: signUp ? 'new-password' : 'current-password', placeholder: signUp ? 'At least 8 characters' : '' });
+    const user = el('input', { type: 'text', autocomplete: 'username', autocapitalize: 'off', spellcheck: 'false', placeholder: 'e.g. ramesh' });
+    const pass = el('input', { type: 'password', autocomplete: 'current-password' });
     const msg = el('div', {});
-    const btn = el('button', { class: 'go', type: 'submit' }, signUp ? 'Create account' : 'Sign in');
+    const btn = el('button', { class: 'go', type: 'submit' }, 'Sign in');
     const say = (t, bad) => msg.replaceChildren(t ? el('div', { class: 'msg' + (bad ? ' err' : '') }, t) : '');
     if (note) say(note.text, note.bad);
     const form = el('form', { style: 'display:grid;gap:12px', novalidate: '' },
-      signUp ? el('label', {}, 'Your name and job', name) : null,
-      el('label', {}, 'Email', email),
+      el('label', {}, 'Username', user),
       el('label', {}, 'Password', pass),
       msg, btn);
     form.addEventListener('submit', async e => {
       e.preventDefault();
-      const em = email.value.trim(), pw = pass.value;
-      if (signUp && !name.value.trim()) { say('Enter your name and job.', true); name.focus(); return; }
-      if (!/^\S+@\S+\.\S+$/.test(em)) { say('Enter a valid email address.', true); email.focus(); return; }
-      if (pw.length < (signUp ? 8 : 1)) { say(signUp ? 'Use a password of at least 8 characters.' : 'Enter your password.', true); pass.focus(); return; }
-      btn.disabled = true; btn.textContent = signUp ? 'Creating account…' : 'Signing in…';
+      const u = user.value.trim(), pw = pass.value;
+      if (!u) { say('Enter your username.', true); user.focus(); return; }
+      if (!pw) { say('Enter your password.', true); pass.focus(); return; }
+      btn.disabled = true; btn.textContent = 'Signing in…';
       try {
-        if (signUp) {
-          const { data, error } = await sb.auth.signUp({ email: em, password: pw, options: { data: { name: name.value.trim().slice(0, 60) } } });
-          if (error) throw error;
-          if (!data.session) { showAuth('signin', { text: 'Account created. Check your email for a confirmation link, then sign in here.' }); return; }
-        } else {
-          const { error } = await sb.auth.signInWithPassword({ email: em, password: pw });
-          if (error) throw error;
-        }
+        const { error } = await sb.auth.signInWithPassword({ email: loginEmail(u), password: pw });
+        if (error) throw error;
         // onAuthStateChange takes it from here.
       } catch (x) {
         const m = String((x && x.message) || x);
-        say(/invalid login/i.test(m) ? 'Email or password is wrong.' :
-            /already registered/i.test(m) ? 'This email already has an account. Sign in instead.' :
-            /not confirmed/i.test(m) ? 'Confirm your email first: open the link we emailed you, then sign in.' :
+        say(/invalid login|invalid credentials/i.test(m) ? 'Username or password is wrong.' :
+            /not confirmed/i.test(m) ? 'This login is not active yet. Ask the owner.' :
             /fetch|network/i.test(m) ? 'No internet connection. Connect and try again.' : m, true);
-        btn.disabled = false; btn.textContent = signUp ? 'Create account' : 'Sign in';
+        btn.disabled = false; btn.textContent = 'Sign in';
       }
     });
-    const tab = (m, t) => el('button', { type: 'button', 'aria-pressed': String(mode === m), onclick: () => showAuth(m) }, t);
     root.replaceChildren(el('div', { class: 'box' },
       el('img', { src: logoSrc(), alt: 'Firstbox' }),
-      el('h1', {}, signUp ? 'Create your Firstbox account' : 'Sign in to Firstbox'),
-      el('div', { class: 'tabs' }, tab('signin', 'Sign in'), tab('signup', 'Create account')),
+      el('h1', {}, 'Sign in to Firstbox'),
       form,
-      el('div', { class: 'note' }, signUp
-        ? 'After you create your account, the owner chooses what you can use. Your section opens by itself once they do.'
-        : 'New to Firstbox? Choose “Create account”.')));
-    setTimeout(() => (signUp ? name : email).focus(), 30);
+      el('div', { class: 'note' }, 'Your username and password are given to you by the owner. Forgot your password? Ask the owner for a new one.')));
+    setTimeout(() => user.focus(), 30);
   }
   function hideAuth() { const r = document.getElementById('fbc-auth'); if (r) r.remove(); }
 
@@ -162,7 +150,7 @@
   let memSeq = 0, memTimer = null;
   async function fetchMembers() {
     const mine = ++memSeq;
-    const { data, error } = await sb.from('members').select('user_id,email,name,role,created_at');
+    const { data, error } = await sb.from('members').select('user_id,email,name,role,created_at,username');
     if (mine !== memSeq) return; // a newer read is on its way
     if (error) throw err('unavailable', error.message);
     members = new Map(data.map(r => [r.user_id, r]));
@@ -200,7 +188,7 @@
   function virtualDocs(col) {
     const out = new Map();
     for (const r of members.values()) {
-      if (col === 'team' && STAFF.includes(r.role)) out.set(r.user_id, { role: r.role, label: r.name || r.email || '', addedAt: toMs(r.created_at) });
+      if (col === 'team' && STAFF.includes(r.role)) out.set(r.user_id, { role: r.role, label: r.name || r.username || r.email || '', username: r.username || '', addedAt: toMs(r.created_at) });
       if (col === 'requests' && r.role === 'pending') out.set(r.user_id, { label: r.name || r.email || '', at: toMs(r.created_at) });
     }
     return out;
@@ -308,6 +296,25 @@
     }
   });
 
+  // Owner tools for Team & access (the database refuses them for anyone else).
+  const rpcErr = error => { throw err('invalid_argument', String(error.message || error).replace(/^.*?exception:?\s*/i, '')); };
+  window.firstboxTeam = Object.freeze({
+    async create(username, password, name, role) {
+      const { error } = await sb.rpc('create_member', { p_username: username, p_password: password, p_name: name, p_role: role });
+      if (error) rpcErr(error);
+      await fetchMembers();
+    },
+    async setPassword(userId, password) {
+      const { error } = await sb.rpc('set_member_password', { p_user: userId, p_password: password });
+      if (error) rpcErr(error);
+    },
+    async remove(userId) {
+      const { error } = await sb.rpc('delete_member', { p_user: userId });
+      if (error) rpcErr(error);
+      await fetchMembers();
+    }
+  });
+
   window.claude = Object.freeze({
     async use(name) {
       if (!['db', 'user', 'downloads'].includes(name)) return null;
@@ -320,7 +327,7 @@
   async function signedIn(s) {
     session = s;
     try {
-      const { data, error } = await sb.from('members').select('user_id,email,name,role,created_at').eq('user_id', s.user.id).maybeSingle();
+      const { data, error } = await sb.from('members').select('user_id,email,name,role,created_at,username').eq('user_id', s.user.id).maybeSingle();
       if (error) throw error;
       if (!data) { showAuth('signin', { text: 'Your account is not set up in the database yet. Ask the owner to check the Supabase setup.', bad: true }); return; }
       me = data; members.set(data.user_id, data);

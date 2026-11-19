@@ -21,7 +21,10 @@ explain changes in plain words, never ask him to run commands, and test before p
 - `.github/workflows/build.yml` — push to `main` publishes the page (GitHub Pages, when the repo is public); push a tag `vX.Y.Z` builds the Mac (.dmg) and Windows (.exe) installers into a GitHub release.
 
 ## Roles (enforced in `supabase/setup.sql`, mirrored in the page's `ROLES`)
-- owner: everything. The first account ever created becomes the owner.
+- owner: everything. The first account ever created becomes the owner (Raj, signs in with his email).
+- Team logins are created by the owner on ⚙ › Team & access (username + password, shown once with "Copy for WhatsApp").
+  Behind the scenes a username is the Supabase login `<username>@firstbox.local`; SQL functions `create_member`,
+  `set_member_password`, `delete_member` (owner only) in `supabase/team-logins.sql`. Self sign-up is switched off in Supabase.
 - inventory: reads job cards/stock, writes stock + stockLog only.
 - jobcards: reads/writes job cards, stock, stockLog. Cannot delete job cards.
 - Costings (`jobs`), `rates`, `rateHistory`, `config`: owner only. `shared/lists` (paper names, lamination divisors): owner writes, staff read.
@@ -39,5 +42,7 @@ explain changes in plain words, never ask him to run commands, and test before p
 2. `python3 tools/make-index.py`
 3. Test in a browser with a fake Supabase (see `tools/` notes) or against the real project.
 4. Commit and push to `main` → page updates online for everyone.
-5. Only when `electron/` or the installers must change: bump `version` in `package.json`, push a tag `vX.Y.Z`.
+5. While the repo is private, every change needs new installers: bump `version` in `package.json`, push to `main`,
+   then run the workflow with publish ticked: `gh workflow run build.yml --ref main -f publish=true`
+   (pushing tags from Claude sessions may be refused). The release appears under Releases.
 6. Database rule changes: update `supabase/setup.sql` and give Raj the SQL to paste into Supabase › SQL Editor.
