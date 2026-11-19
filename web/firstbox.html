@@ -457,7 +457,12 @@ const STATUSES = ['Estimate','Quoted','Confirmed','Completed','Lost'];
 // Names match the Firstbox Works job card (product + rigid box type).
 const BOX = {rigid:'Rigid box – Top & bottom',shoulder:'Rigid box – Shoulder neck',magnetic:'Rigid box – Magnetic',slider:'Rigid box – Slider',mono:'Mono carton',corrugated:'Corrugated box',mdf:'MDF box',custom:'Custom box',printing:'Printing service'};
 const RIGID = new Set(['rigid','shoulder','magnetic','slider']);
-const CORR_STYLES = {mailer:'Mailer box', peti:'Peti shape', handle:'With handle', custom:'Custom box'};
+// “Type of box” asked when a corrugated or MDF costing starts. Custom adds a notes box.
+const BOX_STYLES = {corrugated:{mailer:'Mailer box', peti:'Peti shape', handle:'With handle', custom:'Custom box'},
+  mdf:{tb:'Top & bottom', magnetic:'Magnetic', custom:'Custom shape'}};
+const styleLabel = box => box === 'mdf' ? 'Type of MDF box' : 'Type of box';
+const styleNoteLabel = box => box === 'mdf' ? 'Custom shape notes' : 'Custom box notes';
+const jStyle = j => j.boxStyle ?? j.corrStyle ?? null, jStyleNote = j => j.boxStyleNote ?? j.corrNote ?? '';
 // Types no longer offered; older costings that use one still show it.
 const RETIRED = ['custom'];
 // Papers allowed on printed sheets, by product. Products not listed can use any paper.
@@ -512,10 +517,9 @@ const TEMPLATES = {
     {name:'Corrugated board',calc:'sheet',cat:'Board',hint:'corrug',L:40,W:50,ups:1,gsm:null,part:'board',corr:true},
     {name:'Die & die cutting',calc:'diecut',dies:null,part:'die'}],
   mdf:[
-    {name:'MDF panels',calc:'piece',cat:'Board'},
-    {name:'CNC cutting',calc:'piece',cat:'Other'},
-    {name:'Wrapping paper / paint finish',calc:'piece',cat:'Paper'},
-    {name:'Hinges, magnets & fittings',calc:'piece',cat:'Accessories'},
+    {k:'p1',name:'Printed item 1',calc:'sheet',cat:'Paper',hint:'art paper',L:20,W:30,gsm:130,ups:1},
+    {name:'Printing',calc:'impression',cat:'Printing',link:'p1',passes:4},
+    {name:'Coating',calc:'area',link:'p1',part:'finish'},
     {name:'Die & die cutting',calc:'diecut',dies:null,part:'die'},
     {name:'Making charges',calc:'piece',making:true,jobRate:true,part:'make'}],
   printing:[
@@ -537,13 +541,15 @@ const PARTS = {
     adds:[['sheet','Kappa board sheet']]},
   insert:{n:'4', title:'Inserts', note:'Choose the insert type first: foam, paper cavity or kappa board tray. Then fill in its details.',
     adds:[['piece','Add an insert',{name:'Insert', insert:true}]]},
-  acc:{n:'5', title:'Additional accessories', note:'Anything that goes with the box: thank you cards, mono cartons, envelopes, magnets, ribbon. Type how many per box (or the total) and the cost per piece.',
-    adds:[['piece','Thank you card',{name:'Thank you card', jobRate:true, accKind:'card'}],['piece','Mono carton',{name:'Mono carton', jobRate:true, accKind:'mono'}],['piece','Envelope',{name:'Envelope', jobRate:true, accKind:'envelope'}],['piece','Magnets',{name:'Magnets', cat:'Accessories', hint:'magnet', perBox:0, boxes:['magnetic']}],['piece','Ribbon',{name:'Ribbon', cat:'Accessories', hint:'ribbon', perBox:0, boxes:['magnetic','slider']}],['piece','Other accessory',{name:'Accessory', jobRate:true}]]},
+  acc:{n:'5', title:'Additional accessories', note:'Anything that goes with the box: thank you cards, mono cartons, envelopes, handles, magnets, ribbon. Type how many per box (or the total) and the cost per piece.',
+    adds:[['piece','Thank you card',{name:'Thank you card', jobRate:true, accKind:'card'}],['piece','Mono carton',{name:'Mono carton', jobRate:true, accKind:'mono'}],['piece','Envelope',{name:'Envelope', jobRate:true, accKind:'envelope'}],['piece','Handle',{name:'Handle', jobRate:true, accKind:'handle', boxes:['mdf']}],['piece','Magnets',{name:'Magnets', cat:'Accessories', hint:'magnet', perBox:0, boxes:['magnetic','mdf']}],['piece','Ribbon',{name:'Ribbon', cat:'Accessories', hint:'ribbon', perBox:0, boxes:['magnetic','slider']}],['piece','Other accessory',{name:'Accessory', jobRate:true}]]},
   die:{n:'6', title:'Die & die cutting', note:'Enter the number of dies. Die cutting is worked out on the total of all printed sheets. Cost = dies + die cutting.',
     adds:[]},
   make:{n:'7', title:'Making charges', note:'Type the making charge per box for this job. It is multiplied by the quantity.',
     adds:[['piece','Add making charges',{name:'Making charges', making:true, jobRate:true, once:true}]]},
   fab:{n:'8', title:'Fabrication', note:'Side pasting is always included. Tick Euro slot or Window pasting if the carton has them.',
+    adds:[]},
+  mdfboard:{n:'10', title:'MDF board', note:'Type the board cost from your vendor for this job. It changes every time, so it is entered fresh on each costing.',
     adds:[]},
   pack:{n:'9', title:'Packaging & forwarding', note:'Choose how the cartons are packed: in sheets or in cartons.',
     adds:[]}
@@ -552,10 +558,10 @@ const PART_KEYS = Object.keys(PARTS);
 // Calculators every product gets unless PARTS_FOR says otherwise (fabrication and packaging are mono-carton only).
 const DEFAULT_PARTS = ['print','finish','board','insert','acc','die','make'];
 // Calculators shown for each product; anything not listed shows all.
-const PARTS_FOR = {mono:['print','finish','die','fab','pack'], printing:['print','finish','die'], corrugated:['print','finish','board','die','fab','pack']};
+const PARTS_FOR = {mono:['print','finish','die','fab','pack'], mdf:['print','finish','insert','acc','die','make','mdfboard'], printing:['print','finish','die'], corrugated:['print','finish','board','die','fab','pack']};
 // Corrugated boxes use the board calculator for corrugated board instead of kappa board.
-const partTitle = k => k === 'board' && S.draft && S.draft.boxType === 'corrugated' ? 'Corrugation' : PARTS[k].title;
-const partNote = k => k === 'board' && S.draft && S.draft.boxType === 'corrugated' ? 'Corrugated board: choose the ply and flute, the paper GSM of the liners and the fluting, then sheet size and ups. Cost = board weight × ₹ per kg.' : PARTS[k].note;
+const partTitle = k => k === 'board' && S.draft && S.draft.boxType === 'corrugated' ? 'Corrugation' : k === 'make' && S.draft && S.draft.boxType === 'mdf' ? 'Fabrication' : PARTS[k].title;
+const partNote = k => k === 'make' && S.draft && S.draft.boxType === 'mdf' ? 'Type the fabrication (making) charge per box for this job. It is multiplied by the quantity.' : k === 'board' && S.draft && S.draft.boxType === 'corrugated' ? 'Corrugated board: choose the ply and flute, the paper GSM of the liners and the fluting, then sheet size and ups. Cost = board weight × ₹ per kg.' : PARTS[k].note;
 const partsFor = j => PARTS_FOR[j && j.boxType] || DEFAULT_PARTS;
 // Calculator numbers follow the order shown for the product (1, 2, 3 …).
 const partNum = k => String(Math.max(0, partsFor(S.draft).indexOf(k)) + 1);
@@ -777,6 +783,11 @@ function calcLine(l, j, byId){
     const qd = fmtN(n) + ' ups (' + fmtN(sh) + ' sheets × ' + per + ' ups)' + (passes !== 1 ? '  ·  × ' + passes + ' blocks' : '') + (raw < min ? '  ·  minimum charge applied' : '');
     return {amount:amt, detail:d, qd};
   }
+  if (l.calc === 'mdf'){
+    // MDF board from the vendor: typed per box (× quantity) or as one total for the job.
+    if (l.mode === 'total') return {amount: n0(l.total), detail: 'Total for the job' + (l.vendor ? ' · ' + l.vendor : ''), qd: 'Total for the job' + (l.vendor ? ' · ' + l.vendor : '')};
+    return {amount: qty * n0(l.rate), detail: fmtN(qty) + ' boxes × ₹' + fmtN(n0(l.rate), 2) + ' per box' + (l.vendor ? ' · ' + l.vendor : ''), qd: fmtN(qty) + ' boxes' + (l.vendor ? ' · ' + l.vendor : '')};
+  }
   if (l.calc === 'fab'){
     // Mono carton fabrication, per 1000 cartons: side pasting always, Euro slot and window pasting when ticked.
     const k = qty / 1000, parts = [['Side pasting', true, l.sideRate], ['Euro slot', l.euro, l.euroRate], ['Window pasting', l.window, l.winRate]].filter(x => x[1]);
@@ -914,7 +925,7 @@ function specialCard(l, title, body){
   return h('div',{class:'line', 'data-line':l.id},
     h('div',{class:'line-top'}, h('div',{class:'fld name'}, h('span',{class:'ctype'}, title), h('b',{}, l.name))),
     body,
-    h('div',{class:'note warnline', 'data-warn':l.id, hidden: !needsRate(l)}, l.calc === 'fab' ? 'Type the rate per 1000 for each ticked option.' : 'Type the rate per carton.'),
+    h('div',{class:'note warnline', 'data-warn':l.id, hidden: !needsRate(l)}, l.calc === 'fab' ? 'Type the rate per 1000 for each ticked option.' : l.calc === 'mdf' ? 'Type this job’s MDF board cost from your vendor.' : 'Type the rate per carton.'),
     h('div',{class:'line-foot'},
       h('div',{class:'detail', 'data-detail':l.id}),
       h('div',{class:'row', style:'gap:16px;align-items:flex-end'},
@@ -931,6 +942,15 @@ function fabEditor(l){
     opt(null, 'sideRate', 'Side pasting', 'sidePastePer1000'),
     opt('euro', 'euroRate', 'Euro slot', 'euroSlotPer1000'),
     opt('window', 'winRate', 'Window pasting', 'windowPastePer1000')));
+}
+function mdfEditor(l){
+  const mode = (m, label) => h('label',{class:'packopt' + (l.mode === m ? ' on' : '')},
+    h('input',{type:'radio', name:'mdf-' + l.id, checked: l.mode === m ? true : null, onchange:() => { l.mode = m; touch(); renderLines(); }}), h('span',{}, h('b',{}, label)));
+  return specialCard(l, 'Board from vendor', h('div',{style:'display:grid;gap:10px'},
+    h('div',{class:'packopts', role:'radiogroup', 'aria-label':'How the board cost is entered'}, mode('box', 'Cost per box'), mode('total', 'Total for the job')),
+    h('div',{class:'fields'},
+      l.mode === 'total' ? fld('Board cost for the job (₹)', numIn(l.total, v => { l.total = v; touch(); }, {placeholder:'enter', class:'bigin'})) : fld('Board cost per box (₹)', numIn(l.rate, v => { l.rate = v; touch(); }, {placeholder:'enter', class:'bigin'})),
+      fld('Vendor / board details', h('input',{value: l.vendor || '', placeholder:'e.g. Sharma Boards, 6 mm MDF', style:'width:260px', oninput:e => { l.vendor = e.target.value; touch(); }})))));
 }
 function packEditor(l){
   const mode = (m, label, sub) => h('label',{class:'packopt' + (l.mode === m ? ' on' : '')},
@@ -2960,10 +2980,12 @@ function newJobForm(){
   const qty = h('input',{id:'nj-qty', type:'number', inputmode:'numeric', placeholder:'e.g. 1000'});
   const styleWrap = h('div',{class:'grid', hidden:true});
   const drawStyle = () => {
-    styleWrap.hidden = st.box !== 'corrugated';
-    styleWrap.replaceChildren(
-      fld('Type of box', sel([['','Choose…'], ...Object.entries(CORR_STYLES)], st.corrStyle || '', {id:'nj-corrstyle', onchange:e => { st.corrStyle = e.target.value || null; drawStyle(); }})),
-      st.corrStyle === 'custom' ? fld('Custom box notes', h('input',{id:'nj-corrnote', value: st.corrNote || '', placeholder:'Describe the box', oninput:e => st.corrNote = e.target.value}), 'wide') : '');
+    const opts = BOX_STYLES[st.box];
+    styleWrap.hidden = !opts;
+    if (st.styleFor !== st.box){ st.style = null; st.styleNote = ''; st.styleFor = st.box; }
+    styleWrap.replaceChildren(...(!opts ? [] : [
+      fld(styleLabel(st.box), sel([['','Choose…'], ...Object.entries(opts)], st.style || '', {id:'nj-style', onchange:e => { st.style = e.target.value || null; drawStyle(); }})),
+      st.style === 'custom' ? fld(styleNoteLabel(st.box), h('input',{id:'nj-stylenote', value: st.styleNote || '', placeholder:'Describe it', oninput:e => st.styleNote = e.target.value}), 'wide') : '']));
   };
   const box = sel(boxOptions(), 'rigid', {id:'nj-box', onchange:e => { st.box = e.target.value; drawStyle(); }});
   const create = () => {
@@ -2973,7 +2995,7 @@ function newJobForm(){
     const job = {id, boxType: st.box, client: client.value.trim(), description: desc.value.trim(), size:'',
       qty: num(qty.value), date: today(), status:'Estimate', overheadPct: S.settings.overheadPct, marginPct: S.settings.marginPct,
       quotePrice:null, soldPrice:null, soldQty:null, notes:'', lines: linesFromTemplate(st.box), createdAt: Date.now(), updatedAt: Date.now(),
-      ...(st.box === 'corrugated' ? {corrStyle: st.corrStyle || null, corrNote: st.corrStyle === 'custom' ? (st.corrNote || '') : ''} : {})};
+      ...(BOX_STYLES[st.box] ? {boxStyle: st.style || null, boxStyleNote: st.style === 'custom' ? (st.styleNote || '') : ''} : {})};
     S.jobs.set(id, job); S.newOpen = false;
     flush('jobs/' + id, () => clone(job));
     go('job', id);
@@ -3150,6 +3172,7 @@ function needsRate(l){
   if (l.calc === 'diecut' && partOf(l) === 'die' && l.dies == null) return true;
   if (['sheet','area','impression','perup','piece'].includes(l.calc)) return l.rate == null;
   if (l.calc === 'printing' || l.calc === 'diecut') return l.first == null;
+  if (l.calc === 'mdf') return l.mode === 'total' ? l.total == null : l.rate == null;
   if (l.calc === 'fab') return l.sideRate == null || (l.euro && l.euroRate == null) || (l.window && l.winRate == null);
   if (l.calc === 'pack') return l.mode === 'carton' && l.cartonRate == null;
   return false;
@@ -3183,6 +3206,7 @@ function renderJob(){
   if (j && partsFor(j).includes('die') && !j.lines.some(x => x.calc === 'diecut' && partOf(x) === 'die')){ const mi = j.lines.findIndex(x => x.making); const dl = makeLine('diecut', {name:'Die & die cutting', dies:null, part:'die'}); if (mi >= 0) j.lines.splice(mi, 0, dl); else j.lines.push(dl); touch(); }
   if (j && partsFor(j).includes('fab') && !j.lines.some(x => x.calc === 'fab')){ j.lines.push(newFabLine()); touch(); }
   if (j && partsFor(j).includes('pack') && !j.lines.some(x => x.calc === 'pack')){ j.lines.push(newPackLine()); touch(); }
+  if (j && partsFor(j).includes('mdfboard') && !j.lines.some(x => x.calc === 'mdf')){ j.lines.push({id: uid(), name:'MDF board', calc:'mdf', part:'mdfboard', pv:2, actual:null, mode:'box', rate:null, total:null, vendor:''}); touch(); }
   if (j && partsFor(j).includes('make') && !j.lines.some(x => x.making)){ j.lines.push(makeLine('piece', {name:'Making charges', making:true, jobRate:true, part:'make'})); touch(); }
   if (!j){
     root.append(h('div',{class:'empty'}, S.loaded.jobs ? 'This job no longer exists.' : 'Loading job…'), h('div',{class:'row', style:'justify-content:center'}, h('button',{class:'btn', onclick:() => go('jobs')},'Back to jobs')));
@@ -3236,8 +3260,8 @@ function renderJob(){
       h('div',{class:'note wide', id:'dim-other', style:'align-self:end'}),
       h('div',{class:'wide', id:'made-before', style:'align-self:end'}),
       RIGID.has(j.boxType) ? fld('Box making', sel([['','—'],['grooving','Grooving'],['halfcut','Half cut']], j.making || '', {id:'j-making', onchange:e => setJ('making', e.target.value || null)})) : null,
-      j.boxType === 'corrugated' ? fld('Type of box', sel([['','Choose…'], ...Object.entries(CORR_STYLES)], j.corrStyle || '', {id:'j-corrstyle', onchange:e => { setJ('corrStyle', e.target.value || null); renderJob(); }})) : null,
-      j.boxType === 'corrugated' && j.corrStyle === 'custom' ? fld('Custom box notes', h('input',{id:'j-corrnote', value:j.corrNote || '', placeholder:'Describe the box', oninput:e => setJ('corrNote', e.target.value)}), 'wide') : null,
+      BOX_STYLES[j.boxType] ? fld(styleLabel(j.boxType), sel([['','Choose…'], ...Object.entries(BOX_STYLES[j.boxType])], BOX_STYLES[j.boxType][jStyle(j)] ? jStyle(j) : '', {id:'j-style', onchange:e => { setJ('boxStyle', e.target.value || null); renderJob(); }})) : null,
+      BOX_STYLES[j.boxType] && jStyle(j) === 'custom' ? fld(styleNoteLabel(j.boxType), h('input',{id:'j-stylenote', value:jStyleNote(j), placeholder:'Describe it', oninput:e => setJ('boxStyleNote', e.target.value)}), 'wide') : null,
       j.size ? h('div',{class:'note wide', style:'align-self:end'}, 'Old size note: ' + j.size) : null
     ),
     h('div',{class:'note warnline', id:'moq-warn', style:'margin-top:8px'}));
@@ -3354,7 +3378,7 @@ function renderLinesInner(){
   const isMill = r => r.gsmPerMm != null || /mill|grey ?board/i.test(r.name || '');
   j.lines.forEach((l) => {
     if (!boxes[partOf(l)]) return; // calculator not used for this product
-    if (l.calc === 'fab' || l.calc === 'pack'){ boxes[partOf(l)].append(l.calc === 'fab' ? fabEditor(l) : packEditor(l)); return; }
+    if (l.calc === 'fab' || l.calc === 'pack' || l.calc === 'mdf'){ boxes[partOf(l)].append(l.calc === 'fab' ? fabEditor(l) : l.calc === 'mdf' ? mdfEditor(l) : packEditor(l)); return; }
     let box = boxes[partOf(l)], nested = false;
     if (partOf(l) === 'print'){
       if (l.calc === 'sheet') box = groupBox[l.id];
@@ -3435,6 +3459,7 @@ function renderLinesInner(){
           fld('Printing', sel([['','Choose…'],['digital','Digital'],['offset','Offset']], l.acc.method || '', {onchange:e => { l.acc.method = e.target.value || null; touch(); }})),
           tx('Description', 'desc', 'e.g. 4×6 in, 350 GSM, foil logo', 280));
         if (l.accKind === 'mono') f.push(tx('Size', 'size', 'e.g. 4 × 2 × 6 in'), tx('Printing', 'printing', 'e.g. 4 colour + matte lam'), tx('Description', 'desc', '', 220));
+        if (l.accKind === 'handle') f.push(tx('Handle colour', 'colour', 'e.g. Black, Gold, Tan'), tx('Type', 'type', 'e.g. Rope, leather, metal'), tx('Description', 'desc', '', 220));
         if (l.accKind === 'envelope') f.push(tx('Size', 'size', 'e.g. 9 × 4 in'), tx('Printing', 'printing', 'e.g. 1 colour logo'), tx('Type', 'type', 'e.g. Kraft, window'), tx('Description', 'desc', '', 220));
       }
       if (isIns && l.insType === 'foam'){
@@ -3614,7 +3639,7 @@ function specFromCosting(j){
   const acc = j.lines.filter(l => inPart(l, 'acc')).map(l => {
     const a = l.acc || {};
     const per = l.auto === 'magnets' && l.perBox == null ? (n0(j.w) > 170 ? 2 : 1) : (l.perBox ?? null);
-    const det = l.accKind === 'card' ? [a.method ? (a.method === 'digital' ? 'Digital' : 'Offset') : '', a.desc] : [a.size, a.type, a.printing, a.desc];
+    const det = l.accKind === 'card' ? [a.method ? (a.method === 'digital' ? 'Digital' : 'Offset') : '', a.desc] : [a.colour ? 'Colour: ' + a.colour : '', a.size, a.type, a.printing, a.desc];
     return {name: l.name || 'Accessory', perBox: per, details: det.filter(Boolean).join(' · ')};
   });
   const dieL = j.lines.find(l => l.calc === 'diecut' && inPart(l, 'die'));
