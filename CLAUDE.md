@@ -7,6 +7,8 @@ explain changes in plain words, never ask him to run commands, and test before p
 - **Costings**: manufacturing cost vs quoted price per order, worked out from saved rates (paper, mill board, printing, lamination, foiling, spot UV, die cutting, accessories, making).
 - **Job cards**: internal instructions per order, with a master sheet and one sheet per team (designer, printing, fabrication, die, box making). PDF download.
 - **Stock & procurement**: materials list; each job card takes its materials out of stock automatically (and puts them back when deleted); "To buy" list.
+- **Database** (owner only): boxes made before with selling prices; search by size (L/W swap allowed, tolerance). Entries = `pastwork/<id>` (imported from Raj's old Excel sheet or added by hand) + every costing with a quoted price (live). Costing screen shows "Made before: N similar sizes".
+- **Home** (owner): big logo, greeting, tiles. Staff land straight on their section.
 - **Settings ⚙**: Rate list, Price history, Team & access.
 
 ## Where things are

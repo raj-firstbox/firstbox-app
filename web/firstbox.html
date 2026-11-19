@@ -41,7 +41,9 @@ h1{font-size:22px} h2{font-size:17px} h3{font-size:14px}
 .hsub{display:flex;align-items:center;gap:12px;font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin:0 0 12px}
 .hsub::after{content:"";flex:1;height:1px;background:var(--line)}
 .hgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:26px}
-@media (max-width:760px){.hgrid{grid-template-columns:1fr}}
+.hgrid.work{grid-template-columns:repeat(4,1fr)}
+@media (max-width:1000px){.hgrid.work{grid-template-columns:repeat(2,1fr)}}
+@media (max-width:760px){.hgrid,.hgrid.work{grid-template-columns:1fr}}
 .htile{display:flex;align-items:center;gap:16px;text-align:left;background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:18px;font:inherit;color:var(--fg);cursor:pointer;min-height:108px;transition:box-shadow .15s,border-color .15s,transform .15s}
 .htile:hover,.htile:focus-visible{border-color:var(--brand);box-shadow:0 8px 24px rgba(31,26,22,.08);transform:translateY(-1px)}
 .htile:focus-visible{outline:2px solid var(--brand);outline-offset:2px}
@@ -303,6 +305,7 @@ body:not(.show-rates) .adv{display:none}
       <button class="tab" id="tab-jobs" data-go="jobs">Costings</button>
       <button class="tab" id="tab-cards" data-go="cards">Job cards</button>
       <button class="tab" id="tab-stock" data-go="stock">Stock</button>
+      <button class="tab" id="tab-past" data-go="past">Database</button>
     </nav>
     <div class="spacer"></div>
     <span class="savestate" id="savestate"></span>
@@ -324,6 +327,7 @@ body:not(.show-rates) .adv{display:none}
 <main class="wrap">
   <div id="sysmsg"></div>
   <section id="view-home" hidden></section>
+  <section id="view-past" hidden></section>
   <section id="view-jobs"></section>
   <section id="view-job" hidden></section>
   <section id="view-cards" hidden></section>
@@ -465,7 +469,7 @@ const partOf = l => l.calc === 'diecut' && (l.part === 'print' || l.part === 'di
 
 // ---------- state ----------
 const S = {db:null, rates:new Map(), jobs:new Map(), settings:{overheadPct:12, marginPct:25, wastagePct:5},
-  loaded:{rates:false, jobs:false, hist:false, cards:false, stock:false, shared:false}, hist:new Map(), cards:new Map(), cardId:null, cdraft:null, newCardOpen:false, cardQ:'', role:null, myId:null, myRequest:null, user:null, team:new Map(), requests:new Map(), shared:{}, cardTab:'master', printAll:false, stock:new Map(), slog:new Map(), stockCat:'all', stockQ:'', stockOpen:null, stockNew:false, issue:null,
+  loaded:{rates:false, jobs:false, hist:false, cards:false, stock:false, shared:false, past:false}, hist:new Map(), cards:new Map(), cardId:null, cdraft:null, newCardOpen:false, cardQ:'', past:new Map(), pq:null, pastNew:false, pastEdit:null, role:null, myId:null, myRequest:null, user:null, team:new Map(), requests:new Map(), shared:{}, cardTab:'master', printAll:false, stock:new Map(), slog:new Map(), stockCat:'all', stockQ:'', stockOpen:null, stockNew:false, issue:null,
   hs:{cat:null, sel:null, slots:{}, mode:'rs', range:'all', focus:null}, slow:false, view:'jobs', jobId:null, draft:null,
   filters:{q:'', status:'all', month:'all'},
   diecutDefaults:{die:1500, first:1200, next:800},
@@ -797,7 +801,7 @@ function fromHash(){
   const hsh = location.hash.slice(1);
   if (hsh.startsWith('job-')) go('job', hsh.slice(4));
   else if (hsh.startsWith('card-')) go('card', hsh.slice(5));
-  else go(['home','jobs','rates','history','cards','stock','team'].includes(hsh) ? hsh : homeView());
+  else go(['home','jobs','rates','history','cards','stock','team','past'].includes(hsh) ? hsh : homeView());
 }
 document.querySelectorAll('[data-go]').forEach(b => b.addEventListener('click', () => { closeSettings(); go(b.dataset.go); }));
 // Settings menu (top-left gear): Rate list and Price history.
@@ -817,10 +821,12 @@ function render(){
   applyRoleChrome();
   const ready = S.role === 'owner' || !!ROLES[S.role];
   $('#view-access').hidden = ready;
-  if (!ready){ ['home','jobs','job','rates','history','cards','stock','card','team'].forEach(v => $('#view-' + v).hidden = true); renderAccess(); return; }
+  if (!ready){ ['home','past','jobs','job','rates','history','cards','stock','card','team'].forEach(v => $('#view-' + v).hidden = true); renderAccess(); return; }
   $('#view-team').hidden = S.view !== 'team';
   $('#tab-team').setAttribute('aria-current', S.view === 'team' ? 'page' : 'false');
   $('#view-home').hidden = S.view !== 'home';
+  $('#view-past').hidden = S.view !== 'past';
+  $('#tab-past').setAttribute('aria-current', S.view === 'past' ? 'page' : 'false');
   document.body.classList.toggle('on-home', S.view === 'home');
   $('#view-jobs').hidden = S.view !== 'jobs';
   $('#view-job').hidden = S.view !== 'job';
@@ -837,6 +843,7 @@ function render(){
   $('#setbtn').classList.toggle('on', S.view === 'rates' || S.view === 'history' || S.view === 'team');
   if (S.view === 'team'){ renderTeam(); return; }
   if (S.view === 'home') renderHome();
+  else if (S.view === 'past') renderPast();
   else if (S.view === 'jobs') renderJobs();
   else if (S.view === 'job') renderJob();
   else if (S.view === 'history') renderHistory();
@@ -847,6 +854,135 @@ function render(){
 }
 
 // ---------- Jobs view ----------
+// ---------- Database of past work: every box made before, with its selling price ----------
+// Entries: saved ones (`pastwork/<id>`: imported from the old Excel sheet or added by hand) plus every costing
+// that has a quoted price (added automatically, always up to date). Sizes are kept in mm.
+function pastEntries(){
+  const out = [];
+  for (const p of S.past.values()) out.push({...p, source: p.source || 'saved'});
+  for (const j of S.jobs.values()){
+    const price = j.quotePrice ?? null;
+    if (price == null || price === '') continue;
+    out.push({id:'job:' + j.id, jobId:j.id, client:j.client || '', item:j.description || '', boxType:j.boxType || '', l:j.l ?? null, w:j.w ?? null, h:j.h ?? null,
+      qty:j.qty ?? null, pricePc:n0(price), date:j.date || '', notes:'', source:'costing'});
+  }
+  return out;
+}
+// How far a past size is from the one searched (mm). Length and width may be swapped; height must match height.
+function sizeGap(e, q){
+  const has = v => v != null && v !== '' && !isNaN(v);
+  const d = (a, b) => has(a) && has(b) ? Math.abs(n0(a) - n0(b)) : null;
+  const opts = [[d(e.l, q.l), d(e.w, q.w)], [d(e.l, q.w), d(e.w, q.l)]].map(p => p.concat([d(e.h, q.h)]));
+  let best = null;
+  for (const o of opts){
+    const asked = [q.l, q.w, q.h].filter(has).length; if (!asked) return null;
+    const vals = o.filter(v => v != null);
+    if (vals.length < asked) continue; // the past entry is missing a size that was searched
+    const m = Math.max(...vals);
+    if (best == null || m < best.max) best = {max: m, diffs: o};
+  }
+  return best;
+}
+const boxName = k => BOX[k] || k || '—';
+const sizeTxt = e => [e.l, e.w, e.h].some(v => v != null && v !== '') ? [e.l, e.w, e.h].map(v => v == null || v === '' ? '–' : fmtN(v, 1)).join(' × ') + ' mm' : '—';
+const sizeIn = e => [e.l, e.w, e.h].some(v => v != null && v !== '') ? [e.l, e.w, e.h].map(v => v == null || v === '' ? '–' : fmtN(n0(v) / MM_PER_IN, 2)).join(' × ') + ' in' : '';
+function similarCount(l, w, hh, exceptJobId, tol){
+  const q = {l, w, h: hh};
+  if (![l, w, hh].some(v => v != null && v !== '')) return 0;
+  return pastEntries().filter(e => e.jobId !== exceptJobId).map(e => sizeGap(e, q)).filter(g => g && g.max <= (tol ?? 5)).length;
+}
+
+function renderPast(){
+  const root = $('#view-past'); root.replaceChildren();
+  const q = S.pq = S.pq || {unit:'mm', l:null, w:null, h:null, tol:5, box:'', text:''};
+  const inch = q.unit === 'in';
+  const shown = v => v == null ? null : inch ? Math.round(v / MM_PER_IN * 100) / 100 : Math.round(v * 10) / 10;
+  const dim = (label, k) => fld(label + ' (' + (inch ? 'in' : 'mm') + ')', numIn(shown(q[k]), v => { q[k] = v == null ? null : inch ? v * MM_PER_IN : v; draw(); }));
+  root.append(h('div',{class:'head'},
+    h('div',{}, h('h1',{},'Database'), h('div',{class:'note'},'Every box made before, with its selling price. Search by size before you quote or make a job card. Costings with a quoted price are added automatically.')),
+    h('button',{class:'btn primary', onclick:() => { S.pastNew = !S.pastNew; S.pastEdit = null; renderPast(); }}, S.pastNew ? 'Close' : '+ Add past job')));
+  if (S.pastNew || S.pastEdit) root.append(pastForm(S.pastEdit ? S.past.get(S.pastEdit) : null));
+  root.append(h('section',{class:'card', style:'display:grid;gap:10px;margin-bottom:14px'},
+    h('h2',{},'Find a size'),
+    h('div',{class:'row', style:'align-items:flex-end'},
+      fld('Size in', sel([['mm','mm'],['in','inches']], q.unit, {onchange:e => { q.unit = e.target.value; renderPast(); }})),
+      dim('Length L', 'l'), dim('Width W', 'w'), dim('Height H', 'h'),
+      fld('Close to within', sel([[0,'Exact size'],[2,'± 2 mm'],[5,'± 5 mm'],[10,'± 10 mm'],[20,'± 20 mm'],[50,'± 50 mm']], q.tol, {onchange:e => { q.tol = +e.target.value; draw(); }})),
+      fld('Box type', sel([['','Any'], ...Object.entries(BOX).filter(([k]) => !RETIRED.includes(k))], q.box, {onchange:e => { q.box = e.target.value; draw(); }})),
+      fld('Client or item', h('input',{type:'search', value:q.text, placeholder:'Search', oninput:e => { q.text = e.target.value; draw(); }})),
+      h('button',{class:'btn', onclick:() => { S.pq = null; renderPast(); }}, 'Clear')),
+    h('div',{class:'note'},'Length and width are matched either way round. Leave a size empty to ignore it.')));
+  const box = h('div',{}); root.append(box);
+  function draw(){
+    box.replaceChildren();
+    if (!S.loaded.past || !S.loaded.jobs){ box.append(h('div',{class:'card empty'},'Loading…')); return; }
+    const all = pastEntries();
+    if (!all.length){ box.append(h('div',{class:'card empty'},'Nothing here yet. Costings with a quoted price appear automatically; older jobs can be added with “+ Add past job”.')); return; }
+    const searching = [q.l, q.w, q.h].some(v => v != null);
+    const text = (q.text || '').trim().toLowerCase();
+    let rows = all.map(e => ({e, g: searching ? sizeGap(e, q) : null}))
+      .filter(r => !searching || (r.g && r.g.max <= q.tol + 0.05))
+      .filter(r => !q.box || r.e.boxType === q.box)
+      .filter(r => !text || [r.e.client, r.e.item, boxName(r.e.boxType), r.e.notes].join(' ').toLowerCase().includes(text));
+    rows.sort((a, b) => searching ? a.g.max - b.g.max || String(b.e.date).localeCompare(String(a.e.date)) : String(b.e.date).localeCompare(String(a.e.date)));
+    const prices = rows.map(r => r.e.pricePc).filter(v => v != null && v !== '' && n0(v) > 0).map(n0);
+    box.append(h('div',{class:'kpis'},
+      kpi(searching ? 'Matching boxes' : 'Boxes in database', String(rows.length), searching ? 'within ' + (q.tol ? '± ' + q.tol + ' mm' : 'exact size') : all.length + ' in total'),
+      kpi('Lowest price / pc', prices.length ? rs2(Math.min(...prices)) : '—', 'of these boxes'),
+      kpi('Highest price / pc', prices.length ? rs2(Math.max(...prices)) : '—', 'of these boxes'),
+      kpi('Average price / pc', prices.length ? rs2(prices.reduce((a, b) => a + b, 0) / prices.length) : '—', 'of these boxes')));
+    if (!rows.length){ box.append(h('div',{class:'card empty'}, searching ? 'No box of this size made before. Try a wider “Close to within”.' : 'Nothing matches.')); return; }
+    const gapTxt = g => { if (!g) return ''; if (g.max <= 0.5) return 'Same size'; return 'Differs up to ' + fmtN(g.max, 1) + ' mm'; };
+    box.append(h('div',{class:'tablebox'}, h('table',{class:'jobs'},
+      h('thead',{}, h('tr',{}, searching ? h('th',{},'Match') : null, h('th',{},'Client'), h('th',{},'Item'), h('th',{},'Size (L × W × H)'), h('th',{class:'n'},'Qty'), h('th',{class:'n'},'Selling price / pc'), h('th',{},'Date'), h('th',{},'From'), h('th',{class:'act'}, h('span',{class:'sr'},'Actions')))),
+      h('tbody',{}, rows.slice(0, 300).map(({e, g}) => h('tr',{class: e.jobId ? 'click' : '', onclick: e.jobId ? () => go('job', e.jobId) : null},
+        searching ? h('td',{}, h('span',{class: g && g.max <= 0.5 ? 'pill Completed' : 'pill Confirmed'}, gapTxt(g))) : null,
+        h('td',{}, h('div',{class:'jobno'}, e.client || '—')),
+        h('td',{style:'white-space:normal'}, h('div',{}, boxName(e.boxType)), h('div',{class:'sub'}, e.item || ''), e.notes ? h('div',{class:'sub'}, e.notes) : ''),
+        h('td',{}, h('div',{}, sizeTxt(e)), h('div',{class:'sub'}, sizeIn(e))),
+        h('td',{class:'n'}, e.qty ? fmtN(e.qty) : '—'),
+        h('td',{class:'n'}, e.pricePc != null && e.pricePc !== '' ? rs2(n0(e.pricePc)) : '—'),
+        h('td',{}, e.date ? fmtDate(String(e.date).slice(0, 10)) : '—'),
+        h('td',{}, e.source === 'costing' ? 'Costing' : e.source === 'import' ? 'Old records' : 'Added'),
+        h('td',{class:'act'}, e.source === 'costing' ? '' : h('div',{class:'row', style:'gap:4px;flex-wrap:nowrap;justify-content:flex-end'},
+          h('button',{class:'btn small', onclick:ev => { ev.stopPropagation(); S.pastEdit = e.id; S.pastNew = false; renderPast(); window.scrollTo(0, 0); }}, 'Edit'),
+          rowDelete('entry for ' + (e.client || 'this job'), async () => { S.past.delete(e.id); await removeDoc('pastwork/' + e.id); renderPast(); })))))))),
+      rows.length > 300 ? h('div',{class:'note', style:'margin-top:8px'}, 'Showing the closest 300. Narrow the search to see others.') : '');
+  }
+  draw();
+}
+function pastForm(ex){
+  const st = ex ? {...ex} : {client:'', item:'', boxType:'rigid', l:null, w:null, h:null, qty:null, pricePc:null, date:today(), notes:'', unit:'mm'};
+  st.unit = st.unit || 'mm';
+  const wrap = h('div',{class:'newjob'});
+  const draw = () => {
+    const inch = st.unit === 'in';
+    const shown = v => v == null ? null : inch ? Math.round(v / MM_PER_IN * 100) / 100 : Math.round(v * 10) / 10;
+    const dim = (label, k) => fld(label + ' (' + (inch ? 'in' : 'mm') + ')', numIn(shown(st[k]), v => st[k] = v == null ? null : inch ? v * MM_PER_IN : v));
+    wrap.replaceChildren(h('h2',{}, ex ? 'Edit past job' : 'Add a past job'),
+      h('div',{class:'grid'},
+        fld('Client', h('input',{value:st.client || '', oninput:e => st.client = e.target.value})),
+        fld('Item', h('input',{value:st.item || '', placeholder:'e.g. Perfume box', oninput:e => st.item = e.target.value})),
+        fld('Box type', sel(boxOptions(st.boxType), st.boxType || 'rigid', {onchange:e => st.boxType = e.target.value})),
+        fld('Size in', sel([['mm','mm'],['in','inches']], st.unit, {onchange:e => { st.unit = e.target.value; draw(); }})),
+        dim('Length L', 'l'), dim('Width W', 'w'), dim('Height H', 'h'),
+        fld('Quantity (pcs)', numIn(st.qty, v => st.qty = v)),
+        fld('Selling price / pc (₹)', numIn(st.pricePc, v => st.pricePc = v)),
+        fld('Date', h('input',{type:'date', value:String(st.date || '').slice(0, 10), onchange:e => st.date = e.target.value})),
+        fld('Notes', h('input',{value:st.notes || '', placeholder:'Die no., finish, anything to remember', oninput:e => st.notes = e.target.value}))),
+      h('div',{class:'row'}, h('button',{class:'btn primary', onclick:() => {
+        if (!String(st.client || '').trim() && !String(st.item || '').trim()){ alert0(wrap, 'Enter at least the client or the item.'); return; }
+        const id = ex ? ex.id : uid();
+        const doc = {client:String(st.client || '').trim(), item:String(st.item || '').trim(), boxType:st.boxType, l:num(st.l), w:num(st.w), h:num(st.h), qty:num(st.qty), pricePc:num(st.pricePc), date:st.date || '', notes:st.notes || '', source: ex ? (ex.source || 'manual') : 'manual', extra: ex && ex.extra ? ex.extra : undefined, updatedAt:Date.now()};
+        if (doc.extra === undefined) delete doc.extra;
+        S.past.set(id, {...doc, id}); flush('pastwork/' + id, () => doc);
+        S.pastNew = false; S.pastEdit = null; renderPast();
+      }}, ex ? 'Save changes' : 'Add to database'), h('button',{class:'btn', onclick:() => { S.pastNew = false; S.pastEdit = null; renderPast(); }}, 'Cancel')));
+  };
+  draw();
+  return wrap;
+}
+
 // ---------- Home: big tiles for the main sections ----------
 const ICONS = {
   jobs:'<path d="M4 4h16v16H4z"/><path d="M8 8h8M8 12h8M8 16h5"/>',
@@ -854,6 +990,7 @@ const ICONS = {
   stock:'<path d="M3 8l9-5 9 5v8l-9 5-9-5z"/><path d="M3 8l9 5 9-5M12 13v8"/>',
   rates:'<path d="M5 4h14v16H5z"/><path d="M9 8h6M9 12h6M9 16h3"/>',
   history:'<path d="M4 19h16"/><path d="M5 15l4-5 4 3 6-7"/>',
+  past:'<ellipse cx="12" cy="5.5" rx="7.5" ry="2.5"/><path d="M4.5 5.5v6c0 1.4 3.4 2.5 7.5 2.5s7.5-1.1 7.5-2.5v-6"/><path d="M4.5 11.5v6c0 1.4 3.4 2.5 7.5 2.5s7.5-1.1 7.5-2.5v-6"/>',
   team:'<circle cx="9" cy="8" r="3"/><path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6"/><circle cx="17" cy="9" r="2.5"/><path d="M15.5 14.2c2.8.3 5 2.6 5 5.8"/>'
 };
 let homeT = null;
@@ -875,13 +1012,11 @@ function renderHome(){
     h('h1',{}, (S.myName ? 'Hi ' + S.myName + ', ' : '') + (hr < 12 ? (S.myName ? 'good morning' : 'Good morning') : hr < 17 ? (S.myName ? 'good afternoon' : 'Good afternoon') : (S.myName ? 'good evening' : 'Good evening'))),
     h('div',{class:'note'}, 'What would you like to work on?')));
   root.append(h('hr',{class:'hdivider'}), h('h2',{class:'hsub'}, 'Work'));
-  root.append(h('div',{class:'hgrid'},
-    tile('jobs', 'jobs', 'Costings', 'Work out cost and quote for an order',
-      S.loaded.jobs ? jobs.length + ' costing' + (jobs.length === 1 ? '' : 's') + ' · ' + jobs.filter(j => (j.date || '').slice(0, 7) === month).length + ' this month' : loading),
-    tile('cards', 'cards', 'Job cards', 'Instructions for the team, master sheet, PDFs',
-      S.loaded.cards ? cards.length + ' job card' + (cards.length === 1 ? '' : 's') + (lastCard ? ' · latest ' + lastCard.id : '') : loading),
-    tile('stock', 'stock', 'Stock', 'Materials in stock, what to buy for upcoming jobs',
-      S.loaded.stock ? (short ? short + ' to buy now' : stock.length + ' material' + (stock.length === 1 ? '' : 's')) + (low ? ' · ' + low + ' running low' : '') : loading, !!short)));
+  root.append(h('div',{class:'hgrid work'},
+    tile('jobs', 'jobs', 'Costings', 'Work out cost and quote for an order'),
+    tile('cards', 'cards', 'Job cards', 'Instructions for the team, master sheet, PDFs'),
+    tile('stock', 'stock', 'Stock', 'Materials in stock, what to buy for upcoming jobs'),
+    tile('past', 'past', 'Database', 'Boxes made before and their selling prices')));
   root.append(h('h2',{class:'hsub'}, 'Settings'));
   root.append(h('div',{class:'hgrid'},
     tile('rates', 'rates', 'Rate list', 'Paper, board, lamination, printing and other rates', S.loaded.rates ? S.rates.size + ' rates' : loading, false, true),
@@ -996,7 +1131,7 @@ const homeView = () => S.role === 'owner' ? 'home' : ((ROLES[S.role] || {views:[
 
 function applyRoleChrome(){
   const own = isOwnerRole(), r = ROLES[S.role];
-  [['tab-jobs','jobs'], ['tab-cards','cards'], ['tab-stock','stock']].forEach(([id, v]) => { const el = $('#' + id); if (el) el.hidden = !(S.role && canView(v) && (own || r)); });
+  [['tab-jobs','jobs'], ['tab-cards','cards'], ['tab-stock','stock'], ['tab-past','past']].forEach(([id, v]) => { const el = $('#' + id); if (el) el.hidden = !(S.role && canView(v) && (own || r)); });
   const sw = $('.setwrap'); if (sw) sw.hidden = !own;
   const chip = $('#rolechip');
   if (chip){ chip.hidden = !r; chip.textContent = r ? r.n + ' access' : ''; }
@@ -1196,9 +1331,18 @@ function showOtherDims(){
   const j = S.draft, el = $('#dim-other'); if (!el || !j) return;
   const inch = (j.dimUnit || 'mm') === 'in';
   const vals = ['l','w','h'].map(k => j[k]);
+  madeBefore();
   if (vals.every(v => v == null)){ el.textContent = ''; return; }
   const f = v => v == null ? '–' : inch ? fmtN(v, 1) : fmtN(v / MM_PER_IN, 2);
   el.textContent = '= ' + vals.map(f).join(' × ') + (inch ? ' mm' : ' in');
+}
+// On a costing: have we made this size before? (within ± 5 mm, from the Database)
+function madeBefore(){
+  const j = S.draft, el = $('#made-before'); if (!el || !j) return;
+  if (!S.loaded.past || ![j.l, j.w, j.h].some(v => v != null)){ el.replaceChildren(); return; }
+  const n = similarCount(j.l, j.w, j.h, j.id, 5);
+  el.replaceChildren(n ? h('button',{type:'button', class:'linkbtn', onclick:() => { S.pq = {unit:j.dimUnit || 'mm', l:j.l, w:j.w, h:j.h, tol:5, box:'', text:''}; go('past'); }},
+    'Made before: ' + n + ' box' + (n > 1 ? 'es' : '') + ' of a similar size (± 5 mm). See prices') : h('span',{class:'note'}, 'Not made this size before (± 5 mm).'));
 }
 // Special effects on a printed sheet (job card: fx.foil, fx.spotuv, fx.emboss, fx.deboss).
 const FX = {foil:'Foiling', spotuv:'Spot UV', emboss:'Embossing', deboss:'Debossing'};
@@ -1364,6 +1508,7 @@ function renderJob(){
       fld('Size in', sel([['mm','mm'],['in','inches']], j.dimUnit || 'mm', {id:'j-unit', onchange:e => { setJ('dimUnit', e.target.value); renderJob(); }})),
       dimField('Length L', 'l', 'j-l'), dimField('Width W', 'w', 'j-w'), dimField('Height H', 'h', 'j-h'),
       h('div',{class:'note wide', id:'dim-other', style:'align-self:end'}),
+      h('div',{class:'wide', id:'made-before', style:'align-self:end'}),
       RIGID.has(j.boxType) ? fld('Box making', sel([['','—'],['grooving','Grooving'],['halfcut','Half cut']], j.making || '', {id:'j-making', onchange:e => setJ('making', e.target.value || null)})) : null,
       j.size ? h('div',{class:'note wide', style:'align-self:end'}, 'Old size note: ' + j.size) : null
     ),
@@ -3025,6 +3170,14 @@ async function boot(){
       }
     }, fail);
     listSub('team', 'team'); listSub('requests', 'requests');
+    db.collection('pastwork').onSnapshot(snap => {
+      const m = new Map();
+      for (const d of snap.docs){ const path = 'pastwork/' + d.id; m.set(d.id, busy(path) && S.past.has(d.id) ? S.past.get(d.id) : {...d.data(), id:d.id}); }
+      for (const [id, x] of S.past) if (!m.has(id) && busy('pastwork/' + id)) m.set(id, x);
+      S.past = m; if (!snap.metadata.fromCache) S.loaded.past = true;
+      if (S.view === 'past' && !$('#view-past').contains(document.activeElement)) renderPast();
+      if (S.view === 'job') showOtherDims();
+    }, () => { S.loaded.past = true; });
     startTeamData();
     return;
   }
