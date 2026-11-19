@@ -79,22 +79,22 @@ drop policy if exists docs_delete on public.docs;
 create policy docs_read on public.docs for select to authenticated using (
   public.my_role() = 'owner'
   or (public.my_role() in ('inventory','jobcards') and col in ('jobcards','stock','stockLog','shared'))
-  or (public.my_role() = 'jobcards' and col in ('orders','invoices','clients','billItems'))
+  or (public.my_role() = 'jobcards' and col in ('orders','invoices','clients','billItems','payments'))
 );
 create policy docs_insert on public.docs for insert to authenticated with check (
   public.my_role() = 'owner'
-  or (public.my_role() = 'jobcards'  and col in ('jobcards','stock','stockLog','orders','invoices','clients','billItems'))
+  or (public.my_role() = 'jobcards'  and col in ('jobcards','stock','stockLog','orders','invoices','clients','billItems','payments'))
   or (public.my_role() = 'inventory' and col in ('stock','stockLog'))
 );
 create policy docs_update on public.docs for update to authenticated
   using (
     public.my_role() = 'owner'
-    or (public.my_role() = 'jobcards'  and col in ('jobcards','stock','stockLog','orders','invoices','clients','billItems'))
+    or (public.my_role() = 'jobcards'  and col in ('jobcards','stock','stockLog','orders','invoices','clients','billItems','payments'))
     or (public.my_role() = 'inventory' and col in ('stock','stockLog'))
   )
   with check (
     public.my_role() = 'owner'
-    or (public.my_role() = 'jobcards'  and col in ('jobcards','stock','stockLog','orders','invoices','clients','billItems'))
+    or (public.my_role() = 'jobcards'  and col in ('jobcards','stock','stockLog','orders','invoices','clients','billItems','payments'))
     or (public.my_role() = 'inventory' and col in ('stock','stockLog'))
   );
 create policy docs_delete on public.docs for delete to authenticated using (
