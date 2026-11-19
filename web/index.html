@@ -48,6 +48,11 @@ h1{font-size:22px} h2{font-size:17px} h3{font-size:14px}
 .htile.small{min-height:0;padding:16px;border-top-width:3px}
 .htile.small .hicon{width:42px;height:42px;border-radius:10px}
 .htile.small .htitle{font-size:17px}
+.on-home .bar{display:none}
+.hhero{position:relative;display:grid;justify-items:center;text-align:center;gap:6px;padding:28px 0 26px}
+.hlogo{width:min(420px,80vw);height:auto;margin-bottom:14px}
+.hhero h1{font-size:24px}
+.hsignout{position:absolute;top:0;right:0}
 .hsub{font-size:13px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin:4px 0 10px}
 .rowdel{display:inline-grid;place-items:center;min-width:34px;height:34px;padding:0 8px;border:1px solid transparent;border-radius:6px;background:none;color:var(--muted);cursor:pointer;font:inherit;font-size:13px;font-weight:600;white-space:nowrap}
 .rowdel:hover,.rowdel:focus-visible{color:var(--neg,#B42318);border-color:var(--line);background:var(--surface)}
@@ -823,6 +828,7 @@ function render(){
   $('#view-team').hidden = S.view !== 'team';
   $('#tab-team').setAttribute('aria-current', S.view === 'team' ? 'page' : 'false');
   $('#view-home').hidden = S.view !== 'home';
+  document.body.classList.toggle('on-home', S.view === 'home');
   $('#view-jobs').hidden = S.view !== 'jobs';
   $('#view-job').hidden = S.view !== 'job';
   $('#view-rates').hidden = S.view !== 'rates';
@@ -869,7 +875,12 @@ function renderHome(){
   const tile = (k, view, title, desc, stat, alert, small) => h('button',{type:'button', class:'htile' + (small ? ' small' : ''), onclick:() => go(view)},
     icon(k), h('span',{class:'htext'}, h('span',{class:'htitle'}, title), h('span',{class:'hdesc'}, desc)));
   const hr = new Date().getHours();
-  root.append(h('div',{class:'head'}, h('div',{}, h('h1',{}, (S.myName ? 'Hi ' + S.myName + ', ' : '') + (hr < 12 ? (S.myName ? 'good morning' : 'Good morning') : hr < 17 ? (S.myName ? 'good afternoon' : 'Good afternoon') : (S.myName ? 'good evening' : 'Good evening'))), h('div',{class:'note'}, 'What would you like to work on?'))));
+  const so = document.getElementById('fbc-signout');
+  root.append(h('div',{class:'hhero'},
+    so ? h('button',{class:'btn small hsignout', type:'button', onclick:() => so.click()}, 'Sign out') : '',
+    h('img',{class:'hlogo', src:($('#logo') || {}).src || '', alt:'Firstbox'}),
+    h('h1',{}, (S.myName ? 'Hi ' + S.myName + ', ' : '') + (hr < 12 ? (S.myName ? 'good morning' : 'Good morning') : hr < 17 ? (S.myName ? 'good afternoon' : 'Good afternoon') : (S.myName ? 'good evening' : 'Good evening'))),
+    h('div',{class:'note'}, 'What would you like to work on?')));
   root.append(h('div',{class:'hgrid'},
     tile('jobs', 'jobs', 'Costings', 'Work out cost and quote for an order',
       S.loaded.jobs ? jobs.length + ' costing' + (jobs.length === 1 ? '' : 's') + ' · ' + jobs.filter(j => (j.date || '').slice(0, 7) === month).length + ' this month' : loading),
