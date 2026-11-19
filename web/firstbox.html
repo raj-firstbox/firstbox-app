@@ -855,9 +855,9 @@ function render(){
 
 // ---------- Jobs view ----------
 // ---------- Database of past work: every box made before, with its selling price ----------
-// Separate databases per product: rigid boxes, mono cartons, MDF boxes, printing. Quotes only compare like with like.
-const PCATS = {rigid:'Rigid boxes', mono:'Mono cartons', mdf:'MDF boxes', printing:'Printing'};
-const catOf = e => e.cat || (RIGID.has(e.boxType) ? 'rigid' : ['mono','mdf','printing'].includes(e.boxType) ? e.boxType : 'rigid');
+// Separate databases per product: rigid boxes, mono cartons, corrugated boxes, MDF boxes. Quotes only compare like with like.
+const PCATS = {rigid:'Rigid boxes', mono:'Mono cartons', corrugated:'Corrugated boxes', mdf:'MDF boxes'};
+const catOf = e => e.cat || (RIGID.has(e.boxType) ? 'rigid' : ['mono','mdf','corrugated','printing'].includes(e.boxType) ? e.boxType : 'rigid');
 // Entries: saved ones (`pastwork/<id>`: imported from the old Excel sheet or added by hand) plus every costing
 // that has a quoted price (added automatically, always up to date). Sizes are kept in mm.
 function pastEntries(){
@@ -898,7 +898,7 @@ function similarCount(l, w, hh, exceptJobId, tol, cat){
 function renderPast(){
   const root = $('#view-past'); root.replaceChildren();
   const q = S.pq = S.pq || {unit:'in', l:null, w:null, h:null, tol:5, atol:5, mode:'size', box:'', text:''};
-  q.mode = q.mode || 'size'; q.atol = q.atol ?? 5; q.cat = q.cat || 'rigid';
+  q.mode = q.mode || 'size'; q.atol = q.atol ?? 5; q.cat = PCATS[q.cat] ? q.cat : 'rigid';
   const areaMode = q.mode === 'area';
   const inch = q.unit === 'in';
   const shown = v => v == null ? null : inch ? Math.round(v / MM_PER_IN * 100) / 100 : Math.round(v * 10) / 10;
@@ -1355,6 +1355,7 @@ function madeBefore(){
   const j = S.draft, el = $('#made-before'); if (!el || !j) return;
   if (!S.loaded.past || ![j.l, j.w, j.h].some(v => v != null)){ el.replaceChildren(); return; }
   const cat = catOf({boxType: j.boxType});
+  if (!PCATS[cat]){ el.replaceChildren(); return; } // printing service: no database
   const n = similarCount(j.l, j.w, j.h, j.id, 5, cat);
   el.replaceChildren(n ? h('button',{type:'button', class:'linkbtn', onclick:() => { S.pq = {unit:j.dimUnit || 'mm', l:j.l, w:j.w, h:j.h, tol:5, atol:5, mode:'size', box:'', text:'', cat}; go('past'); }},
     'Made before: ' + n + ' similar ' + (cat === 'mono' ? 'mono carton' + (n > 1 ? 's' : '') : cat === 'rigid' ? 'rigid box' + (n > 1 ? 'es' : '') : 'job' + (n > 1 ? 's' : '')) + ' (± 5 mm). See prices') : h('span',{class:'note'}, 'Not made this size before in ' + PCATS[cat].toLowerCase() + ' (± 5 mm).'));
