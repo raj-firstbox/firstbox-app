@@ -1015,7 +1015,7 @@ function pastForm(ex, cat){
 // ---------- Orders (client POs) and dispatches ----------
 // A PO has variants (e.g. Oud, Icy, Sandal) each with an ordered quantity. Each dispatch records how many of
 // each variant went in that lot (mix and match). Delivered and remaining are worked out from the dispatches.
-// orders/<id>: client, poNo, poDate, item, notes, variants:[{id,name,qty}], dispatches:[{id,date,ref,note,items:{variantId:qty},by}]
+// orders/<id>: client, poNo, poDate, item, notes, variants:[{id,name,qty}], dispatches:[{id,lot,date,ref,note,items:{variantId:qty},by,at}]
 // poRates/<id>: {rate} — price per piece, the same for every variant of the PO. Owner only.
 function poStats(o){
   const vs = o.variants || [], del = {};
@@ -1028,7 +1028,48 @@ function poStats(o){
   const last = (o.dispatches || []).map(d => d.date || '').sort().pop() || '';
   return {del, ordered, delivered, remaining, status, last, pct: ordered ? Math.min(100, delivered / ordered * 100) : 0};
 }
-const PO_STATUS = {none:['Not dispatched',''], part:['Part dispatched','Confirmed'], done:['Completed','Completed']};
+// Several POs from one client can run at the same time at different rates. Dispatches always finish the
+// oldest PO first (PO date, then when it was entered): a dispatch lot is split over the client's POs by variant name.
+// Each part is saved on its PO with the same `lot` id, so the rate of every piece sent is known.
+const normC = s => String(s || '').trim().toLowerCase().replace(/\s+/g, ' ');
+const lotOf = d => d.lot || d.id;
+const sameLot = (d, lot) => lotOf(d) === lot;
+function clientPOs(client){
+  const c = normC(client);
+  return [...S.orders.values()].filter(o => normC(o.client) === c)
+    .sort((a, b) => String(a.poDate || '').localeCompare(String(b.poDate || '')) || n0(a.createdAt) - n0(b.createdAt));
+}
+// Delivered per variant of a PO, leaving out one dispatch lot (the one being edited).
+function delExcept(o, lot){
+  const del = {};
+  for (const d of o.dispatches || []) if (!lot || !sameLot(d, lot)) for (const [vid, q] of Object.entries(d.items || {})) del[vid] = (del[vid] || 0) + n0(q);
+  return del;
+}
+// Older POs of the same client that still have pieces of this PO's variants to deliver.
+function olderOpen(o){
+  const list = clientPOs(o.client), i = list.findIndex(x => x.id === o.id), names = new Set((o.variants || []).map(v => normC(v.name)));
+  return list.slice(0, Math.max(0, i)).map(x => { const s = poStats(x); return {o:x, rem:(x.variants || []).filter(v => names.has(normC(v.name))).reduce((a, v) => a + Math.max(0, n0(v.qty) - n0(s.del[v.id])), 0)}; }).filter(r => r.rem > 0);
+}
+// Newer POs of the same client that share variants with this one and wait for it.
+function newerOf(o){
+  const list = clientPOs(o.client), i = list.findIndex(x => x.id === o.id), names = new Set((o.variants || []).map(v => normC(v.name)));
+  return list.slice(i + 1).filter(x => (x.variants || []).some(v => names.has(normC(v.name))));
+}
+// Split pieces of each variant (keyed by normalised name) over the client's POs, oldest first. Pieces beyond
+// every PO's remaining go to the newest PO with that variant, as extra.
+function allocate(client, qtyByName, lot){
+  const pos = clientPOs(client), out = [];
+  for (const [k, total] of Object.entries(qtyByName)){
+    let need = n0(total); if (need <= 0) continue;
+    const cands = []; for (const o of pos){ const v = (o.variants || []).find(x => normC(x.name) === k); if (v) cands.push({o, v}); }
+    if (!cands.length) continue;
+    for (const c of cands){ if (need <= 0) break; const take = Math.min(Math.max(0, n0(c.v.qty) - n0(delExcept(c.o, lot)[c.v.id])), need); if (take > 0){ out.push({o:c.o, v:c.v, q:take}); need -= take; } }
+    if (need > 0){ const last = cands[cands.length - 1], ex = out.find(x => x.o.id === last.o.id && x.v.id === last.v.id); if (ex){ ex.q += need; ex.extra = true; } else out.push({o:last.o, v:last.v, q:need, extra:true}); }
+  }
+  return out;
+}
+const PO_STATUS = {none:['Not dispatched',''], wait:['Waiting for older PO','Quoted'], part:['Part dispatched','Confirmed'], done:['Completed','Completed']};
+const poStatus = (o, s) => s.status === 'none' && olderOpen(o).length ? 'wait' : s.status;
 const poPill = st => h('span',{class:'pill ' + PO_STATUS[st][1]}, PO_STATUS[st][0]);
 const progBar = (p, done) => h('div',{class:'prog' + (done ? ' done' : ''), role:'img', 'aria-label': Math.round(p) + '% delivered'}, h('i',{style:'width:' + Math.round(p) + '%'}));
 const poRate = id => { const r = S.poRates.get(id); return r && r.rate != null && r.rate !== '' ? n0(r.rate) : null; };
@@ -1082,7 +1123,7 @@ function renderOrders(){
         h('td',{}, h('div',{}, o.poNo || '—'), h('div',{class:'sub'}, fmtDate(o.poDate))),
         h('td',{class:'n'}, fmtN(s.ordered)), h('td',{class:'n'}, fmtN(s.delivered)), h('td',{class:'n'}, h('b',{}, fmtN(s.remaining))),
         h('td',{}, progBar(s.pct, s.status === 'done'), h('div',{class:'sub'}, Math.round(s.pct) + '%')),
-        h('td',{}, poPill(s.status)), h('td',{}, fmtDate(s.last) || '—'),
+        h('td',{}, poPill(poStatus(o, s))), h('td',{}, fmtDate(s.last) || '—'),
         own ? h('td',{class:'n'}, rt == null ? '—' : rs(rt * s.remaining)) : null,
         own ? h('td',{class:'act'}, rowDelete('PO for ' + (o.client || 'no client'), async () => { await deleteOrder(o.id); renderOrders(); })) : null); }))));
   };
@@ -1150,12 +1191,15 @@ function renderOrder(){
   const own = isOwnerRole(), s = poStats(o), rt = poRate(o.id), vs = o.variants || [];
   root.append(h('div',{class:'head'},
     h('div',{}, h('button',{class:'linkbtn', onclick:() => go('orders')}, '← All orders'),
-      h('h1',{style:'margin-top:6px'}, poTitle(o), ' ', poPill(s.status)),
+      h('h1',{style:'margin-top:6px'}, poTitle(o), ' ', poPill(poStatus(o, s))),
       h('div',{class:'note'}, [o.item, o.poDate ? 'PO date ' + fmtDate(o.poDate) : '', own && rt != null ? rs2(rt) + ' / pc' : '', o.notes].filter(Boolean).join(' · '))),
     h('div',{class:'row'},
       h('button',{class:'btn', onclick:() => { S.ordEdit = !S.ordEdit; renderOrder(); }}, S.ordEdit ? 'Close edit' : 'Edit PO'),
       own ? rowDelete('this PO', async () => { await deleteOrder(o.id); go('orders'); }) : null)));
   if (S.ordEdit) root.append(poForm(o));
+  const olds = olderOpen(o), newer = newerOf(o).filter(x => poStats(x).status !== 'done');
+  if (olds.length) root.append(h('div',{class:'banner'}, 'Older PO first: ', olds.flatMap((r, i) => [i ? ', ' : '', h('button',{class:'linkbtn', onclick:() => go('order', r.o.id)}, 'PO ' + (r.o.poNo || '(no no.)')), (r.o.poDate ? ' of ' + fmtDate(r.o.poDate) : '') + ' still has ' + fmtN(r.rem) + ' pcs to deliver']), '. Dispatches recorded here are counted against the older PO until it is finished.'));
+  else if (newer.length && s.status !== 'done') root.append(h('div',{class:'banner', style:'background:var(--accent-soft);color:var(--fg)'}, 'This is the oldest open PO for ' + (o.client || 'this client') + '. Newer ', newer.flatMap((x, i) => [i ? ', ' : '', h('button',{class:'linkbtn', onclick:() => go('order', x.id)}, 'PO ' + (x.poNo || '(no no.)'))]), ' start' + (newer.length === 1 ? 's' : '') + ' once this one is finished.'));
   root.append(h('div',{class:'kpis'},
     kpi('Ordered', fmtN(s.ordered) + ' pcs', vs.length + (vs.length === 1 ? ' variant' : ' variants')),
     kpi('Delivered', fmtN(s.delivered) + ' pcs', Math.round(s.pct) + '% · ' + (o.dispatches || []).length + ((o.dispatches || []).length === 1 ? ' dispatch' : ' dispatches')),
@@ -1175,70 +1219,94 @@ function renderOrder(){
   // Record (or edit) a dispatch
   const editing = S.dispEdit ? (o.dispatches || []).find(d => d.id === S.dispEdit) : null;
   if (S.dispEdit && !editing) S.dispEdit = null;
-  if (s.status === 'done' && !editing && !S.dispOpen){
+  if (s.status === 'done' && !newer.length && !editing && !S.dispOpen){
     root.append(h('div',{class:'row', style:'margin-bottom:14px'}, h('span',{class:'note'},'Everything on this PO has been delivered.'), h('button',{class:'btn', onclick:() => { S.dispOpen = true; renderOrder(); }}, '+ Record another dispatch')));
   } else root.append(dispatchForm(o, editing));
 
   // History
   const list = [...(o.dispatches || [])].sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')) || n0(b.at) - n0(a.at));
+  const others = d => clientPOs(o.client).filter(x => x.id !== o.id).flatMap(x => (x.dispatches || []).filter(y => sameLot(y, lotOf(d))).map(y => ({x, y})));
   root.append(h('section',{class:'card', style:'display:grid;gap:10px'}, h('h2',{},'Dispatch history'),
     !list.length ? h('div',{class:'note'},'Nothing dispatched yet.') :
     h('div',{class:'tablebox'}, h('table',{},
-      h('thead',{}, h('tr',{}, h('th',{},'Date'), h('th',{},'Challan / invoice no.'), h('th',{},'What went'), h('th',{class:'n'},'Total pcs'), h('th',{},'Note'), h('th',{class:'act'}, h('span',{class:'sr'},'Actions')))),
-      h('tbody',{}, list.map(d => h('tr',{},
+      h('thead',{}, h('tr',{}, h('th',{},'Date'), h('th',{},'Challan / invoice no.'), h('th',{},'What went (this PO)'), h('th',{class:'n'},'Total pcs'), own ? h('th',{class:'n'},'Value') : null, h('th',{},'Note'), h('th',{class:'act'}, h('span',{class:'sr'},'Actions')))),
+      h('tbody',{}, list.map(d => { const oth = others(d); return h('tr',{},
         h('td',{}, fmtDate(d.date)), h('td',{}, d.ref || '—'),
-        h('td',{style:'white-space:normal;min-width:220px'}, dispTxt(o, d) || '—'),
+        h('td',{style:'white-space:normal;min-width:220px'}, dispTxt(o, d) || '—',
+          oth.map(({x, y}) => h('div',{class:'sub'}, 'Same lot, also from ', h('button',{class:'linkbtn', onclick:() => go('order', x.id)}, 'PO ' + (x.poNo || '(no no.)')), ': ' + dispTxt(x, y) + (own && poRate(x.id) != null ? ' at ' + rs2(poRate(x.id)) : '')))),
         h('td',{class:'n'}, h('b',{}, fmtN(dispTotal(d)))),
+        own ? h('td',{class:'n'}, rt == null ? '—' : rs(rt * dispTotal(d))) : null,
         h('td',{style:'white-space:normal'}, d.note || '', d.by ? h('div',{class:'sub'}, 'by ' + d.by) : null),
         h('td',{class:'act'}, h('div',{class:'row', style:'gap:4px;flex-wrap:nowrap;justify-content:flex-end'},
           h('button',{class:'btn small', onclick:() => { S.dispEdit = d.id; renderOrder(); const f = $('#disp-form'); if (f) f.scrollIntoView({block:'start'}); }}, 'Edit'),
-          rowDelete('dispatch of ' + fmtDate(d.date), async () => { const x = S.orders.get(o.id); if (!x) return; x.dispatches = (x.dispatches || []).filter(y => y.id !== d.id); if (S.dispEdit === d.id) S.dispEdit = null; saveOrder(x); renderOrder(); }))))))))));
+          rowDelete('dispatch of ' + fmtDate(d.date) + (oth.length ? ' (the whole lot, on every PO)' : ''), async () => { removeLot(o.client, lotOf(d)); if (S.dispEdit === d.id) S.dispEdit = null; renderOrder(); })))); }))))));
+}
+// Takes a dispatch lot off every PO of the client it was split over.
+function removeLot(client, lot){
+  for (const x of clientPOs(client)) if ((x.dispatches || []).some(d => sameLot(d, lot))){ x.dispatches = x.dispatches.filter(d => !sameLot(d, lot)); saveOrder(x); }
 }
 
 function dispatchForm(o, ex){
-  const s = poStats(o), vs = o.variants || [];
-  const st = ex ? clone(ex) : {date:today(), ref:'', note:'', items:{}};
-  st.items = st.items || {};
-  // What is still open for each variant, not counting this dispatch when editing it.
-  const left = v => n0(v.qty) - (n0(s.del[v.id]) - (ex ? n0((ex.items || {})[v.id]) : 0));
+  const own = isOwnerRole(), vs = o.variants || [], pos = clientPOs(o.client);
+  const lot = ex ? lotOf(ex) : null;
+  // Quantities are kept by variant name, because one lot can be spread over several POs of the client.
+  const st = {date: ex ? ex.date : today(), ref: ex ? ex.ref || '' : '', note: ex ? ex.note || '' : '', q:{}};
+  if (ex) for (const x of pos) for (const d of x.dispatches || []) if (sameLot(d, lot)) for (const [vid, q] of Object.entries(d.items || {})){
+    const v = (x.variants || []).find(y => y.id === vid); if (v){ const k = normC(v.name); st.q[k] = (st.q[k] || 0) + n0(q); } }
+  // Open pieces of a variant on one PO (not counting the lot being edited).
+  const openOn = (x, k) => { const y = (x.variants || []).find(z => normC(z.name) === k); return y ? Math.max(0, n0(y.qty) - n0(delExcept(x, lot)[y.id])) : 0; };
+  const idx = pos.findIndex(x => x.id === o.id);
+  const older = k => pos.slice(0, idx).reduce((a, x) => a + openOn(x, k), 0);
+  const allOpen = k => pos.reduce((a, x) => a + openOn(x, k), 0);
   const wrap = h('section',{class:'newjob', id:'disp-form'});
-  const totalEl = h('b',{}), warnEl = h('div',{class:'warnline'});
+  const totalEl = h('b',{}), warnEl = h('div',{class:'warnline'}), splitEl = h('div',{});
   const refresh = () => {
-    const tot = vs.reduce((a, v) => a + n0(st.items[v.id]), 0);
-    totalEl.textContent = fmtN(tot) + ' pcs';
-    const over = vs.filter(v => n0(st.items[v.id]) > Math.max(0, left(v)));
-    warnEl.textContent = over.length ? 'More than remaining: ' + over.map(v => v.name + ' (+' + fmtN(n0(st.items[v.id]) - Math.max(0, left(v))) + ')').join(', ') + '. You can still save if extra was sent.' : '';
+    totalEl.textContent = fmtN(Object.values(st.q).reduce((a, q) => a + n0(q), 0)) + ' pcs';
+    const over = Object.keys(st.q).filter(k => n0(st.q[k]) > allOpen(k));
+    warnEl.textContent = over.length ? 'More than remaining on all of ' + (o.client || 'this client') + '’s POs: ' + over.map(k => (label[k] || k) + ' (+' + fmtN(n0(st.q[k]) - allOpen(k)) + ')').join(', ') + '. You can still save if extra was sent.' : '';
+    // Where the pieces go: oldest PO first.
+    const alloc = allocate(o.client, st.q, lot), byPo = new Map();
+    for (const a of alloc){ const g = byPo.get(a.o.id) || {o:a.o, parts:[]}; g.parts.push(a.v.name + ' ' + fmtN(a.q) + (a.extra ? ' (extra)' : '')); byPo.set(a.o.id, g); }
+    splitEl.replaceChildren(!alloc.length ? '' : h('div',{class:'card', style:'padding:10px 12px;display:grid;gap:4px;background:var(--sunk)'},
+      h('b',{}, byPo.size > 1 || !byPo.has(o.id) ? 'This dispatch is split, oldest PO first:' : 'All of this goes against this PO.'),
+      byPo.size > 1 || !byPo.has(o.id) ? [...byPo.values()].map(g => h('div',{}, 'PO ' + (g.o.poNo || '(no no.)') + (g.o.poDate ? ' of ' + fmtDate(g.o.poDate) : '') + (own && poRate(g.o.id) != null ? ' · ' + rs2(poRate(g.o.id)) + ' / pc' : '') + ': ', h('b',{}, g.parts.join(' · ')))) : null));
   };
-  const inputs = {};
-  const rows = vs.map(v => {
-    const inp = numIn(st.items[v.id] || null, x => { if (x == null || x === 0) delete st.items[v.id]; else st.items[v.id] = x; refresh(); }, {'aria-label':'Pieces of ' + v.name + ' in this dispatch', placeholder:'0', min:'0', style:'width:120px;text-align:right'});
-    inputs[v.id] = inp;
-    const l = left(v);
+  // Rows: this PO's variants, plus any variant of the lot being edited that is only on another PO.
+  const keys = [], label = {}, onPo = {};
+  for (const v of vs){ const k = normC(v.name); if (!label[k]){ keys.push(k); label[k] = v.name; } }
+  for (const k of Object.keys(st.q)) if (!label[k]){ const x = pos.find(y => (y.variants || []).some(z => normC(z.name) === k)); keys.push(k); label[k] = x ? x.variants.find(z => normC(z.name) === k).name : k; onPo[k] = x; }
+  const rows = keys.map(k => {
+    const v = {name: label[k]}, mine = openOn(o, k), old = older(k), fill = onPo[k] ? allOpen(k) : old + mine;
+    const inp = numIn(st.q[k] || null, x => { if (!x) delete st.q[k]; else st.q[k] = x; refresh(); }, {'aria-label':'Pieces of ' + v.name + ' in this dispatch', placeholder:'0', min:'0', style:'width:120px;text-align:right'});
     return h('tr',{},
-      h('td',{}, h('b',{}, v.name)),
-      h('td',{class:'n'}, l > 0 ? fmtN(l) : h('span',{class:'pos'}, '✓ Done')),
+      h('td',{}, h('b',{}, v.name), onPo[k] ? h('div',{class:'sub'}, 'Only on PO ' + (onPo[k].poNo || '(no no.)')) : null),
+      h('td',{class:'n'}, onPo[k] ? '—' : mine > 0 ? fmtN(mine) : h('span',{class:'pos'}, '✓ Done'), !onPo[k] && old > 0 ? h('div',{class:'sub', style:'max-width:none'}, '+ ' + fmtN(old) + ' on older PO first') : null),
       h('td',{class:'n'}, inp),
-      h('td',{}, l > 0 ? h('button',{type:'button', class:'btn small', onclick:() => { st.items[v.id] = l; inp.value = l; refresh(); }}, 'All ' + fmtN(l)) : ''));
+      h('td',{}, fill > 0 ? h('button',{type:'button', class:'btn small', title: old > 0 ? 'Older PO first, then this PO' : 'Everything remaining', onclick:() => { st.q[k] = fill; inp.value = fill; refresh(); }}, 'All ' + fmtN(fill)) : ''));
   });
   wrap.append(h('h2',{}, ex ? 'Edit dispatch of ' + fmtDate(ex.date) : 'Record a dispatch'),
     h('div',{class:'grid'},
       fld('Dispatch date', h('input',{type:'date', value:String(st.date || '').slice(0, 10), onchange:e => st.date = e.target.value})),
       fld('Challan / invoice no.', h('input',{value:st.ref || '', placeholder:'e.g. DC-245', oninput:e => st.ref = e.target.value})),
       fld('Note', h('input',{value:st.note || '', placeholder:'Vehicle, transporter, anything to remember', oninput:e => st.note = e.target.value}))),
-    h('div',{class:'note'}, 'Type how many pieces of each variant went in this lot. Leave the others empty.'),
+    h('div',{class:'note'}, 'Type how many pieces of each variant went in this lot. Leave the others empty.' + (pos.length > 1 ? ' If ' + (o.client || 'this client') + ' has an older PO still open, its pieces are counted against the older PO first.' : '')),
     h('div',{class:'tablebox'}, h('table',{},
-      h('thead',{}, h('tr',{}, h('th',{},'Variant'), h('th',{class:'n'}, 'Remaining'), h('th',{class:'n'},'In this dispatch'), h('th',{}, ''))),
+      h('thead',{}, h('tr',{}, h('th',{},'Variant'), h('th',{class:'n'}, 'Remaining on this PO'), h('th',{class:'n'},'In this dispatch'), h('th',{}, ''))),
       h('tbody',{}, rows))),
-    h('div',{class:'row'}, h('span',{}, 'Total in this dispatch: ', totalEl)), warnEl,
+    h('div',{class:'row'}, h('span',{}, 'Total in this dispatch: ', totalEl)), splitEl, warnEl,
     h('div',{class:'row'},
       h('button',{class:'btn primary', onclick:() => {
-        const items = {}; for (const v of vs){ const q = n0(st.items[v.id]); if (q > 0) items[v.id] = q; }
         if (!st.date){ alert0(wrap, 'Enter the dispatch date.'); return; }
-        if (!Object.keys(items).length){ alert0(wrap, 'Enter the pieces dispatched for at least one variant.'); return; }
-        const x = S.orders.get(o.id); if (!x) return;
-        const d = {id: ex ? ex.id : uid(), date: st.date, ref: String(st.ref || '').trim(), note: String(st.note || '').trim(), items, by: ex ? (ex.by || '') : (S.myName || ''), at: ex ? (ex.at || Date.now()) : Date.now()};
-        x.dispatches = ex ? (x.dispatches || []).map(y => y.id === d.id ? d : y) : [...(x.dispatches || []), d];
-        saveOrder(x); S.dispEdit = null; S.dispOpen = false; renderOrder();
+        const alloc = allocate(o.client, st.q, lot);
+        if (!alloc.length){ alert0(wrap, 'Enter the pieces dispatched for at least one variant.'); return; }
+        const L = lot || uid(), by = ex ? (ex.by || '') : (S.myName || ''), at = ex ? (ex.at || Date.now()) : Date.now();
+        const touched = new Map();
+        if (lot) for (const x of pos) if ((x.dispatches || []).some(d => sameLot(d, lot))){ x.dispatches = x.dispatches.filter(d => !sameLot(d, lot)); touched.set(x.id, x); }
+        const byPo = new Map(); for (const a of alloc){ const m = byPo.get(a.o.id) || {}; m[a.v.id] = (m[a.v.id] || 0) + a.q; byPo.set(a.o.id, m); }
+        for (const [pid, items] of byPo){ const x = S.orders.get(pid); if (!x) continue;
+          x.dispatches = [...(x.dispatches || []), {id: uid(), lot: L, date: st.date, ref: String(st.ref || '').trim(), note: String(st.note || '').trim(), items, by, at}]; touched.set(pid, x); }
+        touched.forEach(x => saveOrder(x));
+        S.dispEdit = null; S.dispOpen = false; renderOrder();
       }}, ex ? 'Save changes' : 'Save dispatch'),
       ex || S.dispOpen ? h('button',{class:'btn', onclick:() => { S.dispEdit = null; S.dispOpen = false; renderOrder(); }}, 'Cancel') : null));
   refresh();
