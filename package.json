@@ -1,0 +1,56 @@
+{
+  "name": "firstbox",
+  "productName": "Firstbox",
+  "version": "1.0.0",
+  "description": "Firstbox costing, job cards and stock",
+  "author": "Firstbox",
+  "private": true,
+  "main": "electron/main.js",
+  "scripts": {
+    "prepare-web": "node tools/copy-vendor.js && python3 tools/make-index.py",
+    "start": "npm run prepare-web && electron .",
+    "dist:mac": "npm run prepare-web && electron-builder --mac --publish never",
+    "dist:win": "npm run prepare-web && electron-builder --win --publish never"
+  },
+  "dependencies": {
+    "electron-updater": "^6.3.9"
+  },
+  "devDependencies": {
+    "@supabase/supabase-js": "^2.46.1",
+    "electron": "^33.2.1",
+    "electron-builder": "^25.1.8",
+    "pdf-lib": "^1.17.1"
+  },
+  "build": {
+    "appId": "in.firstbox.app",
+    "productName": "Firstbox",
+    "copyright": "Firstbox",
+    "directories": { "output": "dist", "buildResources": "build" },
+    "files": ["electron/**", "web/**", "package.json", "!web/firstbox.html"],
+    "mac": {
+      "target": [
+        { "target": "dmg", "arch": ["arm64", "x64"] },
+        { "target": "zip", "arch": ["arm64", "x64"] }
+      ],
+      "category": "public.app-category.business",
+      "icon": "build/icon.png",
+      "identity": "-",
+      "hardenedRuntime": false,
+      "gatekeeperAssess": false
+    },
+    "dmg": { "artifactName": "Firstbox-${version}-Mac-${arch}.${ext}" },
+    "win": {
+      "target": [{ "target": "nsis", "arch": ["x64"] }],
+      "icon": "build/icon.png"
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Firstbox",
+      "artifactName": "Firstbox-Setup-${version}-Windows.${ext}"
+    },
+    "publish": [{ "provider": "github", "owner": "raj-firstbox", "repo": "firstbox-app", "releaseType": "release" }]
+  }
+}

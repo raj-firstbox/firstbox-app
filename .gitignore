@@ -1,0 +1,6 @@
+node_modules/
+dist/
+web/vendor/supabase.js
+.DS_Store
+*.log
+supabase/import-*.sql
