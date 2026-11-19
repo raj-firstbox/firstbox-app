@@ -306,6 +306,14 @@ input[type=date]{cursor:pointer}
   .inv-cols .c-item{grid-column:1/-1}
   .inv-cols>[data-l]::before{content:attr(data-l);display:block;font-size:12px;color:var(--muted);margin-bottom:2px}
 }
+.fabopts{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+.fabopt{border:1px solid var(--line);border-radius:10px;padding:10px 12px;display:grid;gap:8px;align-content:start;background:var(--surface)}
+.fabopt.off{background:transparent;border-style:dashed}
+.packopts{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.packopt{display:flex;gap:10px;align-items:flex-start;border:1px solid var(--line);border-radius:10px;padding:12px;cursor:pointer;background:var(--surface)}
+.packopt.on{border-color:var(--brand);background:var(--accent-soft)}
+.packopt span{display:grid;gap:2px}
+@media (max-width:700px){.fabopts,.packopts{grid-template-columns:1fr}}
 .saletabs{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:14px}
 .saletab{display:grid;gap:3px;text-align:left;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:14px 16px;font:inherit;color:var(--fg);cursor:pointer}
 .saletab b{font-size:16px}
@@ -463,7 +471,7 @@ const RIGID = new Set(['rigid','shoulder','magnetic','slider']);
 // Types no longer offered; older costings that use one still show it.
 const RETIRED = ['custom'];
 // Papers allowed on printed sheets, by product. Products not listed can use any paper.
-const PAPERS_FOR = {rigid:['art paper'], shoulder:['art paper'], magnetic:['art paper'], slider:['art paper'], mono:['sbs','art card']};
+const PAPERS_FOR = {rigid:['art paper'], shoulder:['art paper'], magnetic:['art paper'], slider:['art paper'], mono:['sbs','art card','duplex','imported paper','imported sheet','imported kraft paper','imported kraft']};
 const paperAllowed = (box, r) => !PAPERS_FOR[box] || PAPERS_FOR[box].includes(String(r.name || '').trim().toLowerCase());
 const boxOptions = cur => Object.entries(BOX).filter(([k]) => !RETIRED.includes(k) || k === cur);
 const MOQ = () => 0; // minimum order warning switched off
@@ -545,15 +553,23 @@ const PARTS = {
   die:{n:'6', title:'Die & die cutting', note:'Enter the number of dies. Die cutting is worked out on the total of all printed sheets. Cost = dies + die cutting.',
     adds:[]},
   make:{n:'7', title:'Making charges', note:'Type the making charge per box for this job. It is multiplied by the quantity.',
-    adds:[['piece','Add making charges',{name:'Making charges', making:true, jobRate:true, once:true}]]}
+    adds:[['piece','Add making charges',{name:'Making charges', making:true, jobRate:true, once:true}]]},
+  fab:{n:'8', title:'Fabrication', note:'Side pasting is always included. Tick Euro slot or Window pasting if the carton has them. Rates are per 1000 cartons.',
+    adds:[]},
+  pack:{n:'9', title:'Packaging & forwarding', note:'How the cartons are packed: in sheets (₹10 per 2000 pcs) or in cartons (one carton per 1000 pcs, at your rate per carton).',
+    adds:[]}
 };
 const PART_KEYS = Object.keys(PARTS);
+// Calculators every product gets unless PARTS_FOR says otherwise (fabrication and packaging are mono-carton only).
+const DEFAULT_PARTS = ['print','finish','board','insert','acc','die','make'];
 // Calculators shown for each product; anything not listed shows all.
-const PARTS_FOR = {mono:['print','finish','die'], printing:['print','finish','die'], corrugated:['print','finish','board','die','make']};
+const PARTS_FOR = {mono:['print','finish','die','fab','pack'], printing:['print','finish','die'], corrugated:['print','finish','board','die','make']};
 // Corrugated boxes use the board calculator for corrugated board instead of kappa board.
 const partTitle = k => k === 'board' && S.draft && S.draft.boxType === 'corrugated' ? 'Corrugated board' : PARTS[k].title;
 const partNote = k => k === 'board' && S.draft && S.draft.boxType === 'corrugated' ? 'Corrugated board sheets: board (3 ply / 5 ply), GSM, sheet size and ups. Priced by weight like paper.' : PARTS[k].note;
-const partsFor = j => PARTS_FOR[j && j.boxType] || PART_KEYS;
+const partsFor = j => PARTS_FOR[j && j.boxType] || DEFAULT_PARTS;
+// Calculator numbers follow the order shown for the product (1, 2, 3 …).
+const partNum = k => String(Math.max(0, partsFor(S.draft).indexOf(k)) + 1);
 // Sorts lines from older costings (made with 2 calculators) into the five calculators.
 function inferPart(l){
   if (l.part === 'print' && l.calc !== 'piece' && l.calc !== 'lump') return 'print';
@@ -752,6 +768,19 @@ function calcLine(l, j, byId){
     const qd = fmtN(n) + ' ups (' + fmtN(sh) + ' sheets × ' + per + ' ups)' + (passes !== 1 ? '  ·  × ' + passes + ' blocks' : '') + (raw < min ? '  ·  minimum charge applied' : '');
     return {amount:amt, detail:d, qd};
   }
+  if (l.calc === 'fab'){
+    // Mono carton fabrication, per 1000 cartons: side pasting always, Euro slot and window pasting when ticked.
+    const k = qty / 1000, parts = [['Side pasting', true, l.sideRate], ['Euro slot', l.euro, l.euroRate], ['Window pasting', l.window, l.winRate]].filter(x => x[1]);
+    const amt = parts.reduce((t, x) => t + k * n0(x[2]), 0);
+    const d = qty ? parts.map(x => x[0] + ' ₹' + fmtN(n0(x[2])) + ' per 1000 × ' + fmtN(k, 3) + ' = ₹' + fmtN(k * n0(x[2]))).join('  ·  ') : 'Enter the quantity';
+    return {amount: amt, detail: d, qd: qty ? parts.map(x => x[0]).join(' + ') + '  ·  ' + fmtN(qty) + ' cartons' : 'Enter the quantity'};
+  }
+  if (l.calc === 'pack'){
+    // Packing in sheets: ₹10 per 2000 pcs (a part 2000 counts as full). In cartons: one carton per 1000 pcs × rate per carton.
+    if (!qty) return {amount:0, detail:'Enter the quantity', qd:'Enter the quantity'};
+    if (l.mode === 'carton'){ const n = Math.ceil(qty / 1000); return {amount: n * n0(l.cartonRate), detail: fmtN(qty) + ' pcs ÷ 1000 = ' + n + (n === 1 ? ' carton' : ' cartons') + ' × ₹' + fmtN(n0(l.cartonRate), 2) + ' per carton', qd: n + (n === 1 ? ' carton' : ' cartons')}; }
+    const n = Math.ceil(qty / 2000); return {amount: n * n0(l.sheetRate ?? 10), detail: fmtN(qty) + ' pcs ÷ 2000 = ' + n + ' × ₹' + fmtN(n0(l.sheetRate ?? 10)) + ' (packed in sheets)', qd: 'Packed in sheets  ·  ' + n + ' × 2000 pcs'};
+  }
   if (l.calc === 'diecut' && partOf(l) === 'die'){
     // Dies × rate per die, plus die cutting on the TOTAL of all printed sheets: first 1000, then each further 1000 (a part 1000 counts as full).
     const dies = n0(l.dies), dieCost = dies * n0(l.setup);
@@ -857,6 +886,52 @@ function makeLine(calc, o){
   l.part = o.part || inferPart(l); l.pv = 2;
   return l;
 }
+// ----- Mono cartons: fabrication and packaging & forwarding -----
+// Rates per 1000 cartons come from the rate list when it has them (Side pasting / Window pasting / Euro slot are saved there per piece),
+// otherwise from the last rate typed (kept in settings).
+const per1000 = re => { const r = [...S.rates.values()].find(x => re.test(x.name || '') && x.rate != null); return r ? Math.round(n0(r.rate) * 1000 * 100) / 100 : null; };
+function newFabLine(){
+  const st = S.settings || {};
+  return {id: uid(), name:'Fabrication', calc:'fab', part:'fab', pv:2, actual:null,
+    sideRate: per1000(/side\s*pasting/i) ?? st.sidePastePer1000 ?? 300, euro:false, euroRate: per1000(/euro/i) ?? st.euroSlotPer1000 ?? null,
+    window:false, winRate: per1000(/window\s*pasting/i) ?? st.windowPastePer1000 ?? null};
+}
+function newPackLine(){
+  const st = S.settings || {};
+  return {id: uid(), name:'Packaging & forwarding', calc:'pack', part:'pack', pv:2, actual:null, mode:'sheet', sheetRate:10, cartonRate: st.packCartonRate ?? null};
+}
+function specialCard(l, title, body){
+  return h('div',{class:'line', 'data-line':l.id},
+    h('div',{class:'line-top'}, h('div',{class:'fld name'}, h('span',{class:'ctype'}, title), h('b',{}, l.name))),
+    body,
+    h('div',{class:'note warnline', 'data-warn':l.id, hidden: !needsRate(l)}, l.calc === 'fab' ? 'Type the rate per 1000 for each ticked option.' : 'Type the rate per carton.'),
+    h('div',{class:'line-foot'},
+      h('div',{class:'detail', 'data-detail':l.id}),
+      h('div',{class:'row', style:'gap:16px;align-items:flex-end'},
+        h('div',{class:'amt'}, h('span',{class:'fl'},'Estimate'), h('b',{'data-amt':l.id})),
+        fld('Actual ₹', numIn(l.actual, v => { l.actual = v; touch(); }, {placeholder:'after job'}), 'actual'))));
+}
+function fabEditor(l){
+  const remember = (k, v) => { if (v != null){ S.settings[k] = v; saveSettings(); } };
+  const opt = (key, rateKey, label, setKey) => h('div',{class:'fabopt' + (key && !l[key] ? ' off' : '')},
+    key ? h('label',{class:'row', style:'gap:8px'}, h('input',{type:'checkbox', checked: l[key] ? true : null, onchange:e => { l[key] = e.target.checked; touch(); renderLines(); }}), h('b',{}, label))
+        : h('label',{class:'row', style:'gap:8px'}, h('input',{type:'checkbox', checked:true, disabled:true}), h('b',{}, label), h('span',{class:'note'}, '(always)')),
+    !key || l[key] ? fld('₹ per 1000 cartons', numIn(l[rateKey], v => { l[rateKey] = v; remember(setKey, v); touch(); }, {placeholder:'Rate'})) : null);
+  return specialCard(l, 'Fabrication', h('div',{class:'fabopts'},
+    opt(null, 'sideRate', 'Side pasting', 'sidePastePer1000'),
+    opt('euro', 'euroRate', 'Euro slot', 'euroSlotPer1000'),
+    opt('window', 'winRate', 'Window pasting', 'windowPastePer1000')));
+}
+function packEditor(l){
+  const mode = (m, label, sub) => h('label',{class:'packopt' + (l.mode === m ? ' on' : '')},
+    h('input',{type:'radio', name:'pack-' + l.id, checked: l.mode === m ? true : null, onchange:() => { l.mode = m; touch(); renderLines(); }}), h('span',{}, h('b',{}, label), h('span',{class:'note'}, sub)));
+  return specialCard(l, 'Packing', h('div',{style:'display:grid;gap:10px'},
+    h('div',{class:'packopts', role:'radiogroup', 'aria-label':'Packing'},
+      mode('sheet', 'Packing in sheet', '₹10 per 2000 pcs'),
+      mode('carton', 'Packing in carton', 'One carton per 1000 pcs')),
+    l.mode === 'carton' ? fld('₹ per carton', numIn(l.cartonRate, v => { l.cartonRate = v; if (v != null){ S.settings.packCartonRate = v; saveSettings(); } touch(); }, {placeholder:'Rate per carton'})) : null));
+}
+
 // Copies the colour-wise printing rate into the line, so later rate changes don't alter old costings.
 const printTable = () => S.settings.printing || S.printDefaults;
 const dieTable = () => ({...S.diecutDefaults, ...(S.settings.diecut || {})});
@@ -3003,6 +3078,8 @@ function needsRate(l){
   if (l.calc === 'diecut' && partOf(l) === 'die' && l.dies == null) return true;
   if (['sheet','area','impression','perup','piece'].includes(l.calc)) return l.rate == null;
   if (l.calc === 'printing' || l.calc === 'diecut') return l.first == null;
+  if (l.calc === 'fab') return l.sideRate == null || (l.euro && l.euroRate == null) || (l.window && l.winRate == null);
+  if (l.calc === 'pack') return l.mode === 'carton' && l.cartonRate == null;
   return false;
 }
 let showRates = false;
@@ -3032,6 +3109,8 @@ function renderJob(){
   const root = $('#view-job'); root.replaceChildren();
   const j = S.draft;
   if (j && partsFor(j).includes('die') && !j.lines.some(x => x.calc === 'diecut' && partOf(x) === 'die')){ const mi = j.lines.findIndex(x => x.making); const dl = makeLine('diecut', {name:'Die & die cutting', dies:null, part:'die'}); if (mi >= 0) j.lines.splice(mi, 0, dl); else j.lines.push(dl); touch(); }
+  if (j && partsFor(j).includes('fab') && !j.lines.some(x => x.calc === 'fab')){ j.lines.push(newFabLine()); touch(); }
+  if (j && partsFor(j).includes('pack') && !j.lines.some(x => x.calc === 'pack')){ j.lines.push(newPackLine()); touch(); }
   if (j && partsFor(j).includes('make') && !j.lines.some(x => x.making)){ j.lines.push(makeLine('piece', {name:'Making charges', making:true, jobRate:true, part:'make'})); touch(); }
   if (!j){
     root.append(h('div',{class:'empty'}, S.loaded.jobs ? 'This job no longer exists.' : 'Loading job…'), h('div',{class:'row', style:'justify-content:center'}, h('button',{class:'btn', onclick:() => go('jobs')},'Back to jobs')));
@@ -3093,7 +3172,7 @@ function renderJob(){
     details,
     h('nav',{class:'jump', 'aria-label':'Jump to a calculator'}, partsFor(j).map(k => h('button',{type:'button', onclick:() => {
       const el = document.getElementById('part-' + k); if (el) el.scrollIntoView({behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block:'start'});
-    }}, h('span',{class:'jn'}, PARTS[k].n), h('span',{class:'jt'}, h('span',{}, partTitle(k)), h('b',{'data-t':'jump-' + k}, '₹0'))))),
+    }}, h('span',{class:'jn'}, partNum(k)), h('span',{class:'jt'}, h('span',{}, partTitle(k)), h('b',{'data-t':'jump-' + k}, '₹0'))))),
     h('div',{class:'note'},'After the job is done, type what each line really cost in “Actual ₹”.'),
     partsFor(j).map(partSection),
     overheadsRow(),
@@ -3116,14 +3195,14 @@ function partSection(p){
   });
   wrap.append(
     h('div',{class:'part-head'},
-      h('div',{class:'part-title'}, h('span',{class:'pnum', 'aria-hidden':'true'}, P.n),
-        h('div',{style:'min-width:0'}, h('div',{class:'ctype'},'Calculator ' + P.n), h('h2',{}, partTitle(p)), h('div',{class:'note'}, partNote(p)), foldBtn)),
+      h('div',{class:'part-title'}, h('span',{class:'pnum', 'aria-hidden':'true'}, partNum(p)),
+        h('div',{style:'min-width:0'}, h('div',{class:'ctype'},'Calculator ' + partNum(p)), h('h2',{}, partTitle(p)), h('div',{class:'note'}, partNote(p)), foldBtn)),
       h('div',{class:'amt'}, h('span',{class:'fl'},'Subtotal'), h('b',{'data-t':'part-' + p}), h('div',{class:'note', 'data-t':'pc-' + p}))),
     h('div',{class:'lines', id:'lines-' + p}),
     p === 'print' ? h('div',{class:'note warnline', id:'pastel-check'}) : '',
-    h('div',{class:'adds'}, h('span',{class:'note', style:'align-self:center'},'Add:'),
-      P.adds.filter(([c, label, extra]) => (!(extra && extra.boxes) || extra.boxes.includes(j.boxType)) && !(extra && extra.once && j.lines.some(x => x.making)))
-        .map(([c, label, extra]) => h('button',{class:'btn small', onclick:() => { addLine(c, p, label, extra); if (extra && extra.once) renderJob(); }}, '+ ' + (p === 'board' && j.boxType === 'corrugated' ? 'Corrugated board sheet' : label)))));
+    (() => { const adds = P.adds.filter(([c, label, extra]) => (!(extra && extra.boxes) || extra.boxes.includes(j.boxType)) && !(extra && extra.once && j.lines.some(x => x.making)));
+      return adds.length ? h('div',{class:'adds'}, h('span',{class:'note', style:'align-self:center'},'Add:'),
+        adds.map(([c, label, extra]) => h('button',{class:'btn small', onclick:() => { addLine(c, p, label, extra); if (extra && extra.once) renderJob(); }}, '+ ' + (p === 'board' && j.boxType === 'corrugated' ? 'Corrugated board sheet' : label)))) : ''; })());
   return wrap;
 }
 function overheadsRow(){
@@ -3201,6 +3280,7 @@ function renderLinesInner(){
   const isMill = r => r.gsmPerMm != null || /mill|grey ?board/i.test(r.name || '');
   j.lines.forEach((l) => {
     if (!boxes[partOf(l)]) return; // calculator not used for this product
+    if (l.calc === 'fab' || l.calc === 'pack'){ boxes[partOf(l)].append(l.calc === 'fab' ? fabEditor(l) : packEditor(l)); return; }
     let box = boxes[partOf(l)], nested = false;
     if (partOf(l) === 'print'){
       if (l.calc === 'sheet') box = groupBox[l.id];
@@ -3343,7 +3423,7 @@ function renderLinesInner(){
         h('div',{class:'row', style:'gap:4px'},
           del)),
       h('div',{class:'fields'}, f),
-      l.calc === 'sheet' && partOf(l) !== 'board' ? pastelEditor(l, upd) : null,
+      l.calc === 'sheet' && partOf(l) !== 'board' && j.boxType !== 'mono' ? pastelEditor(l, upd) : null,
       needsRate(l) ? h('div',{class:'note warnline', 'data-warn':l.id}, (lr && lr.askRate) ? 'This paper has no fixed rate. Type this job’s rate per kg above.' : isPrintSheet && !l.rateId ? 'Choose the paper for this sheet in “Paper”.' : l.fx && !l.fxKind ? 'Choose the special effect.' : l.fx && l.fxKind !== 'spotuv' && l.passes == null ? 'Enter the number of blocks.' : l.calc === 'diecut' && partOf(l) === 'die' && l.dies == null ? 'Enter the number of dies.' : isCoat && !l.coat ? 'Choose the coating: Lamination, Varnish or Hybrid.' : isIns && !l.insType ? 'Choose the insert type: Foam, Paper cavity or Kappa board tray.' : l.making ? 'Type the making charge per box for this job.' : l.jobRate ? 'Type the cost per piece for this job.' : isIns && l.insType === 'foam' && !l.foamMat ? 'Choose the foam material.' : isIns ? 'No rate saved yet for this insert. Add it in Rate list → Inserts, or press “Show rates” to type it.' : isCoat && !l.rateId ? 'Now choose the type.' : 'No rate set for this line. Choose one in “Rate from list”, or press “Show rates” at the top to type it.') : null,
       h('div',{class:'line-foot'},
         h('div',{class:'detail', 'data-detail':l.id}),
@@ -3363,7 +3443,7 @@ function renderTotals(){
   t.append(
     h('div',{class:'card tl'},
       h('div',{class:'sect'},'Estimate & quote'),
-      partsFor(j).map(k => tr(PARTS[k].n + ' · ' + partTitle(k), 'tp-' + k)),
+      partsFor(j).map(k => tr(partNum(k) + ' · ' + partTitle(k), 'tp-' + k)),
       tr('Overheads', 'overhead'),
       tr('Total cost', 'total', 'big'),
       tr('Cost per piece', 'perPc'),
