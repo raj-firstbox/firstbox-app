@@ -345,12 +345,15 @@
   async function signedIn(s) {
     session = s;
     try {
-      const { data, error } = await sb.from('members').select('user_id,email,name,role,created_at,username').eq('user_id', s.user.id).maybeSingle();
+      let { data, error } = await sb.from('members').select('user_id,email,name,role,created_at,username').eq('user_id', s.user.id).maybeSingle();
+      // Before supabase/team-logins.sql is run there is no username column: still let the owner in.
+      if (error && /username/i.test(error.message || '')) ({ data, error } = await sb.from('members').select('user_id,email,name,role,created_at').eq('user_id', s.user.id).maybeSingle());
       if (error) throw error;
       if (!data) { showAuth('signin', { text: 'Your account is not set up in the database yet. Ask the owner to check the Supabase setup.', bad: true }); return; }
       me = data; members.set(data.user_id, data);
     } catch (e) {
-      showAuth('signin', { text: 'Couldn’t reach the Firstbox database. Check your internet connection and try again.', bad: true });
+      const m = String((e && e.message) || e || '');
+      showAuth('signin', { text: /fetch|network|timeout/i.test(m) || !m ? 'Couldn’t reach the Firstbox database. Check your internet connection and try again.' : 'The Firstbox database gave an error: ' + m, bad: true });
       return;
     }
     hideAuth(); addSignOut(); startRealtime();
