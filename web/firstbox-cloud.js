@@ -79,7 +79,7 @@
     const say = (t, bad) => msg.replaceChildren(t ? el('div', { class: 'msg' + (bad ? ' err' : '') }, t) : '');
     if (note) say(note.text, note.bad);
     const form = el('form', { style: 'display:grid;gap:12px', novalidate: '' },
-      el('label', {}, 'Username', user),
+      el('label', {}, 'Username (owner: your email)', user),
       el('label', {}, 'Password', pass),
       msg, btn);
     form.addEventListener('submit', async e => {
@@ -104,7 +104,7 @@
       el('img', { src: logoSrc(), alt: 'Firstbox' }),
       el('h1', {}, 'Sign in to Firstbox'),
       form,
-      el('div', { class: 'note' }, 'Your username and password are given to you by the owner. Forgot your password? Ask the owner for a new one.')));
+      el('div', { class: 'note' }, 'Team: your username and password are given to you by the owner. Owner: sign in with your full email address.')));
     setTimeout(() => user.focus(), 30);
   }
   function hideAuth() { const r = document.getElementById('fbc-auth'); if (r) r.remove(); }
