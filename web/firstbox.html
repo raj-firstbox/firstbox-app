@@ -344,7 +344,17 @@ tfoot th{background:var(--sunk);font-size:13px;letter-spacing:0;text-transform:n
 .jump .jctab{font-weight:600;color:var(--muted)}
 .jump .jctab[aria-current="page"]{background:var(--brand-strong);color:#fff}
 .tsheet{background:var(--surface);border:1px solid var(--line);border-top:4px solid var(--brand);border-radius:8px;padding:18px;display:grid;gap:10px}
-.tshead{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap;border-bottom:2px solid var(--line);padding-bottom:10px}
+.tshead{display:grid;gap:12px;padding-bottom:4px}
+.tstop{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
+.tstop .tslogo{margin:0}
+.tsmeta{display:grid;grid-template-columns:1fr 1fr 2fr 1.8fr 1fr;border:2px solid var(--brand);border-radius:8px;overflow:hidden}
+.tsmeta>div{display:grid;gap:2px;align-content:start;padding:7px 12px;border-left:1px solid var(--line);min-width:0}
+.tsmeta>div:first-child{border-left:0}
+.tsmeta span{font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+.tsmeta b{font-size:15px;overflow-wrap:anywhere}
+.tsmeta .q{background:var(--accent-soft)}
+.tsmeta .q b{font-family:var(--font-display);font-size:22px;color:var(--accent)}
+@media (max-width:640px){.tsmeta{grid-template-columns:1fr 1fr}.tsmeta>div{border-left:0;border-top:1px solid var(--line)}.tsmeta>div:nth-child(-n+2){border-top:0}.tsmeta>div:nth-child(even){border-left:1px solid var(--line)}.tsmeta .q{grid-column:1/-1}}
 .tsbrand{font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--accent)}
 .tsheet h1{font-size:24px}
 .tsqty{text-align:right;border:2px solid var(--brand);border-radius:8px;padding:6px 14px}
@@ -3813,8 +3823,8 @@ const thickList = c => [...new Set(c.boards.map(b => b.thick).filter(Boolean))].
 
 // Blocks: {h:title} {kv:[[label,value]]} {table:{heads,rows}} {checks:[...]} {text} {warn} {sign:true}
 function jobBlock(c, extra){
-  return {kv:[['Job card', c.id + ' · ' + (SERIES[c.series] || '')], ['Client', c.client], ['Product', BOX[c.boxType]], ['Item', c.description],
-    ['Quantity', pcs(c.qty)], ['Box size L × W × H', sizeText(c)], ['Delivery due', fmtDate(c.due)], ...(extra || [])]};
+  return {kv:[['Order type', SERIES[c.series] || ''], ['Item', c.description],
+    ['Box size L × W × H', sizeText(c)], ['Delivery due', fmtDate(c.due)], ...(extra || [])]};
 }
 function teamBlocks(c, k){
   const B = [], qty = n0(c.qty), P = partsFor(c);
@@ -3930,7 +3940,7 @@ function materialRows(c){
 function masterBlocks(c){
   const miss = missingFor(c);
   const B = miss.length ? [{warn:'Fill these in before giving the job to the team: ' + miss.join(' · ') + '.'}] : [];
-  B.push(jobBlock(c, [['Box making', MAKING[c.making] || ''], ['Contact', [c.contact, c.phone].filter(Boolean).join(', ')], ['Date', fmtDate(c.date)]]));
+  B.push(jobBlock(c, [['Box making', MAKING[c.making] || ''], ['Contact', [c.contact, c.phone].filter(Boolean).join(', ')]]));
   B.push({h:'Work order'}, {text:teamsFor(c).map((t, i) => (i + 1) + '. ' + t.n).join('   →   ')});
   const mat = materialRows(c);
   if (mat.length){
@@ -3946,11 +3956,15 @@ function masterBlocks(c){
   return B;
 }
 function blocksFor(c, tab){ return tab === 'master' ? masterBlocks(c) : teamBlocks(c, tab); }
+// Top of every job card sheet, in Raj's order: job card no., date, client, product, quantity.
+const sheetMeta = c => [['Job card no.', c.id], ['Date', fmtDate(c.date)], ['Client', c.client], ['Product', BOX[c.boxType]], ['Qty', c.qty ? fmtN(c.qty) : '', 'q']];
 const tabTitle = (c, tab) => tab === 'master' ? 'Master sheet' : (TEAMS.find(t => t.k === tab) || {}).n;
 function blocksHtml(c, tab){
   const v = x => x == null || x === '' ? '—' : String(x);
   const out = h('div',{class:'tsheet'},
-    h('div',{class:'tshead'}, h('div',{}, h('img',{class:'tslogo', src:LOGO(), alt:'Firstbox'}), h('div',{class:'tsbrand'},'Job card ' + c.id), h('h1',{}, tabTitle(c, tab))), h('div',{class:'tsqty'}, h('span',{},'Quantity'), h('b',{}, c.qty ? fmtN(c.qty) : '—'))));
+    h('div',{class:'tshead'},
+      h('div',{class:'tstop'}, h('img',{class:'tslogo', src:LOGO(), alt:'Firstbox'}), h('h1',{}, tabTitle(c, tab))),
+      h('div',{class:'tsmeta'}, sheetMeta(c).map(([k, x, cls]) => h('div',{class:cls || ''}, h('span',{}, k), h('b',{}, v(x)))))));
   for (const b of blocksFor(c, tab)){
     if (b.team) out.append(h('h2',{class:'tsteam'}, b.team));
     else if (b.h) out.append(h('h3',{}, b.h));
@@ -3965,6 +3979,7 @@ function blocksHtml(c, tab){
 }
 function blocksText(c, tab){
   const L = ['*' + tabTitle(c, tab).toUpperCase() + ' · JOB CARD ' + c.id + '*'];
+  sheetMeta(c).slice(1).forEach(([k, x]) => { if (x) L.push(k + ': ' + x); });
   for (const b of blocksFor(c, tab)){
     if (b.team) L.push('', '*━━ ' + b.team.toUpperCase() + ' ━━*');
     else if (b.h) L.push('', '*' + b.h + '*');
@@ -4030,16 +4045,29 @@ async function buildPdf(c, tabs){
     if (cont){ text('Job card ' + c.id + ' · ' + title + ' (continued)', M, y - 9, FB, 9, C.muted); y -= 22; }
   }
   const ensure = h => { if (y - h < M + 14) newPage(true); };
-  function header(qty){
+  function header(){
+    // Logo on the left, sheet name on the right; below it one strip: job card no. · date · client · product · qty.
     if (logoImg) page.drawImage(logoImg, {x: M, y: y - 36, width: 122, height: 122 * logoImg.height / logoImg.width});
     else text('FIRSTBOX', M, y - 20, FB, 18, C.brand);
-    text('JOB CARD ' + c.id, M, y - 52, FB, 8.5, C.accent);
-    text(title, M, y - 74, FB, 20, C.ink);
-    const q = qty ? fmtN(qty) : '—', bw = Math.max(80, tw(q, FB, 18) + 24);
-    page.drawRectangle({x: W - M - bw, y: y - 42, width: bw, height: 42, borderColor: C.brand, borderWidth: 1.5});
-    text('QUANTITY', W - M - bw + (bw - tw('QUANTITY', FB, 7)) / 2, y - 13, FB, 7, C.muted);
-    text(q, W - M - bw + (bw - tw(q, FB, 18)) / 2, y - 34, FB, 18, C.ink);
-    y -= 84; page.drawLine({start:{x:M, y}, end:{x:W - M, y}, thickness:1, color:C.line}); y -= 10;
+    text(title, W - M - tw(title, FB, 18), y - 26, FB, 18, C.ink);
+    y -= 46;
+    const fr = [0.14, 0.16, 0.29, 0.27, 0.14], cells = sheetMeta(c).map(([k, x, q], i) => {
+      const w = CW * fr[i], size = q ? 15 : 10.5;
+      let lines = wrap(x == null || x === '' ? '—' : String(x), FB, size, w - 14);
+      if (lines.length > 2){ lines = lines.slice(0, 2); lines[1] = lines[1].replace(/.{0,2}$/, '…'); }
+      return {k: String(k).toUpperCase(), lines, w, size, q};
+    });
+    const hgt = Math.max(42, 18 + Math.max(...cells.map(cl => cl.lines.length * (cl.size + 2.5))) + 6);
+    let x = M;
+    cells.forEach((cl, i) => {
+      if (cl.q) page.drawRectangle({x, y: y - hgt, width: cl.w, height: hgt, color: C.soft});
+      if (i) page.drawLine({start:{x, y}, end:{x, y: y - hgt}, thickness: 0.8, color: C.line});
+      text(cl.k, x + 7, y - 11, FB, 6.8, C.muted);
+      cl.lines.forEach((l, n) => text(l, x + 7, y - 15 - cl.size - n * (cl.size + 2.5), FB, cl.size, cl.q ? C.accent : C.ink));
+      x += cl.w;
+    });
+    page.drawRectangle({x: M, y: y - hgt, width: CW, height: hgt, borderColor: C.brand, borderWidth: 1.5});
+    y -= hgt + 14;
   }
   function kv(rows){
     const cols = 3, cw = CW / cols;
@@ -4096,7 +4124,7 @@ async function buildPdf(c, tabs){
     y -= 16;
   }
   for (const tab of tabs){
-    title = tabTitle(c, tab); newPage(false); header(n0(c.qty));
+    title = tabTitle(c, tab); newPage(false); header();
     for (const b of blocksFor(c, tab)){
       if (b.team) teamBar(b.team);
       else if (b.h) heading(b.h);
