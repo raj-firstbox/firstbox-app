@@ -24,6 +24,15 @@ body = body[:i] + loaders + '\n' + body[i:]
 
 out = ('<!doctype html>\n<html lang="en">\n<head>\n<meta charset="utf-8">\n'
        '<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">\n'
+       # Phones: "Add to Home Screen" opens it full screen with the Firstbox icon.
+       '<link rel="manifest" href="manifest.webmanifest">\n'
+       '<link rel="icon" type="image/png" href="icons/favicon.png">\n'
+       '<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">\n'
+       '<meta name="theme-color" content="#FFFFFF">\n'
+       '<meta name="mobile-web-app-capable" content="yes">\n'
+       '<meta name="apple-mobile-web-app-capable" content="yes">\n'
+       '<meta name="apple-mobile-web-app-title" content="Firstbox">\n'
+       '<meta name="apple-mobile-web-app-status-bar-style" content="default">\n'
        '<style>*,*::before,*::after{box-sizing:border-box}html,body{margin:0}[hidden]{display:none!important}</style>\n'
        + head.strip() + '\n</head>\n<body>\n' + body.strip() + '\n</body>\n</html>\n')
 open(os.path.join(ROOT, 'web', 'index.html'), 'w', encoding='utf-8').write(out)

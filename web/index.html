@@ -3,6 +3,14 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" type="image/png" href="icons/favicon.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<meta name="theme-color" content="#FFFFFF">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Firstbox">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
 <style>*,*::before,*::after{box-sizing:border-box}html,body{margin:0}[hidden]{display:none!important}</style>
 <title>Firstbox Costing</title>
 <meta name="claude:viewport-fit-sides" content="cover">
@@ -300,7 +308,7 @@ input[type=date]{cursor:pointer}
 .switch input:focus-visible+span{outline:2px solid var(--brand);outline-offset:2px}
 @media (max-width:860px){
   .inv{padding:16px}
-  .inv-two,.inv-extra{grid-template-columns:1fr}
+  .inv-two,.inv-extra{grid-template-columns:minmax(0,1fr)}
   .inv-head{display:none}
   .inv-cols{grid-template-columns:1fr 1fr!important}
   .inv-cols .c-item{grid-column:1/-1}
@@ -389,6 +397,46 @@ body:not(.show-rates) .adv{display:none}
   .tab{padding:7px 10px;font-size:14px}
   .spacer{display:none}
   .savestate{margin-left:auto}
+}
+/* Phones: the section tabs become a bar along the bottom, lists become cards, inputs use 16px text so iPhones don't zoom in. */
+.tico{display:none}
+.tab .tabshort{display:none}
+.inv{grid-template-columns:minmax(0,1fr)}
+@media (max-width:640px){
+  .bar nav{position:fixed;left:0;right:0;bottom:0;z-index:30;display:flex;gap:2px;order:0;width:auto;overflow:visible;background:var(--surface);border-top:1px solid var(--line);box-shadow:0 -4px 16px rgba(31,26,22,.07);padding:5px max(4px,env(safe-area-inset-right,0px)) calc(5px + env(safe-area-inset-bottom,0px)) max(4px,env(safe-area-inset-left,0px))}
+  .bar nav .tab{flex:1 1 0;min-width:0;display:grid;justify-items:center;gap:2px;padding:6px 2px 5px;font-size:11px;font-weight:600;border-radius:10px;box-shadow:none}
+  .bar nav .tab[hidden]{display:none}
+  .bar nav .tab[aria-current="page"]{box-shadow:none;background:var(--accent-soft);color:var(--accent)}
+  .tab .tabfull{display:none}
+  .tab .tabshort{display:block;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .tico{display:block;width:22px;height:22px}
+  body.typing .bar nav{display:none}
+  .bar .wrap{flex-wrap:nowrap}
+  main{padding-bottom:calc(90px + env(safe-area-inset-bottom,0px))}
+  input,select,textarea{font-size:16px}
+  .btn{padding:9px 13px}
+  .btn.small{padding:6px 10px}
+  .kpis{grid-template-columns:1fr 1fr;gap:8px}
+  .kpi{padding:10px 12px}
+  .kpi .v{font-size:19px}
+  th,td{padding:8px 9px}
+  .inv{padding:12px;gap:16px}
+  table.jobs,table.jobs tbody{display:block}
+  table.jobs thead{display:none}
+  table.jobs tr{position:relative;display:grid;grid-template-columns:1fr 1fr;gap:8px 14px;padding:12px 14px;border-bottom:1px solid var(--line)}
+  table.jobs tbody tr:last-child{border-bottom:0}
+  table.jobs td{display:block;padding:0;border:0;white-space:normal;min-width:0!important;max-width:none!important;width:auto;text-align:left}
+  table.jobs td[data-lab]::before{content:attr(data-lab);display:block;font-size:10.5px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:var(--muted);margin-bottom:1px}
+  table.jobs td.lead{grid-column:1/-1;padding-right:44px}
+  table.jobs td.act{position:absolute;top:8px;right:8px;padding:0}
+  table.jobs td:empty{display:none}
+  table.jobs .sub{max-width:none}
+  .hgrid.work,.hgrid.set{grid-template-columns:1fr 1fr;gap:10px}
+  .htile,.htile.small{flex-direction:column;align-items:flex-start;gap:10px;min-height:0;padding:14px}
+  .htitle{font-size:16px}
+  .hdesc{font-size:12px}
+  .hgrid.set .hdesc{display:none}
+  .hlogo{width:min(200px,56vw);margin-bottom:10px}
 }
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
 </style>
@@ -1907,7 +1955,7 @@ function renderBill(){
     const check = () => { const g = gstinInfo(cl.gstin);
       if (!cl.gstin){ note.className = 'note'; note.textContent = gstLookupReady() ? 'Type the GSTIN and the client’s name and address fill in from GST records.' : 'Type the GSTIN: state and PAN fill in by themselves, and a saved client fills in completely.'; return; }
       note.className = 'note' + (!g || !g.ok ? ' warnline' : '');
-      note.textContent = !g ? 'This doesn’t look like a GSTIN (15 characters, e.g. 06AAMCB9807F1ZI).' : !g.ok ? 'Check this GSTIN: the last character doesn’t match, so it may have a typing mistake.' : '✓ Valid GSTIN · ' + g.state; };
+      note.textContent = !g ? 'This doesn’t look like a GSTIN (15 characters, e.g. 07ABCDE1234F1Z5).' : !g.ok ? 'Check this GSTIN: the last character doesn’t match, so it may have a typing mistake.' : '✓ Valid GSTIN · ' + g.state; };
     f.gstin = h('input',{id:'cl-gstin', value: cl.gstin || '', placeholder:'15 characters', style:'text-transform:uppercase', oninput:e => {
       cl.gstin = e.target.value.trim().toUpperCase(); const g = gstinInfo(cl.gstin);
       if (g){ const c = findClient('', cl.gstin); if (c) fillIn(c); cl.state = g.code; f.state.value = g.code; cl.pan = g.pan; f.pan.value = g.pan; }
@@ -2679,6 +2727,22 @@ const ICONS = {
   orders:'<path d="M2 6h12v10H2z"/><path d="M14 9h4l3 3v4h-7"/><circle cx="6.5" cy="17.5" r="2"/><circle cx="17.5" cy="17.5" r="2"/>',
   team:'<circle cx="9" cy="8" r="3"/><path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6"/><circle cx="17" cy="9" r="2.5"/><path d="M15.5 14.2c2.8.3 5 2.6 5 5.8"/>'
 };
+// Phones: icons and short names on the section tabs (shown as a bottom bar on small screens).
+{ const SHORT = {jobs:'Costing', cards:'Job cards', orders:'Orders', bills:'Sales', stock:'Stock', past:'Database'};
+  document.querySelectorAll('.bar nav .tab').forEach(b => { const v = b.dataset.go, full = b.textContent.trim();
+    b.innerHTML = '<svg class="tico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + (ICONS[v] || '') + '</svg>';
+    b.append(h('span',{class:'tabfull'}, full), h('span',{class:'tabshort', 'aria-hidden':'true'}, SHORT[v] || full)); b.setAttribute('aria-label', full); }); }
+// Phones: list tables show as cards, so each cell gets its column name as a small label.
+function labelListRows(){
+  document.querySelectorAll('table.jobs tbody tr:not([data-lab])').forEach(tr => {
+    tr.dataset.lab = '1'; const heads = [...tr.closest('table').querySelectorAll('thead th')].map(th => th.classList.contains('act') ? '' : th.textContent.trim());
+    let col = 0; [...tr.children].forEach((td, i) => { if (i === 0) td.classList.add('lead'); else if (heads[col] && !td.classList.contains('act')) td.dataset.lab = heads[col]; col += td.colSpan || 1; });
+  });
+}
+new MutationObserver(labelListRows).observe(document.body, {childList:true, subtree:true});
+// Phones: hide the bottom bar while typing, so it doesn't sit on top of the field above the keyboard.
+document.addEventListener('focusin', e => { if (e.target.matches('input:not([type=checkbox]):not([type=radio]),textarea,select')) document.body.classList.add('typing'); });
+document.addEventListener('focusout', () => document.body.classList.remove('typing'));
 let homeT = null;
 function homeSoon(){ if (S.view !== 'home') return; clearTimeout(homeT); homeT = setTimeout(() => { if (S.view === 'home') renderHome(); }, 120); }
 function renderHome(){
