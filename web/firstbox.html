@@ -370,6 +370,16 @@ tfoot th{background:var(--sunk);font-size:13px;letter-spacing:0;text-transform:n
 .tschecks li{padding-left:28px;position:relative}
 .tschecks li::before{content:"";position:absolute;left:2px;top:1px;width:16px;height:16px;border:2px solid var(--fg);border-radius:3px}
 .tstext{white-space:pre-wrap;background:var(--warn-soft);color:var(--fg);border-left:4px solid var(--warn);padding:8px 12px;border-radius:4px;font-weight:500}
+.tsdisc{display:grid;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.tsdrow{display:grid;grid-template-columns:26px minmax(150px,1fr) 2.2fr 20px;gap:10px;align-items:center;padding:8px 12px;border-top:1px solid var(--line)}
+.tsdrow:first-child{border-top:0}
+.tsdrow:nth-child(odd){background:#FFF8F3}
+.tsdn{display:grid;place-items:center;width:22px;height:22px;border-radius:50%;background:var(--brand);color:#fff;font-size:12px;font-weight:700}
+.tsdk{font-weight:600}
+.tsdblank{align-self:end;height:18px;border-bottom:1px solid var(--muted)}
+.tsdbox{width:16px;height:16px;border:1.5px solid var(--fg);border-radius:3px}
+@media (max-width:640px){.tsdrow{grid-template-columns:24px 1fr 18px}.tsdv{grid-column:2;grid-row:2}.tsdbox{grid-column:3;grid-row:1}}
+@media print{.tsdrow:nth-child(odd){background:none}.tsdn{background:none;color:var(--fg);border:1px solid var(--fg)}}
 .tssign{display:grid;grid-template-columns:repeat(3,1fr);gap:18px;margin-top:22px}
 .tssign div{border-top:1px solid var(--fg);padding-top:4px;font-size:12px;color:var(--muted)}
 @media print{
@@ -3709,13 +3719,16 @@ function specFromCosting(j){
     return {name: l.name || 'Accessory', perBox: per, details: det.filter(Boolean).join(' · ')};
   });
   const dieL = j.lines.find(l => l.calc === 'diecut' && inPart(l, 'die'));
+  // Only fill board thickness / inside paper when the costing says so, so "Update from costing" never wipes what was settled with the floor manager.
+  const thick = boards.map(b => b.thick).find(Boolean), inner = RIGID.has(j.boxType) && sheets.some(s => /inner|astar/i.test(s.ups || ''));
   return {client: j.client || '', description: j.description || '', boxType: j.boxType, qty: j.qty ?? null, l: j.l ?? null, w: j.w ?? null, h: j.h ?? null,
-    making: RIGID.has(j.boxType) ? (j.making || '') : '', sheets, coat, fx, boards, inserts, acc, dies: dieL ? (dieL.dies ?? null) : null};
+    making: RIGID.has(j.boxType) ? (j.making || '') : '', sheets, coat, fx, boards, inserts, acc, dies: dieL ? (dieL.dies ?? null) : null,
+    ...(RIGID.has(j.boxType) && thick ? {boardThick: String(thick)} : {}), ...(inner ? {inPrint: 'yes'} : {})};
 }
 function blankCard(series, o){
   const num = nextCardNum(series); let id = series + '-' + num;
   return {id, series, num, date: today(), due:'', contact:'', phone:'', notes:'', costingId:null,
-    client:'', description:'', boxType:'rigid', qty:null, l:null, w:null, h:null, making:'',
+    client:'', description:'', boxType:'rigid', qty:null, l:null, w:null, h:null, making:'', diff:null, boardThick:'', inPrint:'',
     sheets:[], coat:'', fx:[], boards:[], inserts:[], acc:[], dies:null, createdAt: Date.now(), updatedAt: Date.now(), ...(o || {})};
 }
 function saveCard(c){ c.updatedAt = Date.now(); S.cards.set(c.id, clone(c)); const snap = clone(c); scheduleSave('jobcards/' + c.id, () => snap); }
@@ -3821,16 +3834,37 @@ const totalSheets = c => c.sheets.reduce((a, s) => a + n0(s.count), 0);
 const fxSorted = c => [...c.fx].filter(f => f.kind).sort((a, b) => FX_ORDER.indexOf(a.kind) - FX_ORDER.indexOf(b.kind));
 const thickList = c => [...new Set(c.boards.map(b => b.thick).filter(Boolean))].map(t => t + ' mm').join(', ');
 
-// Blocks: {h:title} {kv:[[label,value]]} {table:{heads,rows}} {checks:[...]} {text} {warn} {sign:true}
+// What the job card person settles with the floor manager before anything starts (Raj's list, in his order).
+const IN_PRINT = {yes:'Yes – printed inside', no:'No – plain inside paper'};
+const hasDiff = c => c.boxType === 'rigid';   // top & bottom boxes only
+const boardThickText = c => c.boardThick ? c.boardThick + ' mm' : thickList(c);
+const diffText = c => c.diff == null || c.diff === '' ? '' : fmtN(n0(c.diff), 1) + ' mm' + (n0(c.h) ? ' (lid height ' + fmtN(n0(c.h) - n0(c.diff), 1) + ' mm)' : '');
+function coatFxText(c){
+  const fx = fxSorted(c).map(f => [FX[f.kind], f.colour, f.part].filter(Boolean).join(' – '));
+  const coat = c.coat && !/^none$/i.test(c.coat) ? c.coat : '';
+  if (!coat && !fx.length) return /^none$/i.test(c.coat || '') ? 'None' : '';
+  return [coat ? 'Coating: ' + coat : 'No coating', ...fx].join(' · ');
+}
+const insertText = c => c.inserts.filter(i => i.type).map(i => [INSERTS[i.type] || i.type, i.material, i.thick ? i.thick + ' mm' : '', i.colour, i.cover ? i.cover + ' covering' + (i.coverColour ? ' (' + i.coverColour + ')' : '') : ''].filter(Boolean).join(', ')).join(' · ');
+function discussPoints(c){
+  const P = partsFor(c), rigid = RIGID.has(c.boxType), out = [['Size (L × W × H)', sizeText(c)]];
+  if (hasDiff(c)) out.push(['Height difference (top & bottom)', diffText(c)]);
+  if (rigid) out.push(['Board thickness', boardThickText(c)], ['Box style: half cut or grooving', MAKING[c.making] || ''], ['Inside paper printed?', IN_PRINT[c.inPrint] || '']);
+  if (P.includes('finish')) out.push(['Coating & special effects', coatFxText(c)]);
+  if (P.includes('insert')) out.push(['Inserts', insertText(c)]);
+  return out;
+}
+// Blocks: {h:title} {kv:[[label,value]]} {table:{heads,rows}} {checks:[...]} {text} {warn} {sign:true | [labels]} {discuss:[[label,value]]}
 function jobBlock(c, extra){
-  return {kv:[['Order type', SERIES[c.series] || ''], ['Item', c.description],
+  return {job:true, kv:[['Order type', SERIES[c.series] || ''], ['Item', c.description],
     ['Box size L × W × H', sizeText(c)], ['Delivery due', fmtDate(c.due)], ...(extra || [])]};
 }
 function teamBlocks(c, k){
   const B = [], qty = n0(c.qty), P = partsFor(c);
   const notes = t => { const n = c[TEAMS.find(x => x.k === t).note]; if (n) B.push({h:'Special instructions'}, {text:n}); if (c.notes) B.push({h:'Notes for everyone'}, {text:c.notes}); };
   if (k === 'design'){
-    B.push(jobBlock(c, [['Box making', RIGID.has(c.boxType) ? (MAKING[c.making] || 'Not set') : ''], ['Board thickness', thickList(c)]]));
+    B.push(jobBlock(c, [['Box making', RIGID.has(c.boxType) ? (MAKING[c.making] || 'Not set') : ''], ['Board thickness', RIGID.has(c.boxType) ? (boardThickText(c) || 'Not set') : thickList(c)],
+      ...(hasDiff(c) ? [['Height difference', diffText(c) || 'Not set']] : []), ...(RIGID.has(c.boxType) ? [['Inside paper printed', IN_PRINT[c.inPrint] || 'Not set']] : [])]));
     if (c.sheets.length) B.push({h:'Sheet layouts to prepare'}, {table:{heads:['Sheet','Paper & GSM','Sheet size','Parts & ups on this sheet','Colours','Pantone'],
       rows:c.sheets.map(s => [s.name, [s.paper, s.gsm ? s.gsm + ' GSM' : ''].filter(Boolean).join(' · '), shSize(s), s.ups, s.colours ? s.colours + ' colour' : '', s.pantone])}});
     const fx = fxSorted(c);
@@ -3840,7 +3874,8 @@ function teamBlocks(c, k){
     if (P.includes('insert') && c.inserts.length) B.push({h:'Insert to design'}, {table:{heads:['Type','Material','Thickness','Colour'], rows:c.inserts.map(i => [INSERTS[i.type] || i.type, i.material, i.thick ? i.thick + ' mm' : '', i.colour])}});
     B.push({h:'Check before sending to printing'}, {checks:[
       'Dieline is made to the box size ' + (sizeText(c) || '(size not set)') + '.',
-      ...(RIGID.has(c.boxType) ? ['Board thickness ' + (thickList(c) || '(not set)') + ' and ' + (MAKING[c.making] ? MAKING[c.making].toLowerCase() : 'box making') + ' allowance added in the dieline.'] : []),
+      ...(RIGID.has(c.boxType) ? ['Board thickness ' + (boardThickText(c) || '(not set)') + ' and ' + (MAKING[c.making] ? MAKING[c.making].toLowerCase() : 'box making') + ' allowance added in the dieline.'] : []),
+      ...(hasDiff(c) && diffText(c) ? ['Lid and base heights follow the height difference of ' + diffText(c) + '.'] : []),
       'Ups on every sheet match the table above.',
       'Colours and Pantone shades match the table above.',
       ...(fx.length ? ['A separate file is made for each special effect.'] : []),
@@ -3892,7 +3927,8 @@ function teamBlocks(c, k){
     notes('die');
   }
   if (k === 'make'){
-    B.push(jobBlock(c, [['Box making', MAKING[c.making] || (RIGID.has(c.boxType) ? 'Not set' : '')]]));
+    B.push(jobBlock(c, [['Box making', MAKING[c.making] || (RIGID.has(c.boxType) ? 'Not set' : '')],
+      ...(RIGID.has(c.boxType) ? [['Board thickness', boardThickText(c) || 'Not set']] : []), ...(hasDiff(c) ? [['Height difference', diffText(c) || 'Not set']] : [])]));
     if (P.includes('board') && c.boards.length) B.push({h:'Kappa board'}, {table:{heads:['Board','Thickness','Sheet size','Ups','Sheets'], rows:c.boards.map(b => [b.type, b.thick ? b.thick + ' mm' : '', shSize(b), b.ups, b.count ? fmtN(b.count) : ''])}});
     const names = pastelNames(c);
     if (names.length) B.push({h:'Printed parts to paste'}, {text:names.join(', ')});
@@ -3916,7 +3952,10 @@ function missingFor(c){
   const m = [], P = partsFor(c);
   if (!n0(c.qty)) m.push('Quantity');
   if (!n0(c.l) || !n0(c.w) || (!n0(c.h) && c.boxType !== 'printing')) m.push('Box size L × W × H');
+  if (hasDiff(c) && (c.diff == null || c.diff === '')) m.push('Height difference');
+  if (RIGID.has(c.boxType) && !boardThickText(c)) m.push('Board thickness');
   if (RIGID.has(c.boxType) && !c.making) m.push('Box making (grooving or half cut)');
+  if (RIGID.has(c.boxType) && !c.inPrint) m.push('Inside paper printed (yes or no)');
   if (P.includes('print') && !c.sheets.length) m.push('Printed sheets');
   c.sheets.forEach(s => { const miss = [!s.paper && 'paper', !s.gsm && 'GSM', !(s.L && s.W) && 'sheet size', !s.ups && 'ups', !s.count && 'sheets to print'].filter(Boolean); if (miss.length) m.push(s.name + ': ' + miss.join(', ')); });
   if (P.includes('finish') && !c.coat) m.push('Coating (write None if there is no coating)');
@@ -3940,7 +3979,8 @@ function materialRows(c){
 function masterBlocks(c){
   const miss = missingFor(c);
   const B = miss.length ? [{warn:'Fill these in before giving the job to the team: ' + miss.join(' · ') + '.'}] : [];
-  B.push(jobBlock(c, [['Box making', MAKING[c.making] || ''], ['Contact', [c.contact, c.phone].filter(Boolean).join(', ')]]));
+  B.push({h:'First, discuss with the floor manager'}, {discuss:discussPoints(c)}, {sign:['Floor manager','Job card made by','Date']});
+  B.push({h:'Order details'}, {job:true, kv:[['Order type', SERIES[c.series] || ''], ['Item', c.description], ['Delivery due', fmtDate(c.due)], ['Contact', [c.contact, c.phone].filter(Boolean).join(', ')]]});
   B.push({h:'Work order'}, {text:teamsFor(c).map((t, i) => (i + 1) + '. ' + t.n).join('   →   ')});
   const mat = materialRows(c);
   if (mat.length){
@@ -3951,7 +3991,7 @@ function masterBlocks(c){
   }
   teamsFor(c).forEach((t, i) => {
     B.push({team:'Step ' + (i + 1) + ' · ' + t.n});
-    teamBlocks(c, t.k).forEach(b => { if (!b.kv || b.kv[0][0] !== 'Job card') B.push(b); });
+    teamBlocks(c, t.k).forEach(b => { if (!b.job) B.push(b); });
   });
   return B;
 }
@@ -3973,7 +4013,9 @@ function blocksHtml(c, tab){
     else if (b.checks) out.append(h('ul',{class:'tschecks'}, b.checks.map(x => h('li',{}, x))));
     else if (b.warn) out.append(h('div',{class:'banner'}, b.warn));
     else if (b.text) out.append(h('div',{class:'tstext'}, b.text));
-    else if (b.sign) out.append(h('div',{class:'tssign'}, ['Done by','Date','Checked by'].map(x => h('div',{}, x))));
+    else if (b.discuss) out.append(h('div',{class:'tsdisc'}, b.discuss.map(([k, x], i) => h('div',{class:'tsdrow'},
+      h('span',{class:'tsdn'}, String(i + 1)), h('span',{class:'tsdk'}, k), x ? h('b',{class:'tsdv'}, x) : h('span',{class:'tsdv tsdblank', title:'Decide with the floor manager'}), h('span',{class:'tsdbox', 'aria-hidden':'true'})))));
+    else if (b.sign) out.append(h('div',{class:'tssign'}, (Array.isArray(b.sign) ? b.sign : ['Done by','Date','Checked by']).map(x => h('div',{}, x))));
   }
   return out;
 }
@@ -3986,6 +4028,7 @@ function blocksText(c, tab){
     else if (b.kv) b.kv.forEach(([k, x]) => { if (x !== '' && x != null) L.push(k + ': ' + x); });
     else if (b.table) b.table.rows.forEach(r => L.push('• ' + r.map((x, i) => x == null || x === '' ? '' : (i ? b.table.heads[i] + ': ' : '') + x).filter(Boolean).join(' · ')));
     else if (b.checks) b.checks.forEach(x => L.push('☐ ' + x));
+    else if (b.discuss) b.discuss.forEach(([k, x], i) => L.push((i + 1) + '. ' + k + ': ' + (x || '________')));
     else if (b.warn || b.text) L.push(b.warn || b.text);
   }
   return L.join('\n');
@@ -4118,9 +4161,29 @@ async function buildPdf(c, tabs){
     }
     y -= 4;
   }
-  function sign(){
+  // Floor-manager points: number · topic · what was decided (or a line to write it on) · tick box.
+  function discuss(points){
+    const kw = 168, bw = 22, vw = CW - 24 - kw - bw - 12;
+    points.forEach(([k, x], i) => {
+      const kl = wrap(k, FB, 9.5, kw - 6), vl = x ? wrap(x, F, 9.5, vw) : [];
+      const rh = Math.max(24, Math.max(kl.length, vl.length || 1) * 12.5 + 11); ensure(rh);
+      if (i % 2 === 0) page.drawRectangle({x:M, y:y - rh, width:CW, height:rh, color:hex('#FFF8F3')});
+      page.drawLine({start:{x:M, y:y - rh}, end:{x:M + CW, y:y - rh}, thickness:0.6, color:C.line});
+      if (i === 0) page.drawLine({start:{x:M, y}, end:{x:M + CW, y}, thickness:0.6, color:C.line});
+      page.drawCircle({x:M + 10, y:y - 12.5, size:8, color:C.brand});
+      const n = String(i + 1); text(n, M + 10 - tw(n, FB, 9) / 2, y - 15.6, FB, 9, C.white);
+      kl.forEach((l, j) => text(l, M + 24, y - 15.5 - j * 12.5, FB, 9.5, C.ink));
+      const vx = M + 24 + kw;
+      if (vl.length) vl.forEach((l, j) => text(l, vx, y - 15.5 - j * 12.5, F, 9.5, C.ink));
+      else page.drawLine({start:{x:vx, y:y - rh + 7}, end:{x:vx + vw, y:y - rh + 7}, thickness:0.7, color:C.muted});
+      page.drawRectangle({x:M + CW - bw + 4, y:y - 18, width:11, height:11, borderColor:C.ink, borderWidth:1});
+      y -= rh;
+    });
+    y -= 4;
+  }
+  function sign(labels){
     ensure(46); y -= 32; const w = (CW - 36) / 3;
-    ['Done by','Date','Checked by'].forEach((t, i) => { const x = M + i * (w + 18); page.drawLine({start:{x, y}, end:{x:x + w, y}, thickness:0.8, color:C.ink}); text(t, x, y - 10, F, 8, C.muted); });
+    (labels || ['Done by','Date','Checked by']).forEach((t, i) => { const x = M + i * (w + 18); page.drawLine({start:{x, y}, end:{x:x + w, y}, thickness:0.8, color:C.ink}); text(t, x, y - 10, F, 8, C.muted); });
     y -= 16;
   }
   for (const tab of tabs){
@@ -4133,7 +4196,8 @@ async function buildPdf(c, tabs){
       else if (b.checks) checks(b.checks);
       else if (b.warn) box(b.warn, C.warnSoft, C.warn);
       else if (b.text) box(b.text, C.warnSoft, C.brand);
-      else if (b.sign) sign();
+      else if (b.discuss) discuss(b.discuss);
+      else if (b.sign) sign(Array.isArray(b.sign) ? b.sign : null);
     }
   }
   return doc.save();
@@ -4211,7 +4275,12 @@ function renderCard(){
         fld('Box / job type', sel(boxOptions(c.boxType), c.boxType || 'rigid', {onchange:e => { set('boxType', e.target.value); renderCard(); }})),
         txt('Item / description', 'description', {cls:'wide'}), nm('Quantity (pcs)', 'qty'),
         nm('Length L (mm)', 'l'), nm('Width W (mm)', 'w'), nm('Height H (mm)', 'h'),
-        RIGID.has(c.boxType) ? fld('Box making', sel([['','—'], ...Object.entries(MAKING)], c.making || '', {onchange:e => set('making', e.target.value)})) : null)),
+        hasDiff(c) ? fld('Height difference (mm)', numIn(c.diff, v => { set('diff', v); const n = $('#jc-lid'); if (n) n.textContent = diffText(c) ? 'Lid height ' + fmtN(n0(c.h) - n0(c.diff), 1) + ' mm' : ''; }), '') : null,
+        RIGID.has(c.boxType) ? fld('Board thickness', sel([['','—'], ...[...THICK, ...(c.boardThick && !THICK.includes(String(c.boardThick)) ? [String(c.boardThick)] : [])].map(t => [t, t + ' mm'])], c.boardThick ? String(c.boardThick) : '', {onchange:e => set('boardThick', e.target.value)})) : null,
+        RIGID.has(c.boxType) ? fld('Box making', sel([['','—'], ...Object.entries(MAKING)], c.making || '', {onchange:e => set('making', e.target.value)})) : null,
+        RIGID.has(c.boxType) ? fld('Inside paper printed?', sel([['','—'], ['yes','Yes, printed inside'], ['no','No, plain']], c.inPrint || '', {onchange:e => set('inPrint', e.target.value)})) : null),
+      hasDiff(c) ? h('div',{class:'note', id:'jc-lid'}, n0(c.h) && diffText(c) ? 'Lid height ' + fmtN(n0(c.h) - n0(c.diff), 1) + ' mm' : '') : null,
+      RIGID.has(c.boxType) ? h('div',{class:'note'}, 'Size, height difference, board thickness, box making, inside paper, coating & special effects and inserts are what you settle with the floor manager first. They print at the top of the master sheet.') : null),
     P.includes('print') ? sec('1', 'Printing & paper', rowsFor('sheets', [['name','Sheet'],['paper','Paper'],['gsm','GSM','num'],['L','Size L (in)','num'],['W','Size W (in)','num'],['ups','Parts & ups on sheet','wide','e.g. Top × 2, Bottom × 2'],['colours','Colours','num'],['pantone','Pantone','', 'e.g. 186 C'],['count','Sheets to print','num']],
       () => ({name:'Printed sheet ' + (c.sheets.length + 1), paper:'', gsm:null, L:null, W:null, ups:'', colours:4, pantone:'', count:null}), 'Add printed sheet')) : '',
     P.includes('finish') ? sec('2', 'Finishing', txt('Coating (all printed sheets)', 'coat', {ph:'e.g. Lamination – Thermal matte, or None'}),
