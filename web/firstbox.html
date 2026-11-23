@@ -390,6 +390,7 @@ tfoot th{background:var(--sunk);font-size:13px;letter-spacing:0;text-transform:n
 .tsdbox{width:16px;height:16px;border:1.5px solid var(--fg);border-radius:3px}
 @media (max-width:640px){.tsdrow{grid-template-columns:24px 1fr 18px}.tsdv{grid-column:2;grid-row:2}.tsdbox{grid-column:3;grid-row:1}}
 @media print{.tsdrow:nth-child(odd){background:none}.tsdn{background:none;color:var(--fg);border:1px solid var(--fg)}}
+table.signrows td{height:30px;vertical-align:top}
 .tssign{display:grid;grid-template-columns:repeat(3,1fr);gap:18px;margin-top:22px}
 .tssign div{border-top:1px solid var(--fg);padding-top:4px;font-size:12px;color:var(--muted)}
 @media print{
@@ -4098,21 +4099,47 @@ function materialRows(c){
 function masterBlocks(c){
   const miss = missingFor(c);
   const B = miss.length ? [{warn:'Fill these in before giving the job to the team: ' + miss.join(' · ') + '.'}] : [];
-  B.push({h:'First, discuss with the floor manager'}, {discuss:discussPoints(c)}, {sign:['Floor manager','Job card made by','Date']});
+  // One A4 page (Raj): the floor-manager points, order details, each team's work in one line with Done by / Date to sign,
+  // and materials. Each team's full details and checklist stay on that team's own sheet.
+  if (B.length) B[0].screenOnly = true;
+  B.push({h:'First, discuss with the floor manager'}, {discuss:discussPoints(c)});
   B.push({h:'Order details'}, {job:true, kv:[['Order type', SERIES[c.series] || ''], ['Item', c.description], ['Delivery due', fmtDate(c.due)], ['Contact', [c.contact, c.phone].filter(Boolean).join(', ')]]});
-  B.push({h:'Work order'}, {text:teamsFor(c).map((t, i) => (i + 1) + '. ' + t.n).join('   →   ')});
+  B.push({h:'Work order'}, {table:{heads:['#','Team','Work','Done by','Date'], minRow:24, widths:[0.04, 0.15, 0.53, 0.15, 0.13],
+    rows:teamsFor(c).map((t, i) => [String(i + 1), t.n, teamSummary(c, t.k), '', ''])}});
   const mat = materialRows(c);
   if (mat.length){
     const bad = mat.filter(r => r[4] !== 'Ready').length;
-    B.push({h:'Materials from stock'});
-    if (bad) B.push({warn: bad + ' material' + (bad > 1 ? 's are' : ' is') + ' not ready. Check with procurement before starting.'});
+    B.push({h:'Materials from stock' + (bad ? ' (' + bad + ' not ready: check with procurement)' : '')});
     B.push({table:{heads:['Material needed','Stock item','Qty','In stock (free)','Status'], rows:mat}});
   }
-  teamsFor(c).forEach((t, i) => {
-    B.push({team:'Step ' + (i + 1) + ' · ' + t.n});
-    teamBlocks(c, t.k).forEach(b => { if (!b.job) B.push(b); });
-  });
+  if (c.notes) B.push({h:'Notes for everyone'}, {text:c.notes});
+  B.push({sign:['Floor manager','Job card made by','Date']});
   return B;
+}
+// One line per team for the master sheet.
+function teamSummary(c, k){
+  const qty = n0(c.qty), P = partsFor(c), fx = fxSorted(c), out = [];
+  const join = a => a.filter(Boolean).join(' · ');
+  if (k === 'design'){
+    out.push('Dieline for ' + (sizeText(c) || 'box size (not set)'), P.includes('die') && c.dies != null && c.dies !== '' ? c.dies + (n0(c.dies) === 1 ? ' die' : ' dies') : '',
+      c.sheets.length ? c.sheets.length + ' sheet layout' + (c.sheets.length > 1 ? 's' : '') : '', fx.length ? 'separate files: ' + [...new Set(fx.map(f => FX[f.kind]))].join(', ') : '', 'client approval');
+  }
+  if (k === 'print'){
+    if (!c.sheets.length) out.push('No printed sheets');
+    c.sheets.forEach(sh => out.push((sh.name || 'Sheet') + ': ' + join([[sh.paper, sh.gsm ? sh.gsm + ' GSM' : ''].filter(Boolean).join(' '), shSize(sh), sh.count ? fmtN(sh.count) + ' sheets' : '', sheetColours(sh), sh.pantone])));
+  }
+  if (k === 'fab'){
+    const steps = [c.coat && !/^none$/i.test(c.coat) ? c.coat : '', ...fx.map(f => FX[f.kind] + (f.colour ? ' (' + f.colour + ')' : '') + (f.part ? ' – ' + f.part : ''))].filter(Boolean);
+    out.push(steps.length ? steps.join(' → ') + (totalSheets(c) ? ' · ' + fmtN(totalSheets(c)) + ' sheets' : '') : 'No coating or special effects');
+  }
+  if (k === 'die') out.push(c.dies != null && c.dies !== '' ? c.dies + (n0(c.dies) === 1 ? ' die' : ' dies') : 'Dies not set', totalSheets(c) ? 'die cut ' + fmtN(totalSheets(c)) + ' sheets' : '');
+  if (k === 'make'){
+    const acc = c.acc.filter(a => a.name).map(a => a.name + (a.perBox ? ' × ' + a.perBox : ''));
+    out.push(RIGID.has(c.boxType) ? MAKING[c.making] || 'Box making not set' : '', RIGID.has(c.boxType) && boardThickText(c) ? 'board ' + boardThickText(c) : '',
+      hasDiff(c) && diffText(c) ? 'height difference ' + diffText(c) : '', insertText(c) ? 'insert: ' + insertText(c) : '', acc.length ? 'accessories: ' + acc.join(', ') : '', qty ? fmtN(qty) + ' boxes' : '');
+  }
+  const note = c[(TEAMS.find(t => t.k === k) || {}).note];
+  return join(out) + (note ? '. Note: ' + note : '');
 }
 function blocksFor(c, tab){ return tab === 'master' ? masterBlocks(c) : teamBlocks(c, tab); }
 // Top of every job card sheet, in Raj's order: job card no., date, client, product, quantity.
@@ -4128,9 +4155,9 @@ function blocksHtml(c, tab){
     if (b.team) out.append(h('h2',{class:'tsteam'}, b.team));
     else if (b.h) out.append(h('h3',{}, b.h));
     else if (b.kv) out.append(h('div',{class:'tskv'}, b.kv.filter(([, x]) => x !== '' && x != null || true).map(([k, x]) => h('div',{}, h('span',{}, k), h('b',{}, v(x))))));
-    else if (b.table) out.append(h('div',{class:'tablebox'}, h('table',{}, h('thead',{}, h('tr',{}, b.table.heads.map(x => h('th',{}, x)))), h('tbody',{}, b.table.rows.map(r => h('tr',{}, r.map(x => h('td',{}, x == null ? '' : String(x)))))))));
+    else if (b.table) out.append(h('div',{class:'tablebox'}, h('table',{class: b.table.minRow ? 'signrows' : ''}, h('thead',{}, h('tr',{}, b.table.heads.map(x => h('th',{}, x)))), h('tbody',{}, b.table.rows.map(r => h('tr',{}, r.map(x => h('td',{}, x == null ? '' : String(x)))))))));
     else if (b.checks) out.append(h('ul',{class:'tschecks'}, b.checks.map(x => h('li',{}, x))));
-    else if (b.warn) out.append(h('div',{class:'banner'}, b.warn));
+    else if (b.warn) out.append(h('div',{class:'banner' + (b.screenOnly ? ' noprint' : '')}, b.warn));
     else if (b.text) out.append(h('div',{class:'tstext'}, b.text));
     else if (b.discuss) out.append(h('div',{class:'tsdisc'}, b.discuss.map(([k, x], i) => h('div',{class:'tsdrow'},
       h('span',{class:'tsdn'}, String(i + 1)), h('span',{class:'tsdk'}, k), x ? h('b',{class:'tsdv'}, x) : h('span',{class:'tsdv tsdblank', title:'Decide with the floor manager'}), h('span',{class:'tsdbox', 'aria-hidden':'true'})))));
@@ -4202,8 +4229,8 @@ async function buildPdf(c, tabs){
   }
   const text = (t, x, yy, f, s, color) => page.drawText(pdfSafe(t), {x, y: yy, size: s, font: f, color: color || C.ink});
   const footer = () => { const n = doc.getPageCount(); text('Firstbox · Job card ' + c.id + ' · ' + title + ' · Page ' + n, M, 20, F, 7.5, C.muted); };
-  function newPage(cont){
-    page = doc.addPage([W, H]); y = H - M; footer();
+  function newPage(cont, tall){
+    page = doc.addPage([W, tall || H]); y = (tall || H) - M; if (!tall) footer();
     if (cont){ text('Job card ' + c.id + ' · ' + title + ' (continued)', M, y - 9, FB, 9, C.muted); y -= 22; }
   }
   const ensure = h => { if (y - h < M + 14) newPage(true); };
@@ -4249,11 +4276,11 @@ async function buildPdf(c, tabs){
     page.drawRectangle({x:M, y:y - hgt, width:CW, height:hgt, color:bg}); page.drawRectangle({x:M, y:y - hgt, width:3, height:hgt, color:fg});
     lines.forEach((l, n) => text(l, M + 12, y - 13 - n * 12.5, F, 9.5, C.ink)); y -= hgt + 8;
   }
-  function table(heads, rows){
+  function table(heads, rows, opt){
     const s = 8.5, pad = 4, n = heads.length;
     const want = heads.map((hd, i) => Math.max(tw(hd.toUpperCase(), FB, 6.8), ...rows.map(r => Math.min(tw(r[i] == null ? '' : String(r[i]), F, s), 170))) + pad * 2);
     const min = 34, tot = want.reduce((a, b) => a + b, 0);
-    let ws = want.map(w => Math.max(min, w * CW / tot));
+    let ws = opt && opt.widths ? opt.widths.map(f => f * CW) : want.map(w => Math.max(min, w * CW / tot));
     const sc = CW / ws.reduce((a, b) => a + b, 0); ws = ws.map(w => w * sc);
     const xs = ws.map((w, i) => M + ws.slice(0, i).reduce((a, b) => a + b, 0));
     const headH = Math.max(...heads.map((hd, i) => wrap(hd.toUpperCase(), FB, 6.8, ws[i] - pad * 2).length)) * 8.5 + 8;
@@ -4265,7 +4292,7 @@ async function buildPdf(c, tabs){
     ensure(headH + 20); drawHead();
     for (const r of rows){
       const cells = r.map((v, i) => wrap(v == null ? '' : String(v), F, s, ws[i] - pad * 2));
-      const rh = Math.max(...cells.map(x => x.length)) * 11 + 7;
+      const rh = Math.max((opt && opt.minRow) || 0, Math.max(...cells.map(x => x.length)) * 11 + 7);
       if (y - rh < M + 14){ newPage(true); drawHead(); }
       cells.forEach((lines, i) => { page.drawRectangle({x:xs[i], y:y - rh, width:ws[i], height:rh, borderColor:C.line, borderWidth:0.6}); lines.forEach((l, k) => text(l, xs[i] + pad, y - 11 - k * 11, F, s)); });
       y -= rh;
@@ -4305,18 +4332,32 @@ async function buildPdf(c, tabs){
     (labels || ['Done by','Date','Checked by']).forEach((t, i) => { const x = M + i * (w + 18); page.drawLine({start:{x, y}, end:{x:x + w, y}, thickness:0.8, color:C.ink}); text(t, x, y - 10, F, 8, C.muted); });
     y -= 16;
   }
+  // The master sheet always fits one A4 page: drawn on a tall page first, then cut to A4, or shrunk to fit if it is longer.
+  const HT = 4000;
   for (const tab of tabs){
-    title = tabTitle(c, tab); newPage(false); header();
+    const one = tab === 'master';
+    title = tabTitle(c, tab); newPage(false, one ? HT : 0); header();
     for (const b of blocksFor(c, tab)){
+      if (b.screenOnly) continue;
       if (b.team) teamBar(b.team);
       else if (b.h) heading(b.h);
       else if (b.kv) kv(b.kv);
-      else if (b.table) table(b.table.heads, b.table.rows);
+      else if (b.table) table(b.table.heads, b.table.rows, b.table);
       else if (b.checks) checks(b.checks);
       else if (b.warn) box(b.warn, C.warnSoft, C.warn);
       else if (b.text) box(b.text, C.warnSoft, C.brand);
       else if (b.discuss) discuss(b.discuss);
       else if (b.sign) sign(Array.isArray(b.sign) ? b.sign : null);
+    }
+    if (one){
+      const used = HT - y + 10;
+      if (used <= H){ page.setMediaBox(0, HT - H, W, H); page.setCropBox(0, HT - H, W, H); text('Firstbox · Job card ' + c.id + ' · ' + title + ' · Page ' + doc.getPageCount(), M, HT - H + 20, F, 7.5, C.muted); }
+      else {
+        const tallPage = page, emb = await doc.embedPage(tallPage, {left:0, bottom:HT - used, right:W, top:HT});
+        doc.removePage(doc.getPageIndices().length - 1);
+        newPage(false); const k = (H - 26) / used;
+        page.drawPage(emb, {x:(W - W * k) / 2, y:H - used * k, xScale:k, yScale:k});
+      }
     }
   }
   return doc.save();
