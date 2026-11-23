@@ -3920,6 +3920,9 @@ function jobCardButton(j){
   }}, 'Create job card');
 }
 
+// Find job cards by job card no. or client name (also item / box type). Every word typed must match.
+const cardMatches = (c, q) => { const hay = [c.id, c.client, c.description, BOX[c.boxType], c.repeatOf ? 'repeat ' + c.repeatOf : ''].join(' ').toLowerCase();
+  return String(q || '').toLowerCase().split(/\s+/).filter(Boolean).every(w => hay.includes(w) || hay.replace(/-/g, '').includes(w.replace(/-/g, ''))); };
 function renderCards(){
   const root = $('#view-cards'); root.replaceChildren();
   const all = [...S.cards.values()].sort((a, b) => String(b.series).localeCompare(String(a.series)) || n0(b.num) - n0(a.num));
@@ -3927,10 +3930,29 @@ function renderCards(){
   root.append(h('div',{class:'head'},
     h('div',{}, h('h1',{},'Job cards'), h('div',{class:'note'}, isOwnerRole() ? 'For internal use. Make one from an approved costing (“Create job card” on the costing), or start a blank one here.' : 'Press “+ New job card” to start one. Each job card takes its materials out of stock automatically.')),
     h('button',{class:'btn primary', onclick:() => { S.newCardOpen = !S.newCardOpen; renderCards(); }}, S.newCardOpen ? 'Close' : '+ New job card')));
-  if (S.newCardOpen){
+  if (S.newCardOpen && S.newCardMode === 'repeat'){
+    // Repeat an earlier job: find it by job card no. or client name, then press Repeat.
+    const rq = h('input',{type:'search', placeholder:'Type job card no. or client name, e.g. CO-105 or Oud House', value:S.repQ || '', style:'flex:1 1 280px', 'aria-label':'Find the earlier job'});
+    const res = h('div',{class:'tablebox'});
+    const drawRes = () => {
+      const q = (S.repQ || '').trim(), list = all.filter(c => !q || cardMatches(c, q));
+      res.replaceChildren(!list.length ? h('div',{class:'empty'}, 'No job card matches “' + q + '”.') : h('table',{class:'jobs'},
+        h('thead',{}, h('tr',{}, h('th',{},'Job card'), h('th',{},'Client'), h('th',{},'Item'), h('th',{class:'n'},'Qty'), h('th',{},'Date'), h('th',{class:'act'}, h('span',{class:'sr'},'Repeat')))),
+        h('tbody',{}, list.slice(0, 15).map(c => h('tr',{},
+          h('td',{}, h('span',{class:'jcno'}, c.id)), h('td',{}, c.client || '(no client)'), h('td',{}, h('div',{}, BOX[c.boxType] || '—'), h('div',{class:'sub'}, c.description || '')),
+          h('td',{class:'n'}, c.qty ? fmtN(c.qty) : '—'), h('td',{}, fmtDate(c.date)),
+          h('td',{class:'act'}, h('button',{class:'btn small primary', onclick:() => { S.newCardOpen = false; repeatCard(c); }}, 'Repeat')))))),
+        ...(list.length > 15 ? [h('div',{class:'note', style:'padding:8px 12px'}, 'Showing 15 of ' + list.length + '. Type more of the job card no. or client name to narrow it down.')] : []));
+    };
+    rq.addEventListener('input', e => { S.repQ = e.target.value; drawRes(); });
+    root.append(h('div',{class:'newjob'}, h('h2',{},'New job card'), newCardModes(),
+      h('div',{class:'note'}, 'Find the earlier job, then press Repeat. Everything is copied; you then choose what is reused and what is new.'),
+      h('div',{class:'row', style:'margin:8px 0'}, rq), res));
+    drawRes(); setTimeout(() => rq.focus());
+  } else if (S.newCardOpen){
     client = h('input',{placeholder:'Client name'}); desc = h('input',{placeholder:'e.g. Magnetic box for perfume'});
     box = sel(boxOptions(), 'rigid'); qty = h('input',{type:'number', inputmode:'numeric', placeholder:'e.g. 1000'});
-    root.append(h('div',{class:'newjob'}, h('h2',{},'New job card'),
+    root.append(h('div',{class:'newjob'}, h('h2',{},'New job card'), newCardModes(),
       h('div',{class:'grid'}, fld('Client', client), fld('Item', desc), fld('Box / job type', box), fld('Quantity (pcs)', qty)),
       seriesPicker(series => {
         if (!client.value.trim()){ client.focus(); client.placeholder = 'Enter the client name'; return; }
@@ -3939,7 +3961,11 @@ function renderCards(){
         S.cards.set(c.id, c); flush('jobcards/' + c.id, () => clone(c)); syncCardStock(c, 'Job card created'); S.cardTab = 'edit'; go('card', c.id);
       }, 'Create job card')));
   }
-  const search = h('input',{type:'search', placeholder:'Search job card no., client or item', value:S.cardQ, style:'flex:1 1 220px'});
+  function newCardModes(){
+    const b = (k, t) => h('button',{type:'button', class:'jctab', 'aria-current': (S.newCardMode || 'new') === k ? 'page' : 'false', onclick:() => { S.newCardMode = k; renderCards(); }}, t);
+    return h('div',{class:'jump', style:'margin-bottom:10px'}, b('new', 'New job'), b('repeat', 'Repeat an earlier job'));
+  }
+  const search = h('input',{type:'search', placeholder:'Find by job card no. or client name', value:S.cardQ, style:'flex:1 1 220px'});
   const tbox = h('div',{class:'tablebox'});
   root.append(h('div',{class:'row', style:'margin-bottom:10px'}, search), tbox);
   const draw = () => {
@@ -3947,9 +3973,10 @@ function renderCards(){
     if (!S.db){ tbox.append(h('div',{class:'empty'},'Saved data is not available here. Open this page in Claude while signed in, or sign in to the Firstbox app.')); return; }
     if (!S.loaded.cards){ tbox.append(h('div',{class:'empty'},'Loading job cards…')); return; }
     if (!all.length){ tbox.append(h('div',{class:'empty'},'No job cards yet. Open an approved costing and press “Create job card”, or press “+ New job card”.')); return; }
-    const q = S.cardQ.trim().toLowerCase();
-    const rows = all.filter(c => !q || [c.id, c.client, c.description, BOX[c.boxType]].join(' ').toLowerCase().includes(q));
+    const q = S.cardQ.trim(), found = all.filter(c => !q || cardMatches(c, q)), lim = S.cardLimit || 50, rows = found.slice(0, lim);
     if (!rows.length){ tbox.append(h('div',{class:'empty'},'No job cards match.')); return; }
+    if (found.length > rows.length) setTimeout(() => tbox.append(h('div',{class:'row', style:'justify-content:center;padding:10px'},
+      h('span',{class:'note'}, 'Showing ' + rows.length + ' of ' + found.length + '. '), h('button',{class:'btn small', onclick:() => { S.cardLimit = lim + 50; draw(); }}, 'Show 50 more'))));
     tbox.append(h('table',{class:'jobs'},
       h('thead',{}, h('tr',{}, h('th',{},'Job card'), h('th',{},'Client'), h('th',{},'Item'), h('th',{class:'n'},'Qty'), h('th',{},'Date'), h('th',{},'Due'), h('th',{},'Costing'), h('th',{class:'act'}, h('span',{class:'sr'},'Delete')))),
       h('tbody',{}, rows.map(c => h('tr',{tabindex:'0', onclick:() => go('card', c.id), onkeydown:e => { if (e.key === 'Enter') go('card', c.id); }},
@@ -3961,7 +3988,7 @@ function renderCards(){
         h('td',{}, c.costingId ? (!isOwnerRole() ? 'From costing' : S.jobs.has(c.costingId) ? 'Linked' : 'Deleted') : 'Separate'),
         h('td',{class:'act'}, isOwnerRole() ? rowDelete('job card ' + c.id, async () => { await deleteCard(c); renderCards(); }) : ''))))));
   };
-  search.addEventListener('input', e => { S.cardQ = e.target.value; draw(); });
+  search.addEventListener('input', e => { S.cardQ = e.target.value; S.cardLimit = 50; draw(); });
   draw();
 }
 
@@ -4622,7 +4649,7 @@ function renderCard(){
       h('div',{class:'row', style:'align-items:flex-end;gap:12px;margin-bottom:6px'},
         fld('Repeat job?', sel([['','—'], ['no','No, new job'], ['yes','Yes, repeat job']], c.repeat || '', {onchange:e => { set('repeat', e.target.value); renderCard(); }})),
         c.repeat === 'yes' ? fld('Earlier job card no.', h('input',{value:c.repeatOf || '', placeholder:'e.g. CO-102', list:'jc-ids', style:'width:150px;text-transform:uppercase', oninput:e => set('repeatOf', e.target.value.toUpperCase().trim())})) : null,
-        h('datalist',{id:'jc-ids'}, [...S.cards.keys()].filter(id => id !== c.id).map(id => h('option',{value:id}))),
+        h('datalist',{id:'jc-ids'}, [...S.cards.values()].filter(x => x.id !== c.id).map(x => h('option',{value:x.id, label:[x.client, x.description].filter(Boolean).join(' · ')}))),
         h('div',{class:'note', style:'flex:1;min-width:220px'}, c.repeat === 'yes' ? 'The printing team matches the colours with that job.' : c.repeat === 'no' ? 'The printing team gets the colours approved before full production.' : 'Repeat jobs are matched with the earlier job; new jobs get colour approval first.')),
       rowsFor('sheets', [['name','Sheet'],['paper','Paper'],['gsm','GSM','num'],['L','Size L (in)','num'],['W','Size W (in)','num'],['ups','Parts & ups on sheet','wide','e.g. Top × 2, Bottom × 2'],['colours','Colours','num'],['pms','Pantones','num'],['pantone','Pantone code','', 'e.g. 186 C'],['count','Sheets to print','num']],
       () => ({name:'Printed sheet ' + (c.sheets.length + 1), paper:'', gsm:null, L:null, W:null, ups:'', colours:4, pantone:'', count:null}), 'Add printed sheet')) : '',
