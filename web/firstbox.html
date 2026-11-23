@@ -3138,7 +3138,7 @@ const canEditSamples = () => S.role === 'owner' || S.role === 'jobcards';
 const smpLate = s => s.status !== 'ready' && s.needBy && daysTo(s.needBy) < 0;
 const smpOrder = (a, b) => (b.urgent ? 1 : 0) - (a.urgent ? 1 : 0) || String(a.needBy || '9999').localeCompare(String(b.needBy || '9999')) || String(a.date || '').localeCompare(String(b.date || '')) || n0(a.createdAt) - n0(b.createdAt);
 const smpTodo = () => [...S.samples.values()].filter(s => s.status !== 'ready').sort(smpOrder);
-const smpSize = s => [s.l, s.w, s.h].some(v => v != null && v !== '') ? [s.l, s.w, s.h].map(v => v == null || v === '' ? '?' : fmtN(v, 1)).join(' × ') + ' mm' : '';
+const smpSize = s => [s.l, s.w, s.h].some(v => v != null && v !== '') ? [s.l, s.w, s.h].map(v => v == null || v === '' ? '?' : fmtN(v, 1)).join(' × ') + (s.unit === 'in' ? ' inch' : ' mm') : '';
 const smpWhat = s => [BOX[s.boxType] || '', s.item || ''].filter(Boolean).join(' · ');
 function nextSampleNo(){
   let n = 0; for (const id of S.samples.keys()){ const m = /^SM-(\d+)$/.exec(id); if (m) n = Math.max(n, +m[1]); }
@@ -3151,7 +3151,10 @@ function markSample(s, ready){
   saveSample(x); renderSamples(); if (S.view === 'home') renderHome();
 }
 function sampleForm(ex){
-  const st = ex ? clone(ex) : {date: today(), client:'', boxType:'rigid', item:'', l:null, w:null, h:null, kind:'printed', details:'', needBy:'', urgent:false, notes:''};
+  const st = ex ? clone(ex) : {date: today(), client:'', boxType:'rigid', item:'', l:null, w:null, h:null, unit: (() => { try { return localStorage.getItem('fb-smpUnit') || 'mm'; } catch(e){ return 'mm'; } })(), kind:'printed', details:'', needBy:'', urgent:false, notes:''};
+  if (!st.unit) st.unit = 'mm';
+  const unitLab = () => st.unit === 'in' ? 'inch' : 'mm', labs = [];
+  const dimFld = (name, k, ph) => { const f = fld(name + ' (' + unitLab() + ')', numIn(st[k], x => st[k] = x, {placeholder:ph})); labs.push([f, name]); return f; };
   const wrap = h('div',{class:'newjob'}), listId = 'smp-clients';
   wrap.append(h('h2',{}, ex ? 'Edit sample ' + ex.id : 'New sample'),
     h('datalist',{id:listId}, knownClients().map(c => h('option',{value:c}))),
@@ -3159,9 +3162,9 @@ function sampleForm(ex){
       fld('Client', h('input',{value:st.client || '', list:listId, placeholder:'e.g. Bombay Musk', oninput:e => st.client = e.target.value})),
       fld('Product', sel(boxOptions(st.boxType), st.boxType || 'rigid', {onchange:e => st.boxType = e.target.value})),
       fld('What is it', h('input',{value:st.item || '', placeholder:'e.g. Perfume box with foam insert', oninput:e => st.item = e.target.value}), 'wide'),
-      fld('Length (mm)', numIn(st.l, x => st.l = x, {placeholder:'L'})),
-      fld('Width (mm)', numIn(st.w, x => st.w = x, {placeholder:'W'})),
-      fld('Height (mm)', numIn(st.h, x => st.h = x, {placeholder:'H'})),
+      fld('Size in', sel([['mm','mm'], ['in','inches']], st.unit, {onchange:e => { st.unit = e.target.value; try { localStorage.setItem('fb-smpUnit', st.unit); } catch(err){}
+        for (const [f, name] of labs){ const t = f.querySelector('.fl'); if (t) t.textContent = name + ' (' + unitLab() + ')'; } }})),
+      dimFld('Length', 'l', 'L'), dimFld('Width', 'w', 'W'), dimFld('Height', 'h', 'H'),
       fld('Type of sample', sel(Object.entries(SMP_KIND), st.kind || 'printed', {onchange:e => st.kind = e.target.value})),
       fld('Asked on', h('input',{type:'date', value:String(st.date || '').slice(0, 10), onchange:e => st.date = e.target.value})),
       fld('Needed by', h('input',{type:'date', value:String(st.needBy || '').slice(0, 10), onchange:e => st.needBy = e.target.value})),
