@@ -1191,6 +1191,7 @@ function go(view, id, force){
   const same = view === S.view && (id ?? null) === curId();
   if (!force && !same && isDirty()){ const back = hashFor(S.view, curId()); askLeave(() => go(view, id, true), () => { if (location.hash !== back) history.replaceState(null, '', back); }); return; }
   if (!same) ED.q.clear();
+  if (view !== 'card' || id !== S.cardId){ S.addOrder = null; S.addOrderQ = null; }
   if (view !== 'order' || id !== S.orderId){ S.ordEdit = false; S.dispEdit = null; S.dispOpen = false; S.dispReq = ''; S.reqEdit = null; }
   S.view = view; S.jobId = view === 'job' ? (id || null) : null; S.cardId = view === 'card' ? (id || null) : null; S.orderId = view === 'order' ? (id || null) : null;
   if (view !== 'bill' || id !== S.billId) S.clientEdit = false;
@@ -1500,7 +1501,8 @@ const lineName = (o, v) => (o.parts && o.parts.length > 1) || !o.item || normC(v
 function vRate(o, vid){
   const r = S.poRates.get(o.id); if (!r) return null;
   const v = (o.variants || []).find(x => x.id === vid), pr = v && v.part && r.parts ? r.parts[v.part] : null;
-  return pr != null && pr !== '' ? n0(pr) : r.rate != null && r.rate !== '' ? n0(r.rate) : null;
+  // An older single rate applies only to the PO's original variants, not to parts added later.
+  return pr != null && pr !== '' ? n0(pr) : r.rate != null && r.rate !== '' && (!v || !v.part || v.part === 'p1') ? n0(r.rate) : null;
 }
 function poValues(o, s){
   let rem = 0, dl = 0, known = false;
@@ -1634,7 +1636,7 @@ function poForm(ex){
   st.parts = clone(partsOf(st)); if (!ex) st.parts = [{id:uid(), name:'', variants:[{id:uid(), name:'', qty:null}], cards:[]}];
   st.parts.forEach(p => { p.cards = p.cards || []; });
   const R = ex ? (S.poRates.get(ex.id) || {}) : {}, rates = {};
-  st.parts.forEach(p => { const r = R.parts && R.parts[p.id] != null ? R.parts[p.id] : (R.rate ?? null); rates[p.id] = r == null || r === '' ? null : n0(r); });
+  st.parts.forEach(p => { const r = R.parts && R.parts[p.id] != null ? R.parts[p.id] : p.id === 'p1' ? (R.rate ?? null) : null; rates[p.id] = r == null || r === '' ? null : n0(r); });
   const del = poStats(ex || {variants:[]}).del;
   const wrap = h('div',{class:'newjob'});
   const listId = 'po-clients';
@@ -1745,7 +1747,7 @@ function renderOrder(){
   root.append(h('section',{class:'card', style:'display:grid;gap:14px;margin-bottom:14px'}, h('h2',{}, parts.length > 1 ? 'Parts in this PO' : 'Variants'),
     parts.map(p => {
       const pvs = vs.filter(v => v.part ? v.part === p.id : true), q = pvs.reduce((a, v) => a + n0(v.qty), 0), d = pvs.reduce((a, v) => a + Math.min(n0(v.qty), n0(s.del[v.id])), 0);
-      const prate = R.parts && R.parts[p.id] != null ? R.parts[p.id] : R.rate;
+      const prate = R.parts && R.parts[p.id] != null ? R.parts[p.id] : p.id === 'p1' ? R.rate : null;
       const vname = v => parts.length > 1 && v.name.startsWith(p.name + ' – ') ? v.name.slice(p.name.length + 3) : v.name;
       return h('div',{class:'popartview'},
         h('div',{class:'row', style:'justify-content:space-between;align-items:baseline'},
@@ -4129,6 +4131,57 @@ function reuseEditor(c, sec){
         ch.note, v => { c.reuse.tools[t.key] = {choice:ch.choice, note:v}; save(); }, ch.choice === 'fix' ? 'What to correct, e.g. +2 mm on W' : 'Why / details (optional)'); })
     : h('div',{class:'note'}, 'No plates, dies or blocks on this job card yet.'));
 }
+// Job card → client order (Raj): make a new order (PO) from the job card, or add it to an open order as a part.
+function addToOrderPanel(c){
+  const wrap = h('div',{class:'newjob', style:'margin-bottom:14px'});
+  const partName = c.description || BOX[c.boxType] || 'Item';
+  const st = {client:c.client || '', poNo:'', poDate:today(), due:c.due || '', name:partName, qty:c.qty ?? null};
+  const done = id => { S.addOrder = null; saveAll(); go('order', id, true); };
+  const q = h('input',{type:'search', placeholder:'Find an order: client or PO no.', value:S.addOrderQ ?? (c.client || ''), style:'flex:1 1 240px', 'aria-label':'Find an existing order'});
+  const list = h('div',{});
+  const drawList = () => {
+    const text = normC(q.value), open = [...S.orders.values()].filter(o => poStats(o).status !== 'done')
+      .filter(o => !text || text.split(' ').every(w => normC([o.client, o.poNo, o.item].join(' ')).includes(w)))
+      .sort((a, b) => (normC(b.client) === normC(c.client)) - (normC(a.client) === normC(c.client)) || String(a.poDate || '').localeCompare(String(b.poDate || '')));
+    list.replaceChildren(...(!open.length ? [h('div',{class:'note'}, 'No open order matches.')] : open.slice(0, 6).map(o => h('div',{class:'pocard'},
+      h('div',{}, h('b',{}, o.client || '(no client)'), h('span',{class:'note'}, ' · ' + (o.poNo ? 'PO ' + o.poNo : 'no PO no.') + (o.poDate ? ' · ' + fmtDate(o.poDate) : ''))),
+      h('div',{class:'row', style:'gap:6px'},
+        ...partsOf(o).map(p => (p.cards || []).includes(c.id) ? h('span',{class:'chip', style:'padding-right:10px'}, '✓ ' + p.name) :
+          h('button',{class:'btn small', title:'This job card makes ' + p.name, onclick:() => { linkCardToPart(o, p.id, c.id); done(o.id); }}, 'Link to ' + p.name)),
+        h('button',{class:'btn small', title:'Add it to this order as a new part', onclick:() => { addCardAsPart(o, c, st.name, st.qty); done(o.id); }}, '+ As new part: ' + st.name))))));
+  };
+  q.addEventListener('input', () => { S.addOrderQ = q.value; drawList(); });
+  wrap.append(
+    h('h2',{}, 'Add ' + c.id + ' to a client order'),
+    h('h3',{style:'margin:4px 0'}, 'New order from this job card'),
+    h('div',{class:'grid'},
+      fld('Client', h('input',{value:st.client, oninput:e => st.client = e.target.value})),
+      fld('PO no.', h('input',{value:'', placeholder:'Leave empty if there is no PO', oninput:e => st.poNo = e.target.value})),
+      fld('Order date', h('input',{type:'date', value:st.poDate, onchange:e => st.poDate = e.target.value})),
+      fld('Deliver by', h('input',{type:'date', value:st.due, onchange:e => st.due = e.target.value})),
+      fld('Part', h('input',{value:st.name, oninput:e => { st.name = e.target.value; }})),
+      fld('Quantity (pcs)', numIn(st.qty, v => st.qty = v))),
+    h('div',{class:'row'}, h('button',{class:'btn primary', onclick:() => {
+      if (!String(st.client).trim()){ alert0(wrap, 'Enter the client name.'); return; }
+      if (!String(st.name).trim() || !(n0(st.qty) > 0)){ alert0(wrap, 'Enter the part name and its quantity.'); return; }
+      const o = {id:uid(), client:String(st.client).trim(), poNo:String(st.poNo || '').trim(), poDate:st.poDate, due:st.due || '', notes:'', dispatches:[], requests:[], createdAt:Date.now(),
+        parts:[{id:uid(), name:String(st.name).trim(), cards:[c.id], variants:[{id:uid(), name:'', qty:n0(st.qty)}]}]};
+      flattenParts(o); saveOrder(o); done(o.id);
+    }}, 'Create order'), h('span',{class:'note'}, 'You can add more parts, variants and delivery requests on the order page.')),
+    h('h3',{style:'margin:14px 0 4px'}, 'Or add it to an existing order'),
+    h('div',{class:'row'}, q), list);
+  drawList();
+  return wrap;
+}
+function linkCardToPart(o, pid, cardId){
+  o.parts = clone(partsOf(o)); const p = o.parts.find(x => x.id === pid); if (!p) return;
+  p.cards = [...new Set([...(p.cards || []), cardId])]; flattenParts(o); saveOrder(o);
+}
+function addCardAsPart(o, c, name, qty){
+  o.parts = clone(partsOf(o));
+  o.parts.push({id:uid(), name:String(name || c.description || 'Item').trim(), cards:[c.id], variants:[{id:uid(), name:'', qty:n0(qty)}]});
+  flattenParts(o); saveOrder(o);
+}
 // "Repeat this job": a new job card copied from an earlier one, marked as its repeat; every tool starts as "Reuse old".
 function repeatCard(old){
   saveAll();
@@ -4921,13 +4974,15 @@ function renderCard(){
           h('button',{class:'btn', title:'Master sheet plus one page for each team', onclick:e => downloadPdf(c, ['master', ...teamsFor(c).map(t => t.k)], e.currentTarget)},'Download all sheets (PDF)'),
           h('button',{class:'btn', onclick:() => window.print()}, 'Print'),
           copyBtn, h('button',{class:'btn', title:'Make a new job card for a repeat order of this job', onclick:() => repeatCard(c)}, 'Repeat this job'),
-          ...posOfCard(c.id).map(o => h('button',{class:'btn', title:'Open the client PO this job card is for', onclick:() => go('order', o.id)}, 'PO ' + (o.poNo || o.client || ''))),
+          ...posOfCard(c.id).map(o => h('button',{class:'btn', title:'Open the client order this job card is for', onclick:() => go('order', o.id)}, o.poNo ? 'PO ' + o.poNo : 'Order ' + (o.client || ''))),
+          canView('order') ? h('button',{class:'btn' + (posOfCard(c.id).length ? '' : ' primary'), title:'Make a client order (PO) from this job card, or add it to an existing one', onclick:() => { S.addOrder = S.addOrder === c.id ? null : c.id; renderCard(); }},
+            S.addOrder === c.id ? 'Close' : posOfCard(c.id).length ? '+ Add to another order' : 'Add to order / PO') : null,
           isOwnerRole() ? pullBtn : null, isOwnerRole() ? delBtn : null)),
       isRepeat(c) || (c.repeats && c.repeats.length) ? h('div',{class:'note', style:'margin:-6px 0 10px'},
         isRepeat(c) ? ['Repeat of ', c.repeatOf && S.cards.has(c.repeatOf) ? h('button',{class:'linkbtn', onclick:() => go('card', c.repeatOf)}, c.repeatOf) : (c.repeatOf || 'an earlier job'), '. '] : '',
         c.repeats && c.repeats.length ? ['Repeated as ', ...c.repeats.flatMap((id, i) => [i ? ', ' : '', S.cards.has(id) ? h('button',{class:'linkbtn', onclick:() => go('card', id)}, id) : id]), '.'] : '') : null,
       S.repeatNew === c.id ? h('div',{class:'banner'}, 'New repeat job card made from ' + c.repeatOf + '. Check the quantity, sheets to print and delivery date, choose below what is reused and what is new, then press Save.') : null,
-      copyBox, h('div',{id:'jc-alert'}),
+      copyBox, h('div',{id:'jc-alert'}), S.addOrder === c.id ? addToOrderPanel(c) : null,
       h('nav',{class:'jump', 'aria-label':'Job card sheets', style:'margin-bottom:14px'}, tabs.map(([k, n]) => h('button',{type:'button', class:'jctab', 'aria-current': k === tab ? 'page' : 'false', onclick:() => { S.cardTab = k; if (k === 'mat') S.issue = null; renderCard(); }}, n)))),
     tab === 'mat' ? h('div',{class:'noprint'}, cardStockPanel(c)) : '',
     tab === 'edit' ? h('div',{class:'noprint'}, missingFor(c).length ? h('div',{class:'banner'}, 'Still missing: ' + missingFor(c).join(' · ') + '.') : '', editor()) : '',
