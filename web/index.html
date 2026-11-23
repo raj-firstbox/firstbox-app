@@ -3971,6 +3971,14 @@ const pcs = v => v == null || v === '' ? '' : fmtN(v) + (n0(v) === 1 ? ' pc' : '
 const pastelNames = c => [...new Set(c.sheets.flatMap(s => String(s.ups || '').split(',').map(x => x.replace(/×.*$/, '').trim()).filter(x => x && !/^\d+\s*ups?$/i.test(x))))];
 const sheetCount = (c, name) => { const s = c.sheets.find(x => x.name === name); return s ? s.count : null; };
 const totalSheets = c => c.sheets.reduce((a, s) => a + n0(s.count), 0);
+// Pieces per sheet: "8 ups" → 8, "Top × 2, Bottom × 2" or variants "A × 2 (…), B × 2 (…)" → 4.
+const upsNum = sh => { const t = String(sh.ups || ''), m = [...t.matchAll(/×\s*(\d+)/g)].reduce((a, x) => a + +x[1], 0); return m || parseInt(t, 10) || 0; };
+// What the die team cuts: rigid and MDF paste pastels on board; mono cartons and corrugated are cut as boxes.
+function dieWork(c){
+  const pasted = RIGID.has(c.boxType) || c.boxType === 'mdf';
+  const isP = sh => c.boxType === 'mdf' || (PASTELS[c.boxType] || []).some(n => (sh.ups || '').includes(n));
+  return {pasted, pastels: pasted ? c.sheets.filter(isP) : [], others: pasted ? c.sheets.filter(sh => !isP(sh)) : [], boards: partsFor(c).includes('board') ? c.boards : []};
+}
 const fxSorted = c => [...c.fx].filter(f => f.kind).sort((a, b) => FX_ORDER.indexOf(a.kind) - FX_ORDER.indexOf(b.kind));
 const thickList = c => [...new Set(c.boards.map(b => b.thick).filter(Boolean))].map(t => t + ' mm').join(', ');
 
@@ -4081,17 +4089,42 @@ function teamBlocks(c, k){
     notes('fab');
   }
   if (k === 'die'){
-    B.push(jobBlock(c));
-    B.push({h:'Dies'}, {kv:[['Number of dies', c.dies ?? 'Not set']]});
-    if (c.sheets.length) B.push({h:'Sheets to die cut'}, {table:{heads:['Sheet','Sheet size','Parts & ups on sheet','Sheets to cut'], rows:c.sheets.map(s => [s.name, shSize(s), s.ups, s.count ? fmtN(s.count) : ''])}},
-      {kv:[['Total sheets to die cut', fmtN(totalSheets(c))]]});
-    const names = pastelNames(c);
-    if (names.length && qty) B.push({h:'Pieces needed after cutting'}, {table:{heads:['Part','Pieces needed'], rows:names.map(n => [n, fmtN(qty)])}});
-    B.push({h:'Check'}, {checks:[
-      'Die matches the approved dieline from the designer.',
-      'First cut piece checked against the box size before running.',
-      ...(names.length ? ['Pieces counted part by part: ' + fmtN(qty) + ' of each is needed.'] : []),
-      'Waste stripped and pieces kept part-wise for box making.']});
+    // Raj: rigid and MDF boxes — cut the pastels to be pasted on board, then cut the board (grooving / half cut).
+    // Mono cartons (and corrugated) — cut the boxes, then check creasing and pasting before the full run.
+    B.push(jobBlock(c, [['Number of dies', c.dies ?? 'Not set']]));
+    const D = dieWork(c), each = qty ? fmtN(qty) + ' of each part' : '';
+    if (D.pasted){
+      B.push({step:[1, 'Cut the pastels to be pasted on the board']});
+      B.push(D.pastels.length ? {table:{heads:['Sheet','Parts & ups','Sheets to cut','Pieces needed','Pieces cut'], minRow:22,
+        rows:D.pastels.map(sh => [sh.name, sh.ups, sh.count ? fmtN(sh.count) : '', each, ''])}} : {warn:'No pastel sheets on this job card.'});
+      B.push({step:[2, 'Cut the board' + (MAKING[c.making] ? ' for ' + MAKING[c.making].toLowerCase() : '')]});
+      if (D.boards.length) B.push({table:{heads:['Board','Thickness','Sheet size','Ups','Sheets','Pieces','Pieces cut'], minRow:22,
+        rows:D.boards.map(b => [b.type, b.thick ? b.thick + ' mm' : '', shSize(b), b.ups ?? '', b.count ? fmtN(b.count) : '', b.count && b.ups ? fmtN(n0(b.count) * n0(b.ups)) : '', ''])}});
+      else if (c.boxType === 'mdf') B.push({table:{heads:['Board','Thickness','Pieces needed','Pieces cut'], rows:[['MDF board', boardThickText(c), each, '']], minRow:22}});
+      else B.push({warn:'No kappa board on this job card.'});
+      if (D.others.length){
+        B.push({step:[3, 'Cut the other printed items']});
+        B.push({table:{heads:['Item','Ups','Sheets to cut','Pieces expected','Pieces cut'], minRow:22, rows:D.others.map(sh => [sh.name, sh.ups, sh.count ? fmtN(sh.count) : '', upsNum(sh) && sh.count ? fmtN(upsNum(sh) * n0(sh.count)) : '', ''])}});
+      }
+      B.push({h:'Check'}, {checks:[
+        'Die matches the approved dieline from the designer.',
+        'First pastel and board pieces checked against the box size ' + (sizeText(c) || '') + ' before cutting the rest.',
+        'Pieces counted part by part' + (qty ? ': ' + fmtN(qty) + ' of each is needed' : '') + '.',
+        'Waste stripped and pieces kept part-wise for box making.']});
+    } else {
+      const word = c.boxType === 'printing' ? 'printed items' : 'boxes';
+      B.push({step:[1, 'Cut the ' + word]});
+      B.push(c.sheets.length ? {table:{heads:['Sheet','Sheet size','Ups','Sheets to cut','Expected', word === 'boxes' ? 'Boxes cut' : 'Pieces cut'], minRow:22,
+        rows:c.sheets.map(sh => [sh.name, shSize(sh), sh.ups, sh.count ? fmtN(sh.count) : '', upsNum(sh) && sh.count ? fmtN(upsNum(sh) * n0(sh.count)) : '', ''])}} : {warn:'No printed sheets on this job card.'});
+      if (word === 'boxes'){
+        B.push({step:[2, 'Check creasing and pasting']}, {checks:[
+          'Fold the first cut boxes: every crease folds cleanly, without cracking on the print.',
+          'Test-paste them: the glue flap lines up and the box opens square.',
+          'Only then cut the full quantity.']},
+          {table:{heads:['Checked by','Date','Remarks'], rows:[['', '', '']], minRow:24}});
+      }
+      B.push({h:'Check'}, {checks:['Die matches the approved dieline from the designer.', 'Cut ' + word + ' counted' + (qty ? ': ' + fmtN(qty) + ' needed' : '') + '. Waste stripped.']});
+    }
     notes('die');
   }
   if (k === 'make'){
@@ -4195,7 +4228,17 @@ function teamSummary(c, k){
     const steps = [c.coat && !/^none$/i.test(c.coat) ? c.coat : '', ...fx.map(f => FX[f.kind] + (f.colour ? ' (' + f.colour + ')' : '') + (f.part ? ' – ' + f.part : ''))].filter(Boolean);
     out.push(steps.length ? steps.join(' → ') + (totalSheets(c) ? ' · ' + fmtN(totalSheets(c)) + ' sheets' : '') : 'No coating or special effects');
   }
-  if (k === 'die') out.push(c.dies != null && c.dies !== '' ? c.dies + (n0(c.dies) === 1 ? ' die' : ' dies') : 'Dies not set', totalSheets(c) ? 'die cut ' + fmtN(totalSheets(c)) + ' sheets' : '');
+  if (k === 'die'){
+    const D = dieWork(c), dies = c.dies != null && c.dies !== '' ? c.dies + (n0(c.dies) === 1 ? ' die' : ' dies') : 'dies not set';
+    const sheets = list => list.reduce((a, sh) => a + n0(sh.count), 0);
+    const L = D.pasted ? [
+      '1. Cut pastels: ' + (D.pastels.length ? fmtN(sheets(D.pastels)) + ' sheets (' + D.pastels.map(sh => sh.name).join(', ') + ')' + (qty ? ', ' + fmtN(qty) + ' of each part' : '') : 'none'),
+      '2. Cut board' + (MAKING[c.making] ? ' for ' + MAKING[c.making].toLowerCase() : '') + ': ' + (D.boards.length ? D.boards.map(b => fmtN(n0(b.count)) + ' sheets ' + [b.type, b.thick ? b.thick + ' mm' : ''].filter(Boolean).join(' ')).join(', ') : c.boxType === 'mdf' ? 'MDF board pieces' : 'no board on job card'),
+      ...(D.others.length ? ['3. Other items: ' + D.others.map(sh => sh.name + ' ' + fmtN(n0(sh.count)) + ' sheets').join(', ')] : [])]
+    : ['1. Cut ' + (c.boxType === 'printing' ? 'printed items' : 'boxes') + ': ' + fmtN(totalSheets(c)) + ' sheets' + (qty ? ' for ' + fmtN(qty) + ' pcs' : ''),
+      ...(c.boxType === 'printing' ? [] : ['2. Check creasing and pasting before cutting the full quantity'])];
+    return dies + '\n' + L.join('\n') + (c.notesDie ? '\nNote: ' + c.notesDie : '');
+  }
   if (k === 'make'){
     const acc = c.acc.filter(a => a.name).map(a => a.name + (a.perBox ? ' × ' + a.perBox : ''));
     out.push(RIGID.has(c.boxType) ? MAKING[c.making] || 'Box making not set' : '', RIGID.has(c.boxType) && boardThickText(c) ? 'board ' + boardThickText(c) : '',
