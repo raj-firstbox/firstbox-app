@@ -5,5 +5,6 @@ contextBridge.exposeInMainWorld('firstboxDesktop', {
   saveFile: (name, bytes) => ipcRenderer.invoke('firstbox:save-file', String(name), bytes),
   openFolder: () => ipcRenderer.invoke('firstbox:open-folder'),
   version: () => ipcRenderer.invoke('firstbox:version'),
-  platform: process.platform
+  platform: process.platform,
+  confirmsUnload: true   // main.js shows the unsaved-changes question on close
 });

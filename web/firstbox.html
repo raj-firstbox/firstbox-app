@@ -81,6 +81,16 @@ td.act,th.act{width:1%;text-align:right;padding-left:4px}
 .spacer{flex:1}
 .savestate{font-size:12px;color:var(--muted)}
 .savestate.err{color:var(--bad)}
+.savestate.dirty{color:var(--accent);font-weight:600}
+.savebtn{min-width:92px}
+.savebtn.saved{color:var(--muted);background:var(--surface);opacity:1}
+.savefoot{display:flex;justify-content:flex-end;align-items:center;gap:14px;margin-top:20px;padding-top:14px;border-top:1px solid var(--line)}
+dialog.leave{border:0;border-radius:14px;padding:22px 24px;max-width:min(440px,calc(100vw - 32px));box-shadow:0 20px 50px rgba(31,26,22,.25);color:var(--fg);background:var(--surface)}
+dialog.leave::backdrop{background:rgba(31,26,22,.35)}
+dialog.leave h2{margin:0 0 6px}
+dialog.leave p{margin:0 0 16px;color:var(--muted)}
+dialog.leave .bad{color:var(--bad)}
+dialog.leave .row{justify-content:flex-end;flex-wrap:wrap}
 main{padding-block:20px 60px}
 button{font:inherit;cursor:pointer}
 .btn{border:1px solid var(--line);background:var(--surface);color:var(--fg);padding:7px 12px;border-radius:6px;font-weight:500}
@@ -691,9 +701,15 @@ const numIn = (val, on, attrs) => h('input',{type:'number', step:'any', inputmod
 
 // ---------- saving ----------
 const SV = {timers:{}, inflight:{}, pending:{}, errors:0};
-function busy(path){ return !!(SV.timers[path] || SV.inflight[path]); }
+// Editing pages (Raj): nothing is written until Save is pressed; leaving with unsaved changes asks first.
+// ED.q holds the unsaved writes (path → data getter); ED.restore puts the page's data back if he leaves without saving.
+const MANUAL = new Set(['job','card','bill','pay','rates','billing']);
+const ED = {q: new Map(), restore: null, saving: false};
+const isDirty = () => ED.q.size > 0;
+function busy(path){ return !!(SV.timers[path] || SV.inflight[path] || ED.q.has(path)); }
 function setSave(state){
   const el = $('#savestate');
+  if (isDirty() && state !== 'saving' && state !== 'error'){ el.className = 'savestate dirty'; el.textContent = 'Unsaved changes'; return; }
   el.className = 'savestate' + (state === 'error' ? ' err' : '');
   el.textContent = state === 'saving' ? 'Saving…' : state === 'saved' ? 'All changes saved' : state === 'error' ? "Couldn't save. Check your internet and edit again." : '';
 }
@@ -704,18 +720,79 @@ function scheduleSave(path, getData, delay){
   SV.timers[path] = setTimeout(() => { delete SV.timers[path]; flush(path, getData); }, delay ?? 700);
 }
 async function flush(path, getData){
-  if (SV.inflight[path]){ SV.pending[path] = getData; return; }
-  SV.inflight[path] = true;
+  if (SV.inflight[path]){ SV.pending[path] = getData; return true; }
+  SV.inflight[path] = true; let ok = true;
   try { await S.db.doc(path).set(getData()); setSave('saved'); }
-  catch(e){ if (e && e.code === 'unavailable'){ await new Promise(r=>setTimeout(r,800+Math.random()*800)); try{ await S.db.doc(path).set(getData()); setSave('saved'); }catch(e2){ setSave('error'); } } else setSave('error'); }
+  catch(e){ if (e && e.code === 'unavailable'){ await new Promise(r=>setTimeout(r,800+Math.random()*800)); try{ await S.db.doc(path).set(getData()); setSave('saved'); }catch(e2){ ok = false; setSave('error'); } } else { ok = false; setSave('error'); } }
   finally {
     SV.inflight[path] = false;
     const p = SV.pending[path];
     if (p){ delete SV.pending[path]; flush(path, p); }
   }
+  return ok;
 }
+// On an editing page this waits for Save; anywhere else it saves as before.
+function pageSave(path, getData, delay){
+  if (!S.db) return;
+  if (!MANUAL.has(S.view)) return scheduleSave(path, getData, delay);
+  ED.q.set(path, getData); updateSaveUi();
+}
+const curId = () => ({job:S.jobId, card:S.cardId, bill:S.billId, pay:S.payId, order:S.orderId})[S.view] ?? null;
+function makeRestore(view, id){
+  const cl = x => x === undefined ? undefined : clone(x);
+  const one = key => { const had = S[key].has(id), v = cl(S[key].get(id)); return () => { if (had) S[key].set(id, v); else S[key].delete(id); }; };
+  const all = key => { const snap = new Map([...S[key]].map(([k, v]) => [k, cl(v)])); return () => { S[key] = snap; }; };
+  const obj = key => { const v = cl(S[key]); return () => { S[key] = v; }; };
+  const parts = {job:[one('jobs'), obj('settings'), all('hist')], card:[one('cards')], bill:[one('bills')], pay:[one('payments')],
+    rates:[all('rates'), all('hist'), obj('settings')], billing:[obj('billing')]}[view] || [];
+  return () => parts.forEach(f => f());
+}
+async function saveAll(){
+  if (!isDirty() || ED.saving) return !isDirty();
+  const items = [...ED.q]; ED.q.clear(); ED.saving = true; updateSaveUi(); setSave('saving');
+  const ok = (await Promise.all(items.map(([p, g]) => flush(p, g)))).every(Boolean);
+  ED.saving = false;
+  if (ok){
+    ED.restore = MANUAL.has(S.view) ? makeRestore(S.view, curId()) : null;
+    if (S.view === 'card' && S.cdraft) syncCardStock(S.cdraft, 'Job card changed');
+  } else items.forEach(([p, g]) => { if (!ED.q.has(p)) ED.q.set(p, g); });
+  updateSaveUi(); if (ok) setSave('saved');
+  return ok;
+}
+function discardAll(){ ED.q.clear(); if (ED.restore) ED.restore(); ED.restore = null; updateSaveUi(); setSave(''); }
+function updateSaveUi(){
+  const dirty = isDirty();
+  document.querySelectorAll('.savebtn').forEach(b => {
+    b.disabled = !dirty || ED.saving; b.classList.toggle('primary', dirty); b.classList.toggle('saved', !dirty && !ED.saving);
+    b.textContent = ED.saving ? 'Saving…' : dirty ? 'Save' : '✓ Saved';
+  });
+  document.querySelectorAll('.savefoot .sfnote').forEach(n => n.textContent = dirty ? 'You have unsaved changes.' : 'All changes saved.');
+  if (dirty && !ED.saving) setSave('');
+}
+const saveBtn = () => { const b = h('button',{class:'btn savebtn', type:'button', title:'Save (⌘S / Ctrl+S)', onclick:() => saveAll()}); setTimeout(updateSaveUi); return b; };
+const saveFoot = () => h('div',{class:'savefoot noprint'}, h('span',{class:'note sfnote'}), saveBtn());
+const PAGE_NAME = {job:'this costing', card:'this job card', pay:'this payment receipt', rates:'the rate list', billing:'the billing details'};
+function askLeave(proceed, stay){
+  const old = $('#leave-dlg'); if (old) old.remove();
+  const name = S.view === 'bill' && S.bdraft ? 'this ' + (BILL_TYPE[S.bdraft.type] || 'invoice').toLowerCase() : PAGE_NAME[S.view] || 'this page';
+  const close = () => { dlg.close(); dlg.remove(); };
+  const err = h('p',{class:'bad', hidden:true}, 'Couldn’t save. Check your internet and try again.');
+  const saveGo = h('button',{class:'btn primary', onclick:async () => { saveGo.disabled = true; saveGo.textContent = 'Saving…'; if (await saveAll()){ close(); proceed(); } else { err.hidden = false; saveGo.disabled = false; saveGo.textContent = 'Save and continue'; } }}, 'Save and continue');
+  const dlg = h('dialog',{id:'leave-dlg', class:'leave', 'aria-labelledby':'leave-t'},
+    h('h2',{id:'leave-t'}, 'Save your changes?'),
+    h('p',{}, 'You changed ' + name + ' but haven’t saved it.'), err,
+    h('div',{class:'row'}, saveGo,
+      h('button',{class:'btn', onclick:() => { close(); discardAll(); proceed(); }}, 'Don’t save'),
+      h('button',{class:'btn', onclick:() => { close(); if (stay) stay(); }}, 'Stay on this page')));
+  dlg.addEventListener('cancel', e => { e.preventDefault(); close(); if (stay) stay(); });
+  document.body.append(dlg); dlg.showModal(); saveGo.focus();
+}
+document.addEventListener('keydown', e => { if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 's' && MANUAL.has(S.view)){ e.preventDefault(); saveAll(); } });
+// Closing the browser tab with unsaved changes asks too. The desktop app asks only from a version that can show the question.
+window.addEventListener('beforeunload', e => { if (!isDirty()) return; if (window.firstboxDesktop && !window.firstboxDesktop.confirmsUnload) return; e.preventDefault(); e.returnValue = ''; });
 async function removeDoc(path){
   clearTimeout(SV.timers[path]); delete SV.timers[path]; delete SV.pending[path];
+  if (ED.q.has(path)) ED.q.clear();
   try { await S.db.doc(path).delete(); setSave('saved'); } catch(e){ setSave('error'); }
 }
 
@@ -1069,17 +1146,23 @@ function nextJobNo(prefix){
 }
 
 // ---------- routing ----------
-function go(view, id){
+const hashFor = (view, id) => view === 'job' ? '#job-' + id : view === 'card' ? '#card-' + id : view === 'order' ? '#order-' + id : view === 'bill' ? '#bill-' + id : view === 'pay' ? '#pay-' + id : '#' + view;
+function go(view, id, force){
   if (S.role && S.role !== 'owner' && ROLES[S.role] && !canView(view)){ view = homeView(); id = null; }
+  const same = view === S.view && (id ?? null) === curId();
+  if (!force && !same && isDirty()){ const back = hashFor(S.view, curId()); askLeave(() => go(view, id, true), () => { if (location.hash !== back) history.replaceState(null, '', back); }); return; }
+  if (!same) ED.q.clear();
   if (view !== 'order' || id !== S.orderId){ S.ordEdit = false; S.dispEdit = null; S.dispOpen = false; }
   S.view = view; S.jobId = view === 'job' ? (id || null) : null; S.cardId = view === 'card' ? (id || null) : null; S.orderId = view === 'order' ? (id || null) : null;
   if (view !== 'bill' || id !== S.billId) S.clientEdit = false;
   if (view === 'pay'){ const p = S.payments.get(id); S.paydraft = p ? clone(p) : (S.paydraft && S.paydraft.id === id ? S.paydraft : null); S.payId = id; } else { S.paydraft = null; S.payId = null; }
   if (view === 'bill'){ const b = S.bills.get(id); S.bdraft = b ? clone(b) : (S.bdraft && S.bdraft.id === id ? S.bdraft : null); S.billId = id; } else { S.bdraft = null; S.billId = null; }
-  const hash = view === 'job' ? '#job-' + id : view === 'card' ? '#card-' + id : view === 'order' ? '#order-' + id : view === 'bill' ? '#bill-' + id : view === 'pay' ? '#pay-' + id : '#' + view;
+  const hash = hashFor(view, id);
   if (location.hash !== hash) history.replaceState(null, '', hash);
   if (view === 'job'){ const j = S.jobs.get(id); S.draft = j ? clone(j) : null; }
   if (view === 'card'){ const c = S.cards.get(id); S.cdraft = c ? clone(c) : null; }
+  if (!same) ED.restore = MANUAL.has(view) ? makeRestore(view, id) : null;
+  updateSaveUi();
   render();
   window.scrollTo(0,0);
 }
@@ -1723,6 +1806,7 @@ async function deleteBill(b){
   S.bills.delete(b.id); if (S.bdraft && S.bdraft.id === b.id) S.bdraft = null; await removeDoc('invoices/' + b.id);
 }
 function convertToInvoice(p){
+  saveAll();
   if (p.toId && S.bills.has(p.toId)){ go('bill', p.toId); return; }
   const b = newBill('invoice', {client: clone(p.client || {}), items: clone(p.items || []).map(it => ({...it, id: uid()})), roundOff: !!p.roundOff, fromId: p.id, orderIds: p.orderIds || []});
   saveBill(b); p.toId = b.id; saveBill(p); go('bill', b.id);
@@ -1891,17 +1975,17 @@ function renderBill(){
   b.client = b.client || {}; b.items = b.items || [];
   if (b.showBank == null) b.showBank = true;
   let lastInter = billInter(b);
-  const touch = () => { saveBill(b); refreshTotals(); if (billInter(b) !== lastInter){ lastInter = billInter(b); drawItems(); } };
+  const touch = () => { b.updatedAt = Date.now(); S.bills.set(b.id, b); pageSave('invoices/' + b.id, () => clone(b)); refreshTotals(); if (billInter(b) !== lastInter){ lastInter = billInter(b); drawItems(); } };
   const cl = b.client;
   const to = b.toId && S.bills.get(b.toId), from = b.fromId && S.bills.get(b.fromId);
   root.append(h('div',{class:'head'},
     h('div',{}, h('button',{class:'linkbtn', onclick:() => { S.billTab = b.type; go('bills'); }}, '← All ' + (pf ? 'proforma invoices' : dc ? 'delivery challans' : 'tax invoices')),
-      h('div',{class:'note', style:'margin-top:6px'}, from ? ['Made from ' + BILL_TYPE[from.type].toLowerCase() + ' ', h('button',{class:'linkbtn', onclick:() => go('bill', from.id)}, from.no), '. '] : to ? ['Turned into tax invoice ', h('button',{class:'linkbtn', onclick:() => go('bill', to.id)}, to.no), '. '] : '', 'Changes save automatically.')),
-    h('div',{class:'row'},
+      h('div',{class:'note', style:'margin-top:6px'}, from ? ['Made from ' + BILL_TYPE[from.type].toLowerCase() + ' ', h('button',{class:'linkbtn', onclick:() => go('bill', from.id)}, from.no), '. '] : to ? ['Turned into tax invoice ', h('button',{class:'linkbtn', onclick:() => go('bill', to.id)}, to.no), '. '] : '', 'Press Save to keep your changes.')),
+    h('div',{class:'row'}, saveBtn(),
       pf ? h('button',{class:'btn', onclick:() => convertToInvoice(b)}, to ? 'Open tax invoice ' + to.no : 'Convert to Tax Invoice') : null,
       b.type === 'invoice' ? (b.challanId && S.bills.has(b.challanId) ? h('button',{class:'btn', onclick:() => go('bill', b.challanId)}, 'Open challan ' + S.bills.get(b.challanId).no) : h('button',{class:'btn', onclick:() => challanFromInvoice(b)}, 'Make delivery challan')) : null,
       !dc ? h('button',{class:'btn', onclick:() => newPaymentFor(b)}, '+ Record payment') : null,
-      h('button',{class:'btn primary', onclick:e => downloadBill(b, e.currentTarget)}, 'Download PDF'),
+      h('button',{class:'btn', onclick:e => downloadBill(b, e.currentTarget)}, 'Download PDF'),
       own ? rowDelete(BILL_TYPE[b.type].toLowerCase(), async () => { await deleteBill(b); S.billTab = b.type; go('bills'); }) : null)));
   root.append(h('div',{id:'bill-alert'}));
   if (own && !cfg.gstin) root.append(h('div',{class:'banner'}, 'Firstbox’s GSTIN and bank details are not filled in yet. Add them in ', h('button',{class:'linkbtn', onclick:() => go('billing')}, '⚙ Billing details'), '.'));
@@ -2076,6 +2160,7 @@ function renderBill(){
   // Terms and conditions, payment terms / additional info: one line each
   paper.append(termsBox('Terms and Conditions', b.terms, v => { b.terms = v; touch(); }, 'Write a term'));
   paper.append(termsBox(pf ? 'Payment terms' : 'Additional info', b.payTerms, v => { b.payTerms = v; touch(); }, pf ? 'e.g. 50% advance, balance before dispatch' : 'e.g. Challan no., vehicle no.'));
+  root.append(saveFoot());   // Save button at the bottom too
 }
 // Numbered list editor: one input per line, like Refrens. The value is kept as text, one line per term.
 function termsBox(title, text, onChange, ph){
@@ -2099,10 +2184,10 @@ function termsBox(title, text, onChange, ph){
 function renderBilling(){
   const root = $('#view-billing'); root.replaceChildren();
   const d = {...billCfg()};
-  const save = () => { S.billing = {...d}; scheduleSave('shared/billing', () => ({...d}), 600); };
+  const save = () => { S.billing = {...d}; pageSave('shared/billing', () => ({...d}), 600); };
   const t = (label, k, ph, extra) => fld(label, h('input',{value: d[k] ?? '', placeholder: ph || '', ...(extra || {}), oninput:e => { d[k] = e.target.value; if (k === 'gstin'){ const g = gstinInfo(e.target.value); if (g){ d.state = g.code; d.pan = g.pan; root.querySelector('#bd-state').value = g.code; root.querySelector('#bd-pan').value = g.pan; } } save(); }}));
   const nm = (label, k) => fld(label, numIn(d[k], v => { d[k] = v; save(); }));
-  root.append(h('div',{class:'head'}, h('div',{}, h('h1',{},'Billing details'), h('div',{class:'note'},'Printed as “Billed By” on every proforma and tax invoice. Changes save automatically and apply to new PDFs.'))));
+  root.append(h('div',{class:'head'}, h('div',{}, h('h1',{},'Billing details'), h('div',{class:'note'},'Printed as “Billed By” on every proforma and tax invoice. Press Save to keep your changes; they apply to new PDFs.')), h('div',{class:'row'}, saveBtn())));
   if (!S.loaded.shared){ root.append(h('div',{class:'card empty'},'Loading…')); return; }
   const card = (title, ...kids) => h('section',{class:'card', style:'display:grid;gap:10px;margin-bottom:14px'}, h('h2',{}, title), ...kids);
   root.append(card('Firstbox',
@@ -2137,6 +2222,7 @@ function renderBilling(){
     h('div',{class:'note'}, 'Uses the AppyFlow GST verification service (appyflow.in): 50 free lookups, then about 40–50 paise per lookup from a prepaid wallet. Sign up there, copy your “key secret” and paste it here. The key is stored inside your database and is never shown in the app again.'),
     gst && gst.setKey ? [h('div',{class:'row', style:'align-items:flex-end;gap:8px'}, fld('Key secret', keyIn), keyBtn), st] : h('div',{class:'note'}, 'This works in the Firstbox app (Mac / Windows), not in this preview.')));
   if (gst && gst.isSet) gst.isSet().then(on => { if (!st.textContent) st.textContent = on ? '✓ GST lookup is switched on.' : 'Not set up yet.'; }).catch(() => {});
+  root.append(saveFoot());   // Save button at the bottom too
 }
 
 async function downloadBill(b, btn){
@@ -2445,6 +2531,7 @@ function challanList(box){
 
 // ----- Delivery challans: from a tax invoice, or from a dispatch in Orders -----
 function challanFromInvoice(inv){
+  saveAll();
   if (inv.challanId && S.bills.has(inv.challanId)){ go('bill', inv.challanId); return; }
   const b = newBill('challan', {client: clone(inv.client || {}), items: clone(inv.items || []).map(it => ({...it, id: uid(), rate: null})),
     ship: clone(inv.ship || {on:false, same:true}), transport: clone(inv.transport || {on:false, mode:'Road'}), fromId: inv.id, orderIds: inv.orderIds || [], date: inv.date || today()});
@@ -2496,6 +2583,7 @@ function payFor(p){
 }
 function savePayment(p){ p.updatedAt = Date.now(); S.payments.set(p.id, p); const snap = clone(p); scheduleSave('payments/' + p.id, () => snap, 500); }
 function newPaymentFor(b){
+  saveAll();
   const nb = nextPayNo(), st = b ? billPaid(b) : null;
   const p = {id: uid(), no: nb.no, num: nb.num, date: today(), client: b ? clone(b.client || {}) : {name:''}, amount: st && st.bal > 0 ? st.bal : null, tds: null,
     mode: PAY_MODES[0], ref: '', bank: '', kind: !b || b.type === 'proforma' ? 'advance' : 'full', billId: b ? b.id : '', note: '', by: S.myName || '', createdAt: Date.now()};
@@ -2525,13 +2613,13 @@ function renderPay(){
   const p = S.paydraft;
   if (!p){ root.append(h('div',{class:'empty'}, S.loaded.payments ? 'This payment no longer exists.' : 'Loading…'), h('div',{class:'row', style:'justify-content:center'}, h('button',{class:'btn', onclick:() => { S.billTab = 'payments'; go('bills'); }},'Back to payment receipts'))); return; }
   const own = isOwnerRole(), cfg = billCfg(); p.client = p.client || {};
-  const touch = () => { savePayment(p); refresh(); };
+  const touch = () => { p.updatedAt = Date.now(); S.payments.set(p.id, p); pageSave('payments/' + p.id, () => clone(p)); refresh(); };
   root.append(h('div',{class:'head'},
-    h('div',{}, h('button',{class:'linkbtn', onclick:() => { S.billTab = 'payments'; go('bills'); }}, '← All payment receipts'), h('div',{class:'note', style:'margin-top:6px'}, 'Changes save automatically.')),
-    h('div',{class:'row'},
+    h('div',{}, h('button',{class:'linkbtn', onclick:() => { S.billTab = 'payments'; go('bills'); }}, '← All payment receipts'), h('div',{class:'note', style:'margin-top:6px'}, 'Press Save to keep your changes.')),
+    h('div',{class:'row'}, saveBtn(),
       h('button',{class:'btn', onclick:e => copyPayMsg(p, e.currentTarget)}, 'Copy for WhatsApp'),
       waLink(p) ? h('a',{class:'btn', href: waLink(p), target:'_blank', rel:'noopener'}, 'Open WhatsApp') : null,
-      h('button',{class:'btn primary', onclick:e => downloadReceipt(p, e.currentTarget)}, 'Download receipt PDF'),
+      h('button',{class:'btn', onclick:e => downloadReceipt(p, e.currentTarget)}, 'Download receipt PDF'),
       own ? rowDelete('payment receipt ' + (p.no || ''), async () => { S.payments.delete(p.id); S.paydraft = null; await removeDoc('payments/' + p.id); S.billTab = 'payments'; go('bills'); }) : null)));
   root.append(h('div',{id:'bill-alert'}));
   const paper = h('div',{class:'inv'}); root.append(paper);
@@ -2601,6 +2689,7 @@ function renderPay(){
   };
   refresh();
   paper.append(h('div',{class:'inv-two'}, h('div',{class:'note', style:'align-self:center'}, 'Send the receipt to the client: “Download receipt PDF”, then attach it in WhatsApp or email. “Copy for WhatsApp” copies a short message with the details.'), sum));
+  root.append(saveFoot());   // Save button at the bottom too
 }
 const payDocTxt = p => { const b = p.billId && S.bills.get(p.billId); return b ? (p.kind === 'advance' ? 'as advance against ' : 'towards ') + BILL_TYPE[b.type].toLowerCase() + ' no. ' + b.no : p.kind === 'advance' ? 'as advance' : ''; };
 function payMessage(p){
@@ -3284,17 +3373,26 @@ function touch(){
   S.jobs.set(j.id, clone(j));
   recalc();
   const snap = clone(j);
-  scheduleSave('jobs/' + j.id, () => snap);
+  pageSave('jobs/' + j.id, () => snap);
 }
 function setJ(k, v){ S.draft[k] = v; touch(); }
+// Lines the app adds by itself when a costing opens (die, fabrication, packing, MDF board, making) are saved straight away,
+// so just opening a costing never counts as an unsaved change.
+function touchAuto(){
+  const j = S.draft; if (!j) return;
+  j.updatedAt = Date.now(); S.jobs.set(j.id, clone(j)); recalc();
+  const snap = clone(j), path = 'jobs/' + j.id;
+  if (ED.q.has(path)) ED.q.set(path, () => snap);
+  else { scheduleSave(path, () => snap); if (S.view === 'job') ED.restore = makeRestore('job', j.id); }
+}
 function renderJob(){
   const root = $('#view-job'); root.replaceChildren();
   const j = S.draft;
-  if (j && partsFor(j).includes('die') && !j.lines.some(x => x.calc === 'diecut' && partOf(x) === 'die')){ const mi = j.lines.findIndex(x => x.making); const dl = makeLine('diecut', {name:'Die & die cutting', dies:null, part:'die'}); if (mi >= 0) j.lines.splice(mi, 0, dl); else j.lines.push(dl); touch(); }
-  if (j && partsFor(j).includes('fab') && !j.lines.some(x => x.calc === 'fab')){ j.lines.push(newFabLine()); touch(); }
-  if (j && partsFor(j).includes('pack') && !j.lines.some(x => x.calc === 'pack')){ j.lines.push(newPackLine()); touch(); }
-  if (j && partsFor(j).includes('mdfboard') && !j.lines.some(x => x.calc === 'mdf')){ j.lines.push({id: uid(), name:'MDF board', calc:'mdf', part:'mdfboard', pv:2, actual:null, mode:'box', rate:null, total:null, vendor:''}); touch(); }
-  if (j && partsFor(j).includes('make') && !j.lines.some(x => x.making)){ j.lines.push(makeLine('piece', {name:'Making charges', making:true, jobRate:true, part:'make'})); touch(); }
+  if (j && partsFor(j).includes('die') && !j.lines.some(x => x.calc === 'diecut' && partOf(x) === 'die')){ const mi = j.lines.findIndex(x => x.making); const dl = makeLine('diecut', {name:'Die & die cutting', dies:null, part:'die'}); if (mi >= 0) j.lines.splice(mi, 0, dl); else j.lines.push(dl); touchAuto(); }
+  if (j && partsFor(j).includes('fab') && !j.lines.some(x => x.calc === 'fab')){ j.lines.push(newFabLine()); touchAuto(); }
+  if (j && partsFor(j).includes('pack') && !j.lines.some(x => x.calc === 'pack')){ j.lines.push(newPackLine()); touchAuto(); }
+  if (j && partsFor(j).includes('mdfboard') && !j.lines.some(x => x.calc === 'mdf')){ j.lines.push({id: uid(), name:'MDF board', calc:'mdf', part:'mdfboard', pv:2, actual:null, mode:'box', rate:null, total:null, vendor:''}); touchAuto(); }
+  if (j && partsFor(j).includes('make') && !j.lines.some(x => x.making)){ j.lines.push(makeLine('piece', {name:'Making charges', making:true, jobRate:true, part:'make'})); touchAuto(); }
   if (!j){
     root.append(h('div',{class:'empty'}, S.loaded.jobs ? 'This job no longer exists.' : 'Loading job…'), h('div',{class:'row', style:'justify-content:center'}, h('button',{class:'btn', onclick:() => go('jobs')},'Back to jobs')));
     return;
@@ -3329,7 +3427,7 @@ function renderJob(){
         h('button',{class:'btn small', onclick:() => go('jobs'), style:'margin-bottom:8px'},'← All costings'),
         h('h1',{id:'job-title'}, j.client || 'Untitled costing'),
         h('div',{class:'note'}, (BOX[j.boxType] || 'Custom') + ' · amounts before GST')),
-      h('div',{class:'row'}, jobCardButton(j), ratesToggle(), refreshBtn, h('button',{class:'btn', onclick:dup},'Duplicate'), delBtn)),
+      h('div',{class:'row'}, saveBtn(), jobCardButton(j), ratesToggle(), refreshBtn, h('button',{class:'btn', onclick:dup},'Duplicate'), delBtn)),
     h('div',{id:'jc-make'}),
     j.example ? h('div',{class:'banner'},'This is an example job with example rates. Edit it or delete it once you have added your own.') : ''
   );
@@ -3366,6 +3464,7 @@ function renderJob(){
   );
   root.append(h('div',{class:'sheet'}, left, h('aside',{class:'totals', id:'totals'})));
   renderLines(); renderTotals(); showOtherDims();
+  root.append(saveFoot());   // Save button at the bottom too
 }
 function partSection(p){
   const P = PARTS[p], j = S.draft;
@@ -3748,8 +3847,9 @@ function blankCard(series, o){
     client:'', description:'', boxType:'rigid', qty:null, l:null, w:null, h:null, making:'', diff:null, boardThick:'', inPrint:'',
     sheets:[], coat:'', fx:[], boards:[], inserts:[], acc:[], dies:null, createdAt: Date.now(), updatedAt: Date.now(), ...(o || {})};
 }
-function saveCard(c){ c.updatedAt = Date.now(); S.cards.set(c.id, clone(c)); const snap = clone(c); scheduleSave('jobcards/' + c.id, () => snap); }
+function saveCard(c, now){ c.updatedAt = Date.now(); S.cards.set(c.id, clone(c)); const snap = clone(c); (now ? scheduleSave : pageSave)('jobcards/' + c.id, () => snap); }
 function createCard(series, fromJob){
+  saveAll();
   if (!S.db) return;
   const c = blankCard(series, fromJob ? {...specFromCosting(fromJob), costingId: fromJob.id} : null);
   S.cards.set(c.id, c); flush('jobcards/' + c.id, () => clone(c));
@@ -3770,8 +3870,8 @@ function seriesPicker(onPick, label){
 }
 function jobCardButton(j){
   const c = j.jobCardId && S.cards.get(j.jobCardId);
-  if (c) return h('button',{class:'btn primary', onclick:() => go('card', c.id)}, 'Open job card ' + c.id);
-  return h('button',{class:'btn primary', onclick:() => {
+  if (c) return h('button',{class:'btn', onclick:() => go('card', c.id)}, 'Open job card ' + c.id);
+  return h('button',{class:'btn', onclick:() => {
     const box = $('#jc-make'); if (!box) return;
     if (box.firstChild){ box.replaceChildren(); return; }
     box.replaceChildren(h('div',{class:'newjob', style:'margin-bottom:16px'},
@@ -4235,7 +4335,7 @@ async function downloadPdf(c, tabs, btn){
   } finally { btn.disabled = false; if (btn.textContent === 'Making PDF…') btn.textContent = label; }
 }
 function alertBox(t){ const b = $('#jc-alert'); if (b) b.replaceChildren(h('div',{class:'banner'}, t)); }
-function touchCard(){ const c = S.cdraft; if (!c) return; saveCard(c); scheduleCardSync(); }
+function touchCard(){ const c = S.cdraft; if (!c) return; saveCard(c); if (!MANUAL.has(S.view)) scheduleCardSync(); }
 function renderCard(){
   const root = $('#view-card'); root.replaceChildren();
   const c = S.cdraft;
@@ -4324,8 +4424,8 @@ function renderCard(){
           h('button',{class:'btn small', onclick:() => go('cards'), style:'margin-bottom:8px'},'← All job cards'),
           h('h1',{id:'jc-title'}, c.id + ' · ' + (c.client || 'No client')),
           h('div',{class:'note'}, (SERIES[c.series] || '') + ' · ', !isOwnerRole() ? (c.costingId ? 'made from a costing' : 'made separately') : costing ? ['made from costing ', h('button',{class:'linkbtn', onclick:() => go('job', costing.id)}, 'open costing')] : c.costingId ? 'its costing was deleted' : 'made separately')),
-        h('div',{class:'row'},
-          h('button',{class:'btn primary', onclick:e => downloadPdf(c, [shownTab], e.currentTarget)}, shownTab === 'master' ? 'Download master sheet (PDF)' : 'Download this sheet (PDF)'),
+        h('div',{class:'row'}, saveBtn(),
+          h('button',{class:'btn', onclick:e => downloadPdf(c, [shownTab], e.currentTarget)}, shownTab === 'master' ? 'Download master sheet (PDF)' : 'Download this sheet (PDF)'),
           h('button',{class:'btn', title:'Master sheet plus one page for each team', onclick:e => downloadPdf(c, ['master', ...teamsFor(c).map(t => t.k)], e.currentTarget)},'Download all sheets (PDF)'),
           h('button',{class:'btn', onclick:() => window.print()}, 'Print'),
           copyBtn, isOwnerRole() ? pullBtn : null, isOwnerRole() ? delBtn : null)),
@@ -4336,6 +4436,7 @@ function renderCard(){
     S.printAll
       ? h('div',{class:'printonly'}, ['master', ...teamsFor(c).map(t => t.k)].map(k => blocksHtml(c, k)))
       : h('div',{class: tab === 'edit' || tab === 'mat' ? 'printonly' : ''}, blocksHtml(c, shownTab)));
+  root.append(saveFoot());   // Save button at the bottom too
 }
 
 // ---------- Stock & inventory ----------
@@ -4432,7 +4533,7 @@ function syncCardStock(c, why){
     changed = true;
   }
   if (changed){
-    c.reserved = have; delete c.issued; saveCard(c);
+    c.reserved = have; delete c.issued; saveCard(c, true);
     if (S.cdraft && S.cdraft.id === c.id && S.cdraft !== c){ S.cdraft.reserved = clone(have); delete S.cdraft.issued; }
   }
   return changed;
@@ -4668,8 +4769,8 @@ function cardStockPanel(c){
 }
 
 // ---------- Rates view ----------
-function saveRate(r){ r.updatedAt = Date.now(); delete r.example; S.rates.set(r.id, r); const snap = clone(r); scheduleSave('rates/' + r.id, () => snap); }
-function saveSettings(){ const snap = clone(S.settings); scheduleSave('config/defaults', () => snap); }
+function saveRate(r){ r.updatedAt = Date.now(); delete r.example; S.rates.set(r.id, r); const snap = clone(r); pageSave('rates/' + r.id, () => snap); }
+function saveSettings(){ const snap = clone(S.settings); pageSave('config/defaults', () => snap); }
 function renderRates(){
   const root = $('#view-rates'); root.replaceChildren();
   const st = S.settings;
@@ -4681,7 +4782,7 @@ function renderRates(){
   root.append(
     h('div',{class:'head'},
       h('div',{}, h('h1',{},'Rate list'), h('div',{class:'note'},'Save your buying and job-work rates once. Job sheets pick them up automatically. Rates before GST.')),
-      h('button',{class:'btn primary', onclick:addRate},'+ Add rate')),
+      h('div',{class:'row'}, saveBtn(), h('button',{class:'btn', onclick:addRate},'+ Add rate'))),
     h('div',{class:'card', style:'margin-bottom:16px'},
       h('h3',{style:'margin-bottom:10px'},'Defaults for new jobs'),
       h('div',{class:'defaults'},
@@ -4737,6 +4838,7 @@ function renderRates(){
   box.addEventListener('focusout', () => setTimeout(() => {
     if (S.ratesDeferred && S.view === 'rates' && !box.contains(document.activeElement)){ S.ratesDeferred = false; renderRates(); }
   }, 0));
+  root.append(saveFoot());   // Save button at the bottom too
 }
 
 function dieRatesCard(){
@@ -4794,11 +4896,11 @@ function recordPrice(id, value, date, force){
   doc.entries.push({date, rate:value});
   doc.entries.sort((a,b) => a.date.localeCompare(b.date));
   S.hist.set(id, doc);
-  scheduleSave('rateHistory/' + id, () => doc, 300);
+  pageSave('rateHistory/' + id, () => doc, 300);
 }
 function removePrice(id, date){
   const doc = {rateId:id, entries: histOf(id).filter(e => e.date !== date)};
-  S.hist.set(id, doc); scheduleSave('rateHistory/' + id, () => doc, 300);
+  S.hist.set(id, doc); pageSave('rateHistory/' + id, () => doc, 300);
 }
 // Colour follows the material: each ticked material keeps its slot until unticked.
 function toggleSel(id, on){

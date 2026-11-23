@@ -70,6 +70,12 @@ async function createWindow() {
       spellcheck: true
     }
   });
+  // The page asks before closing when there are unsaved changes (Save button). Show that question as a normal Mac/Windows dialog.
+  win.webContents.on('will-prevent-unload', e => {
+    const choice = dialog.showMessageBoxSync(win, {type:'question', buttons:['Close without saving', 'Stay and save'], defaultId:1, cancelId:1,
+      message:'You have unsaved changes', detail:'Press Save in Firstbox before closing, or close without saving them.'});
+    if (choice === 0) e.preventDefault();
+  });
   win.once('ready-to-show', () => win.show());
 
   // Links to other websites open in the normal browser; the app window stays on Firstbox.
