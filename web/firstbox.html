@@ -326,6 +326,29 @@ input[type=date]{cursor:pointer}
 .saletab[aria-current="page"]{border-color:var(--brand);background:var(--accent-soft);box-shadow:inset 0 -3px 0 var(--brand)}
 .saletab[aria-current="page"] b{color:var(--accent)}
 @media (max-width:860px){.saletabs{grid-template-columns:1fr 1fr}}
+.saletabs.two{grid-template-columns:1fr 1fr}
+.runlist{display:grid;gap:12px}
+.runcard{background:var(--surface);border:1px solid var(--line);border-left:4px solid var(--line);border-radius:12px;padding:14px 16px;display:grid;gap:12px}
+.runcard.warn{border-left-color:#D9A400}
+.runcard.bad{border-left-color:var(--bad)}
+.runtop{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.runclient{font-weight:700;font-size:16px;margin-top:2px}
+.runright{text-align:right}
+.runqty{font-weight:700;font-size:16px}
+.rundue{font-size:13px;color:var(--muted)}
+.rundue.warn{color:#8A6A00;font-weight:600}
+.rundue.bad{color:var(--bad);font-weight:700}
+.runsteps{display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:8px}
+.runstep{display:grid;justify-items:center;gap:3px;padding:8px 6px;border:1px solid var(--line);border-radius:10px;background:var(--bg);font:inherit;color:var(--muted);cursor:pointer}
+.runstep .rsn{display:grid;place-items:center;width:24px;height:24px;border-radius:50%;border:1.5px solid currentColor;font-size:12px;font-weight:700}
+.runstep .rst{font-size:13px;font-weight:600}
+.runstep .rsd{font-size:11px}
+.runstep.on{background:#EAF6EE;border-color:#9BCFAE;color:#1E6B3A}
+.runstep.on .rsn{background:#1E6B3A;border-color:#1E6B3A;color:#fff}
+.runstep.now{border-color:var(--brand);color:var(--accent);box-shadow:inset 0 -3px 0 var(--brand)}
+.runfoot{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
+.pill{display:inline-block;margin-left:8px;padding:1px 8px;border-radius:999px;background:var(--accent-soft);color:var(--accent);font-size:11px;font-weight:700;vertical-align:middle}
+@media (max-width:640px){.runsteps{grid-template-columns:repeat(3,1fr)}.runright{text-align:left}}
 .prog{height:8px;min-width:90px;background:var(--sunk);border-radius:4px;overflow:hidden}
 .prog>i{display:block;height:100%;background:var(--brand);border-radius:4px}
 .prog.done>i{background:var(--good)}
@@ -1456,12 +1479,100 @@ function knownClients(){
   return [...s].sort((a, b) => a.localeCompare(b));
 }
 
+function ordersTabs(){
+  const runN = [...S.cards.values()].filter(isRunning).length, openN = [...S.orders.values()].filter(o => poStats(o).status !== 'done').length;
+  const t = (k, n, sub) => h('button',{type:'button', class:'saletab', 'aria-current': (S.ordTab || 'running') === k ? 'page' : 'false', onclick:() => { S.ordTab = k; try { localStorage.setItem('fb-ordTab', k); } catch(e){} renderOrders(); }}, h('b',{}, n), h('span',{}, sub));
+  return h('nav',{class:'saletabs two', 'aria-label':'Orders'},
+    t('running', 'Running orders', runN + ' job card' + (runN === 1 ? '' : 's') + ' in the factory'),
+    t('dispatch', 'Dispatches', openN + ' open PO' + (openN === 1 ? '' : 's') + ': delivered and remaining'));
+}
+// ---------- Running orders: job cards in the factory (Raj) ----------
+// A job card is added with "+ Add job card"; each team's step is ticked when done; "Completed" takes it off the board.
+// Stored on the job card itself: run = {added, by, done:{team:date}, completed}.
+const isRunning = c => !!(c.run && c.run.added && !c.run.completed);
+const daysTo = d => d ? Math.round((new Date(d + 'T00:00:00') - new Date(today() + 'T00:00:00')) / 864e5) : null;
+function saveRun(c){ c.updatedAt = Date.now(); S.cards.set(c.id, c); const snap = clone(c); flush('jobcards/' + c.id, () => snap);
+  if (S.cdraft && S.cdraft.id === c.id){ S.cdraft.run = clone(c.run); } }
+function addRunning(c){ c = S.cards.get(c.id) || c; c.run = {added: today(), by: S.myName || '', done: (c.run && !c.run.completed && c.run.done) || {}}; saveRun(c); }
+function runStage(c){ const T = teamsFor(c), done = (c.run && c.run.done) || {}; const next = T.find(t => !done[t.k]); return {T, done, next, n: T.filter(t => done[t.k]).length}; }
+function renderRunning(root){
+  root.append(h('div',{class:'head'},
+    h('div',{}, h('h1',{},'Orders'), h('div',{class:'note'},'Running orders: every job card in the factory and where it is. Tick each team when its work is done.')),
+    h('button',{class:'btn primary', onclick:() => { S.runAdd = !S.runAdd; S.runQ = ''; renderOrders(); }}, S.runAdd ? 'Close' : '+ Add job card')));
+  root.append(ordersTabs());
+  if (!S.db){ root.append(h('div',{class:'card empty'},'Saved data is not available here.')); return; }
+  if (!S.loaded.cards){ root.append(h('div',{class:'card empty'},'Loading job cards…')); return; }
+  const cards = [...S.cards.values()];
+  if (S.runAdd){
+    const q = h('input',{type:'search', placeholder:'Find by job card no. or client name', value:S.runQ || '', style:'flex:1 1 280px', 'aria-label':'Find a job card to add'});
+    const res = h('div',{class:'tablebox'});
+    const draw = () => {
+      const list = cards.filter(c => !isRunning(c) && (!S.runQ || cardMatches(c, S.runQ))).sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')) || n0(b.num) - n0(a.num));
+      res.replaceChildren(...(!list.length ? [h('div',{class:'empty'}, S.runQ ? 'No job card matches.' : 'Every job card is already running.')] : [h('table',{class:'jobs'},
+        h('thead',{}, h('tr',{}, h('th',{},'Job card'), h('th',{},'Client'), h('th',{},'Item'), h('th',{class:'n'},'Qty'), h('th',{},'Due'), h('th',{class:'act'}, h('span',{class:'sr'},'Add')))),
+        h('tbody',{}, list.slice(0, 12).map(c => h('tr',{},
+          h('td',{}, h('span',{class:'jcno'}, c.id), c.run && c.run.completed ? h('div',{class:'sub'}, 'Completed ' + fmtDate(c.run.completed)) : null),
+          h('td',{}, c.client || '(no client)'), h('td',{}, h('div',{}, BOX[c.boxType] || '—'), h('div',{class:'sub'}, c.description || '')),
+          h('td',{class:'n'}, c.qty ? fmtN(c.qty) : '—'), h('td',{}, fmtDate(c.due) || '—'),
+          h('td',{class:'act'}, h('button',{class:'btn small primary', onclick:() => { addRunning(c); S.runAdd = false; renderOrders(); }}, 'Add')))))),
+        ...(list.length > 12 ? [h('div',{class:'note', style:'padding:8px 12px'}, 'Showing 12 of ' + list.length + '. Type the job card no. or client name to find others.')] : [])]));
+    };
+    q.addEventListener('input', e => { S.runQ = e.target.value; draw(); });
+    root.append(h('div',{class:'newjob'}, h('h2',{},'Add a job card to running orders'), h('div',{class:'row', style:'margin-bottom:8px'}, q), res));
+    draw(); setTimeout(() => q.focus());
+  }
+  const run = cards.filter(isRunning).sort((a, b) => (a.due || '9999').localeCompare(b.due || '9999') || String(a.id).localeCompare(String(b.id)));
+  const late = run.filter(c => c.due && daysTo(c.due) < 0), week = run.filter(c => c.due && daysTo(c.due) >= 0 && daysTo(c.due) <= 7);
+  const pcs = run.reduce((a, c) => a + n0(c.qty), 0);
+  root.append(h('div',{class:'kpis'},
+    kpi('Running orders', String(run.length), fmtN(pcs) + ' pcs in the factory'),
+    kpi('Due in 7 days', String(week.length), week.length ? week.map(c => c.id).slice(0, 4).join(', ') : 'none'),
+    kpi('Overdue', String(late.length), late.length ? late.map(c => c.id).slice(0, 4).join(', ') : 'none', late.length ? 'bad' : '')));
+  if (!run.length){ root.append(h('div',{class:'card empty'}, 'No running orders. Press “+ Add job card” to put a job card on the board.')); }
+  else root.append(h('div',{class:'runlist'}, run.map(c => runCard(c))));
+  const done = cards.filter(c => c.run && c.run.completed).sort((a, b) => String(b.run.completed).localeCompare(String(a.run.completed)));
+  if (done.length) root.append(h('details',{class:'card', style:'margin-top:14px'}, h('summary',{}, 'Completed recently (' + done.length + ')'),
+    h('div',{class:'tablebox', style:'margin-top:10px'}, h('table',{class:'jobs'},
+      h('thead',{}, h('tr',{}, h('th',{},'Job card'), h('th',{},'Client'), h('th',{class:'n'},'Qty'), h('th',{},'Due'), h('th',{},'Completed'), h('th',{class:'act'}, h('span',{class:'sr'},'Back')))),
+      h('tbody',{}, done.slice(0, 30).map(c => h('tr',{},
+        h('td',{}, h('button',{class:'linkbtn jcno', onclick:() => go('card', c.id)}, c.id)), h('td',{}, c.client || ''), h('td',{class:'n'}, c.qty ? fmtN(c.qty) : '—'),
+        h('td',{}, fmtDate(c.due) || '—'), h('td',{}, fmtDate(c.run.completed)),
+        h('td',{class:'act'}, h('button',{class:'btn small', title:'Put it back on the running board', onclick:() => { delete c.run.completed; saveRun(c); renderOrders(); }}, 'Back to running')))))))));
+}
+function runCard(c){
+  const {T, done, next, n} = runStage(c), d = daysTo(c.due);
+  const dueTxt = !c.due ? 'No due date' : d < 0 ? 'Overdue by ' + (-d) + ' day' + (d === -1 ? '' : 's') : d === 0 ? 'Due today' : 'Due in ' + d + ' day' + (d === 1 ? '' : 's');
+  const dueCls = !c.due ? '' : d < 0 ? 'bad' : d <= 3 ? 'warn' : '';
+  const steps = h('div',{class:'runsteps'}, T.map((t, i) => {
+    const on = !!done[t.k];
+    return h('button',{type:'button', class:'runstep' + (on ? ' on' : '') + (next && next.k === t.k ? ' now' : ''), 'aria-pressed': on ? 'true' : 'false',
+      title: on ? t.n + ' done on ' + fmtDate(done[t.k]) + '. Click to undo.' : 'Mark ' + t.n.toLowerCase() + ' as done',
+      onclick:() => { c.run.done = c.run.done || {}; if (on) delete c.run.done[t.k]; else c.run.done[t.k] = today(); saveRun(c); renderOrders(); }},
+      h('span',{class:'rsn'}, on ? '✓' : String(i + 1)), h('span',{class:'rst'}, t.n.replace(/ team$/, '')), on ? h('span',{class:'rsd'}, fmtDate(done[t.k])) : null);
+  }));
+  const allDone = n === T.length;
+  return h('section',{class:'runcard' + (dueCls ? ' ' + dueCls : '')},
+    h('div',{class:'runtop'},
+      h('div',{}, h('button',{class:'linkbtn jcno', onclick:() => go('card', c.id)}, c.id), isRepeat(c) ? h('span',{class:'pill'}, 'Repeat') : null,
+        h('div',{class:'runclient'}, c.client || '(no client)'), h('div',{class:'note'}, [BOX[c.boxType], c.description].filter(Boolean).join(' · '))),
+      h('div',{class:'runright'}, h('div',{class:'runqty'}, c.qty ? fmtN(c.qty) + ' pcs' : '—'), h('div',{class:'rundue ' + dueCls}, dueTxt + (c.due ? ' · ' + fmtDate(c.due) : '')))),
+    steps,
+    h('div',{class:'runfoot'},
+      h('span',{class:'note'}, allDone ? 'All teams done. Mark it completed when it is dispatched.' : 'Now with: ' + next.n + ' · ' + n + ' of ' + T.length + ' done'),
+      h('div',{class:'row'},
+        h('button',{class:'btn small', onclick:() => go('card', c.id)}, 'Open job card'),
+        h('button',{class:'btn small' + (allDone ? ' primary' : ''), onclick:() => { c.run.completed = today(); saveRun(c); renderOrders(); }}, 'Mark completed'),
+        rowDelete('job card ' + c.id + ' from running orders', async () => { delete c.run; saveRun(c); renderOrders(); }))));
+}
 function renderOrders(){
   const root = $('#view-orders'); root.replaceChildren();
   const own = isOwnerRole();
+  if (!S.ordTab){ try { S.ordTab = localStorage.getItem('fb-ordTab') || 'running'; } catch(e){ S.ordTab = 'running'; } }   // remembers the last section on this computer
+  if (S.ordTab === 'running'){ renderRunning(root); return; }
   root.append(h('div',{class:'head'},
     h('div',{}, h('h1',{},'Orders & dispatch'), h('div',{class:'note'},'Client POs with their variants. Record each dispatch to see what has been delivered and what is still remaining.')),
     h('button',{class:'btn primary', onclick:() => { S.ordNew = !S.ordNew; renderOrders(); }}, S.ordNew ? 'Close' : '+ New PO')));
+  root.append(ordersTabs());
   if (S.ordNew) root.append(poForm(null));
   const box = h('div',{}); root.append(box);
   if (!S.db){ box.append(h('div',{class:'card empty'},'Saved data is not available here.')); return; }
@@ -2873,7 +2984,7 @@ function renderHome(){
   root.append(h('div',{class:'hgrid work'},
     tile('jobs', 'jobs', 'Cost calculator', 'Work out cost and quote for an order'),
     tile('cards', 'cards', 'Job cards', 'Instructions for the team, master sheet, PDFs'),
-    tile('orders', 'orders', 'Orders & dispatch', 'Client POs: what is delivered and what is remaining'),
+    tile('orders', 'orders', 'Orders', 'Running orders in the factory, and dispatches against client POs'),
     tile('bills', 'bills', 'Sales & invoices', 'Proforma, tax invoice, delivery challan, payment receipts'),
     tile('stock', 'stock', 'Stock', 'Materials in stock, what to buy for upcoming jobs'),
     tile('past', 'past', 'Database', 'Boxes made before and their selling prices')));
@@ -4680,6 +4791,8 @@ function renderCard(){
           h('button',{class:'btn', title:'Master sheet plus one page for each team', onclick:e => downloadPdf(c, ['master', ...teamsFor(c).map(t => t.k)], e.currentTarget)},'Download all sheets (PDF)'),
           h('button',{class:'btn', onclick:() => window.print()}, 'Print'),
           copyBtn, h('button',{class:'btn', title:'Make a new job card for a repeat order of this job', onclick:() => repeatCard(c)}, 'Repeat this job'),
+          isRunning(c) ? h('button',{class:'btn', title:'See it on the running orders board', onclick:() => { S.ordTab = 'running'; go('orders'); }}, '✓ In running orders')
+            : h('button',{class:'btn', title:'Put this job card on the running orders board', onclick:() => { saveAll(); addRunning(c); S.ordTab = 'running'; go('orders', null, true); }}, 'Add to running orders'),
           isOwnerRole() ? pullBtn : null, isOwnerRole() ? delBtn : null)),
       isRepeat(c) || (c.repeats && c.repeats.length) ? h('div',{class:'note', style:'margin:-6px 0 10px'},
         isRepeat(c) ? ['Repeat of ', c.repeatOf && S.cards.has(c.repeatOf) ? h('button',{class:'linkbtn', onclick:() => go('card', c.repeatOf)}, c.repeatOf) : (c.repeatOf || 'an earlier job'), '. '] : '',
