@@ -915,6 +915,7 @@ function calcLine(l, j, byId){
     let d = c + ' plate' + (c > 1 ? 's' : '') + ' × ₹' + fmtN(n0(l.plate)) + ' = ₹' + fmtN(plates) + '  ·  ' + fmtN(sh) + ' sheets = ' + k + ' × 1000  ·  ₹' + fmtN(n0(l.first)) + ' first 1000' + (k > 1 ? ' + ' + (k - 1) + ' × ₹' + fmtN(n0(l.next)) : '');
     if (k > 1 && l.next == null) d += '  ·  rate for each further 1000 not set';
     let qd = c + (c === 1 ? ' colour' : ' colours') + '  ·  ' + fmtN(sh) + ' sheets';
+    if (l.pms === 'yes') qd += '  ·  Pantone' + (l.pantone ? ' ' + l.pantone : '');
     if (n0(l.minCharge) && amt < n0(l.minCharge)){ amt = n0(l.minCharge); d += '  ·  minimum ₹' + fmtN(amt) + ' applied'; qd += '  ·  minimum charge applied'; }
     return {amount:amt, detail:d, qd};
   }
@@ -3523,6 +3524,9 @@ function renderLinesInner(){
       f.push(fld('Sheets from', sel([['','Own count'], ...sheetLines.map(s => [s.id, s.name || 'Unnamed sheet'])], linkOk ? l.link : '', {onchange:e => { upd('link', e.target.value || null); renderLines(); }})));
       if (!linkOk) f.push(...ownCount());
       f.push(fld('Colours', sel(['1','2','3','4','5','6'].map(c => [c, c + (c === '1' ? ' colour' : ' colours')]), String(n0(l.colours) || 4), {onchange:e => { l.colours = +e.target.value; snapPrint(l); touch(); renderLines(); }})),
+        // Pantone (Raj): yes / no, and the shade codes when yes. Goes onto the job card; doesn't change the cost.
+        fld('Pantone colour?', sel([['no','No'], ['yes','Yes']], l.pms === 'yes' ? 'yes' : 'no', {onchange:e => { upd('pms', e.target.value); renderLines(); }})),
+        l.pms === 'yes' ? fld('Pantone code', h('input',{value:l.pantone || '', placeholder:'e.g. PMS 186 C, 7621 C', style:'width:190px', oninput:e => upd('pantone', e.target.value)})) : null,
         fld('Plate ₹ / colour', numIn(l.plate, v => upd('plate', v))),
         fld('First 1000 ₹', numIn(l.first, v => upd('first', v))),
         fld('Each further 1000 ₹', numIn(l.next, v => upd('next', v))),
@@ -3723,7 +3727,7 @@ function specFromCosting(j){
   const sheets = sheetsL.map((l, i) => {
     const pr = j.lines.find(x => x.calc === 'printing' && x.link === l.id);
     return {name: l.name || 'Printed sheet ' + (i + 1), paper: rname(l), gsm: l.gsm ?? null, L: l.L ?? null, W: l.W ?? null,
-      ups: hasVars(l) ? l.vars.map((v, k) => (v.name || 'Variant ' + (k + 1)) + ' × ' + fmtN(n0(v.ups)) + ' (' + fmtN(n0(v.qty)) + ' pcs)').join(', ') : hasPastels(l) ? pastelText(l) : (l.ups != null ? String(l.ups) + ' ups' : ''), colours: pr ? (pr.colours ?? null) : null, pantone:'', count: sheetsOf(l, qty) || null};
+      ups: hasVars(l) ? l.vars.map((v, k) => (v.name || 'Variant ' + (k + 1)) + ' × ' + fmtN(n0(v.ups)) + ' (' + fmtN(n0(v.qty)) + ' pcs)').join(', ') : hasPastels(l) ? pastelText(l) : (l.ups != null ? String(l.ups) + ' ups' : ''), colours: pr ? (pr.colours ?? null) : null, pantone: pr && pr.pms === 'yes' ? (pr.pantone || 'Yes (code not given)') : '', count: sheetsOf(l, qty) || null};
   });
   const coatL = j.lines.find(l => l.calc === 'area' && inPart(l, 'finish'));
   const coat = !coatL || !coatL.coat ? '' : coatL.coat === 'none' ? 'None' : (rname(coatL) || COATS[coatL.coat]);
