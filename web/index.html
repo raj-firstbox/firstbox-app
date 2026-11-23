@@ -404,7 +404,7 @@ tfoot th{background:var(--sunk);font-size:13px;letter-spacing:0;text-transform:n
 .tsdbox{width:16px;height:16px;border:1.5px solid var(--fg);border-radius:3px}
 @media (max-width:640px){.tsdrow{grid-template-columns:24px 1fr 18px}.tsdv{grid-column:2;grid-row:2}.tsdbox{grid-column:3;grid-row:1}}
 @media print{.tsdrow:nth-child(odd){background:none}.tsdn{background:none;color:var(--fg);border:1px solid var(--fg)}}
-table.signrows td{height:30px;vertical-align:top}
+table.signrows td{height:30px;vertical-align:top;white-space:pre-line}
 .tsstep{display:flex;align-items:center;gap:10px;margin-top:18px;padding-bottom:6px;border-bottom:2px solid var(--brand)}
 .tsstep h3{flex:1;margin:0;font-size:16px;border:0;padding:0}
 .tsdone{display:flex;align-items:center;gap:6px;font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
@@ -4159,10 +4159,18 @@ function teamSummary(c, k){
   const qty = n0(c.qty), P = partsFor(c), fx = fxSorted(c), out = [];
   const join = a => a.filter(Boolean).join(' · ');
   if (k === 'design'){
-    const bl = [...new Set(fx.filter(f => f.kind !== 'spotuv').map(f => FX[f.kind]))], extra = c.acc.filter(a => a.name && !/magnet/i.test(a.name)).length + (P.includes('insert') ? c.inserts.filter(i => i.type).length : 0);
-    out.push('Client approval', c.sheets.length ? c.sheets.length + ' sheet layout' + (c.sheets.length > 1 ? 's' : '') + ' with ups' : '',
-      c.dies != null && c.dies !== '' ? c.dies + (n0(c.dies) === 1 ? ' die' : ' dies') + ' (dieline ' + (sizeText(c).split('(')[0].trim() || 'size not set') + ')' : 'dies',
-      bl.length ? 'blocks: ' + bl.join(', ') : '', fx.some(f => f.kind === 'spotuv') ? 'spot UV positive' : '', extra ? 'dies / plates for ' + extra + ' extra item' + (extra > 1 ? 's' : '') : '');
+    // Same six steps as the designer's own sheet, one line each.
+    const bl = [...new Set(fx.filter(f => f.kind !== 'spotuv').map(f => FX[f.kind]))];
+    const extra = [...c.acc.filter(a => a.name && !/magnet/i.test(a.name)).map(a => a.name), ...(P.includes('insert') ? c.inserts.filter(i => i.type).map(i => 'insert – ' + (INSERTS[i.type] || i.type).toLowerCase()) : [])];
+    const dies = c.dies != null && c.dies !== '' ? c.dies + (n0(c.dies) === 1 ? ' die' : ' dies') : 'number not set';
+    const L = ['1. Share file with sales for client approval',
+      '2. Sheets with ups: ' + (c.sheets.length ? c.sheets.map(sh => sh.name).join(', ') : 'none yet'),
+      '3. Dies for ' + (RIGID.has(c.boxType) ? 'pastels and board' : 'the job') + ': ' + dies + (sizeText(c) ? ', dieline ' + sizeText(c).split('(')[0].trim() : ''),
+      '4. Blocks: ' + (bl.length ? bl.join(', ') : 'not needed'),
+      '5. Spot UV positive: ' + (fx.some(f => f.kind === 'spotuv') ? 'yes' : 'not needed'),
+      '6. Dies / plates for extras: ' + (extra.length ? extra.join(', ') : 'not needed')];
+    const note = c.notesDesign;
+    return L.join('\n') + (note ? '\nNote: ' + note : '');
   }
   if (k === 'print'){
     if (!c.sheets.length) out.push('No printed sheets');
@@ -4252,7 +4260,7 @@ async function buildPdf(c, tabs){
   const C = {ink:hex('#1F1A16'), muted:hex('#6B6058'), brand:hex('#EB6123'), accent:hex('#B8470F'), soft:hex('#FDEBDF'), line:hex('#C9BDB4'), warn:hex('#7A5A00'), warnSoft:hex('#FBF1D2'), white:rgb(1,1,1)};
   const W = 595.28, H = 841.89, M = 36, CW = W - 2 * M;
   let page, y, title;
-  const tw = (t, f, s) => f.widthOfTextAtSize(pdfSafe(t), s);
+  const tw = (t, f, s) => Math.max(...pdfSafe(t).split('\n').map(l => f.widthOfTextAtSize(l, s)));   // widest line
   function wrap(t, f, s, width){
     const out = [];
     for (const para of pdfSafe(t).split('\n')){
