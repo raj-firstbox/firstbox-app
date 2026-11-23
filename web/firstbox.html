@@ -4103,7 +4103,7 @@ function masterBlocks(c){
   // and materials. Each team's full details and checklist stay on that team's own sheet.
   if (B.length) B[0].screenOnly = true;
   B.push({h:'First, discuss with the floor manager'}, {discuss:discussPoints(c)});
-  B.push({h:'Order details'}, {job:true, kv:[['Order type', SERIES[c.series] || ''], ['Item', c.description], ['Delivery due', fmtDate(c.due)], ['Contact', [c.contact, c.phone].filter(Boolean).join(', ')]]});
+  B.push({h:'Order details'}, {job:true, kv:[['Order type', SERIES[c.series] || ''], ['Item', c.description], ['Delivery due', fmtDate(c.due)]]});
   B.push({h:'Work order'}, {table:{heads:['#','Team','Work','Done by','Date'], minRow:24, widths:[0.04, 0.15, 0.53, 0.15, 0.13],
     rows:teamsFor(c).map((t, i) => [String(i + 1), t.n, teamSummary(c, t.k), '', ''])}});
   const mat = materialRows(c);
