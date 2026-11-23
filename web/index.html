@@ -405,6 +405,9 @@ tfoot th{background:var(--sunk);font-size:13px;letter-spacing:0;text-transform:n
 @media (max-width:640px){.tsdrow{grid-template-columns:24px 1fr 18px}.tsdv{grid-column:2;grid-row:2}.tsdbox{grid-column:3;grid-row:1}}
 @media print{.tsdrow:nth-child(odd){background:none}.tsdn{background:none;color:var(--fg);border:1px solid var(--fg)}}
 table.signrows td{height:30px;vertical-align:top;white-space:pre-line}
+.reuserow{display:grid;grid-template-columns:minmax(180px,1.3fr) 160px minmax(160px,2fr);gap:10px;align-items:center;padding:6px 0;border-top:1px solid var(--line)}
+.reuselbl{font-weight:600}
+@media (max-width:640px){.reuserow{grid-template-columns:1fr 1fr}.reuserow .reuselbl{grid-column:1/-1}}
 .tsstep{display:flex;align-items:center;gap:10px;margin-top:18px;padding-bottom:6px;border-bottom:2px solid var(--brand)}
 .tsstep h3{flex:1;margin:0;font-size:16px;border:0;padding:0}
 .tsdone{display:flex;align-items:center;gap:6px;font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
@@ -3884,6 +3887,38 @@ function createCard(series, fromJob){
   }
   S.cardTab = 'master'; go('card', c.id);
 }
+// Job card form: what a repeat job reuses from the earlier job, and what is new or corrected.
+function reuseEditor(c, sec){
+  c.reuse = c.reuse || {art:'same', tools:{}}; c.reuse.tools = c.reuse.tools || {};
+  const save = () => { touchCard(); };
+  const row = (label, opts, cur, onSel, note, onNote, ph) => h('div',{class:'reuserow'},
+    h('span',{class:'reuselbl'}, label),
+    sel(opts.map(k => [k, typeof k === 'string' && TOOL_OPTS[k] ? TOOL_OPTS[k] : k]), cur, {'aria-label':label, onchange:e => { onSel(e.target.value); renderCard(); }}),
+    cur !== 'reuse' && cur !== 'same' ? h('input',{value:note || '', placeholder:ph, 'aria-label':'What changes: ' + label, oninput:e => onNote(e.target.value)}) : h('span',{class:'note'}, ''));
+  const art = h('div',{class:'reuserow'}, h('span',{class:'reuselbl'}, 'Artwork'),
+    sel([['same','Same artwork'], ['changed','Artwork changed']], c.reuse.art || 'same', {'aria-label':'Artwork', onchange:e => { c.reuse.art = e.target.value; save(); renderCard(); }}),
+    c.reuse.art === 'changed' ? h('input',{value:c.reuse.artNote || '', placeholder:'What changed, e.g. new barcode', 'aria-label':'What changed in the artwork', oninput:e => { c.reuse.artNote = e.target.value; save(); }}) : h('span',{class:'note'}, 'No new client approval needed.'));
+  const tools = toolsOf(c);
+  return sec('', 'Repeat job: reuse or new?',
+    h('div',{class:'note'}, 'Repeat of ' + (c.repeatOf || 'an earlier job') + '. Everything is “Reuse old” unless you change it. The team sheets show it.'),
+    art,
+    tools.length ? tools.map(t => { const ch = toolChoice(c, t.key);
+      return row(t.label, t.opts, ch.choice, v => { c.reuse.tools[t.key] = {choice:v, note:(c.reuse.tools[t.key] || {}).note || ''}; save(); },
+        ch.note, v => { c.reuse.tools[t.key] = {choice:ch.choice, note:v}; save(); }, ch.choice === 'fix' ? 'What to correct, e.g. +2 mm on W' : 'Why / details (optional)'); })
+    : h('div',{class:'note'}, 'No plates, dies or blocks on this job card yet.'));
+}
+// "Repeat this job": a new job card copied from an earlier one, marked as its repeat; every tool starts as "Reuse old".
+function repeatCard(old){
+  saveAll();
+  const keep = ['client','contact','phone','description','boxType','qty','l','w','h','making','diff','boardThick','inPrint','sheets','coat','fx','boards','inserts','acc','dies',
+    'notes', ...TEAMS.map(t => t.note)];
+  const o = {}; keep.forEach(k => { if (old[k] !== undefined) o[k] = clone(old[k]); });
+  const c = blankCard(old.series, {...o, repeat:'yes', repeatOf:old.id, reuse:{art:'same', tools:{}}});
+  S.cards.set(c.id, c); flush('jobcards/' + c.id, () => clone(c));
+  const o2 = S.cards.get(old.id); if (o2){ o2.repeats = [...new Set([...(o2.repeats || []), c.id])]; flush('jobcards/' + o2.id, () => clone(o2)); }
+  syncCardStock(c, 'Job card created (repeat of ' + old.id + ')');
+  S.cardTab = 'edit'; S.repeatNew = c.id; go('card', c.id, true);
+}
 function seriesPicker(onPick, label){
   const s = sel(Object.entries(SERIES).map(([k, v]) => [k, v + ' (' + k + ')']), 'CO', {'aria-label':'Job card series'});
   const no = h('span',{class:'jcno'}, 'CO-' + nextCardNum('CO'));
@@ -3973,6 +4008,36 @@ const sheetCount = (c, name) => { const s = c.sheets.find(x => x.name === name);
 const totalSheets = c => c.sheets.reduce((a, s) => a + n0(s.count), 0);
 // Pieces per sheet: "8 ups" → 8, "Top × 2, Bottom × 2" or variants "A × 2 (…), B × 2 (…)" → 4.
 const upsNum = sh => { const t = String(sh.ups || ''), m = [...t.matchAll(/×\s*(\d+)/g)].reduce((a, x) => a + +x[1], 0); return m || parseInt(t, 10) || 0; };
+// Repeat jobs (Raj): every tool from the earlier job is "Reuse old" unless marked New or Correction on the job card.
+const TOOL_OPTS = {reuse:'Reuse old', fix:'Correction', new:'Make new'};
+function toolsOf(c){
+  const T = [], D = dieWork(c), P = partsFor(c), isP = sh => D.pastels.includes(sh);
+  c.sheets.forEach(sh => T.push({key:'plate:' + sh.name, group:'Plates', label:'Plates – ' + sh.name + (sheetColours(sh) ? ' (' + sheetColours(sh) + ')' : ''), opts:['reuse','new']}));
+  c.sheets.forEach(sh => T.push({key:'die:' + sh.name, group:'Dies', label:(isP(sh) ? 'Pastel die' : 'Die') + ' – ' + sh.name, opts:['reuse','fix','new']}));
+  if (P.includes('board')) c.boards.forEach(b => T.push({key:'bdie:' + b.type + '|' + b.thick, group:'Dies', label:'Board die – ' + [b.type, b.thick ? b.thick + ' mm' : ''].filter(Boolean).join(' '), opts:['reuse','fix','new']}));
+  fxSorted(c).forEach(f => T.push({key:(f.kind === 'spotuv' ? 'uv:' : 'block:') + f.kind + ':' + (f.part || '') + ':' + (f.sheet || ''), group: f.kind === 'spotuv' ? 'Spot UV positive' : 'Blocks',
+    label:(f.kind === 'spotuv' ? 'Spot UV positive' : FX[f.kind] + ' block') + (f.part ? ' – ' + f.part : f.sheet ? ' – ' + f.sheet : ''), opts:['reuse','new']}));
+  c.acc.filter(a => a.name && !/magnet/i.test(a.name)).forEach(a => T.push({key:'x:' + a.name, group:'Extras', label:a.name + ' (dies / plates)', opts:['reuse','fix','new']}));
+  if (P.includes('insert')) c.inserts.filter(i => i.type).forEach((i, n) => T.push({key:'x:insert' + n, group:'Extras', label:'Insert – ' + (INSERTS[i.type] || i.type) + ' (die)', opts:['reuse','fix','new']}));
+  return T;
+}
+const isRepeat = c => c.repeat === 'yes';
+const toolChoice = (c, key) => !isRepeat(c) ? null : ((c.reuse && c.reuse.tools && c.reuse.tools[key]) || {choice:'reuse'});
+// What a team sees for one tool, e.g. "Old die from CO-105" / "Correction: +2 mm on W" / "New die".
+function toolText(c, key, noun){
+  const t = toolChoice(c, key); if (!t) return '';
+  const from = c.repeatOf ? ' from ' + c.repeatOf : '';
+  return t.choice === 'new' ? 'New ' + noun + (t.note ? ': ' + t.note : '') : t.choice === 'fix' ? 'Correction: ' + (t.note || 'see designer') : 'Old ' + noun + from;
+}
+const artSame = c => !c.reuse || c.reuse.art !== 'changed';
+function repeatLine(c){
+  if (!isRepeat(c)) return '';
+  const T = toolsOf(c), by = ch => T.filter(t => toolChoice(c, t.key).choice === ch);
+  const GN = {Plates:'plates', Dies:'dies', Blocks:'blocks', 'Spot UV positive':'spot UV positive', Extras:'extras'};
+  const reuse = [...new Set(by('reuse').map(t => GN[t.group] || t.group))], fix = by('fix').map(t => t.label + (toolChoice(c, t.key).note ? ' (' + toolChoice(c, t.key).note + ')' : '')), nw = by('new').map(t => t.label);
+  return ['Repeat of ' + (c.repeatOf || 'an earlier job'), artSame(c) ? 'same artwork' : 'artwork changed' + (c.reuse.artNote ? ' (' + c.reuse.artNote + ')' : ''),
+    reuse.length ? 'Reuse: ' + reuse.join(', ') : '', fix.length ? 'Correction: ' + fix.join('; ') : '', nw.length ? 'New: ' + nw.join(', ') : ''].filter(Boolean).join(' · ');
+}
 // What the die team cuts: rigid and MDF paste pastels on board; mono cartons and corrugated are cut as boxes.
 function dieWork(c){
   const pasted = RIGID.has(c.boxType) || c.boxType === 'mdf';
@@ -4019,28 +4084,32 @@ function teamBlocks(c, k){
       ...(hasDiff(c) ? [['Height difference', diffText(c) || 'Not set']] : []), ...(RIGID.has(c.boxType) ? [['Inside paper printed', IN_PRINT[c.inPrint] || 'Not set']] : [])]));
     const fx = fxSorted(c), blocks = fx.filter(f => f.kind !== 'spotuv'), uv = fx.filter(f => f.kind === 'spotuv');
     const none = {small:'Not needed for this job.'};
-    B.push({step:[1, 'Share the file with the sales team for client approval']},
+    const R = isRepeat(c), rc = (key, noun) => R ? [toolText(c, key, noun)] : [], rh = R ? ['Repeat job'] : [];
+    if (R) B.push({text:repeatLine(c) + '. Work only on what is marked New or Correction.'});
+    if (R && artSame(c)) B.push({step:[1, 'Same artwork as ' + (c.repeatOf || 'the earlier job') + ': no new client approval needed']}, {small:'Use the approved file of ' + (c.repeatOf || 'the earlier job') + '.'});
+    else B.push({step:[1, 'Share the file with the sales team for client approval']}, ...(R && c.reuse.artNote ? [{small:'Artwork changes: ' + c.reuse.artNote}] : []),
       {table:{heads:['Artwork version','Sent to sales on','Client approved on','Approved by'], rows:[['', '', '', '']], minRow:24}});
     B.push({step:[2, 'Make the sheets with ups for printing']});
-    if (c.sheets.length) B.push({table:{heads:['Sheet','Paper & GSM','Sheet size','Parts & ups on this sheet','Colours','Pantone'],
-      rows:c.sheets.map(s => [s.name, [s.paper, s.gsm ? s.gsm + ' GSM' : ''].filter(Boolean).join(' · '), shSize(s), s.ups, sheetColours(s), s.pantone])}});
+    if (c.sheets.length) B.push({table:{heads:['Sheet','Paper & GSM','Sheet size','Parts & ups on this sheet','Colours','Pantone', ...rh],
+      rows:c.sheets.map(s => [s.name, [s.paper, s.gsm ? s.gsm + ' GSM' : ''].filter(Boolean).join(' · '), shSize(s), s.ups, sheetColours(s), s.pantone, ...rc('plate:' + s.name, 'plates')])}});
     else B.push({small:'No printed sheets on this job card yet.'});
     B.push({step:[3, RIGID.has(c.boxType) ? 'Make the dies for pastels and board' : 'Make the dies']});
     const isPastel = sh => RIGID.has(c.boxType) && (PASTELS[c.boxType] || []).some(n => (sh.ups || '').includes(n));
-    const dieRows = [...c.sheets.map(sh => [isPastel(sh) ? 'Pastel die' : 'Die', sh.name, sh.ups || shSize(sh)]),
-      ...(P.includes('board') ? c.boards.map(b => ['Board die', [b.type, b.thick ? b.thick + ' mm' : ''].filter(Boolean).join(' '), [shSize(b), b.ups ? b.ups + ' ups' : ''].filter(Boolean).join(', ')]) : [])];
+    const dieRows = [...c.sheets.map(sh => [isPastel(sh) ? 'Pastel die' : 'Die', sh.name, sh.ups || shSize(sh), ...rc('die:' + sh.name, 'die')]),
+      ...(P.includes('board') ? c.boards.map(b => ['Board die', [b.type, b.thick ? b.thick + ' mm' : ''].filter(Boolean).join(' '), [shSize(b), b.ups ? b.ups + ' ups' : ''].filter(Boolean).join(', '), ...rc('bdie:' + b.type + '|' + b.thick, 'die')]) : [])];
     if (P.includes('die') || dieRows.length){
-      if (dieRows.length) B.push({table:{heads:['Die','For','Parts / ups'], rows:dieRows}});
+      if (dieRows.length) B.push({table:{heads:['Die','For','Parts / ups', ...rh], rows:dieRows}});
       B.push({kv:[['Number of dies on this job card', c.dies ?? 'Not set']]});
     } else B.push(none);
     B.push({step:[4, 'Make the blocks for foiling, embossing or debossing']});
-    B.push(blocks.length ? {table:{heads:['Effect','Part','On sheet','Blocks','Foil colour'], rows:blocks.map(f => [FX[f.kind], f.part, f.sheet, f.blocks, f.colour])}} : none);
+    const fk = f => (f.kind === 'spotuv' ? 'uv:' : 'block:') + f.kind + ':' + (f.part || '') + ':' + (f.sheet || '');
+    B.push(blocks.length ? {table:{heads:['Effect','Part','On sheet','Blocks','Foil colour', ...rh], rows:blocks.map(f => [FX[f.kind], f.part, f.sheet, f.blocks, f.colour, ...rc(fk(f), 'block')])}} : none);
     B.push({step:[5, 'Make the positive for spot UV']});
-    B.push(uv.length ? {table:{heads:['Part','On sheet','UV type'], rows:uv.map(f => [f.part, f.sheet, f.colour])}} : none);
+    B.push(uv.length ? {table:{heads:['Part','On sheet','UV type', ...rh], rows:uv.map(f => [f.part, f.sheet, f.colour, ...rc(fk(f), 'positive')])}} : none);
     B.push({step:[6, 'Dies and plates for anything extra (mono cartons, cards, inserts…)']});
-    const extra = [...c.acc.filter(a => a.name && !/magnet/i.test(a.name)).map(a => [a.name, a.details || '', '', '']),
-      ...(P.includes('insert') ? c.inserts.filter(i => i.type).map(i => ['Insert – ' + (INSERTS[i.type] || i.type), [i.material, i.thick ? i.thick + ' mm' : '', i.colour].filter(Boolean).join(', '), '', '']) : [])];
-    B.push(extra.length ? {table:{heads:['Item','Details','Die (tick / no.)','Plates (tick / no.)'], rows:extra, minRow:20}} : none);
+    const extra = [...c.acc.filter(a => a.name && !/magnet/i.test(a.name)).map(a => [a.name, a.details || '', '', '', ...rc('x:' + a.name, 'die / plates')]),
+      ...(P.includes('insert') ? c.inserts.filter(i => i.type).map((i, n) => ['Insert – ' + (INSERTS[i.type] || i.type), [i.material, i.thick ? i.thick + ' mm' : '', i.colour].filter(Boolean).join(', '), '', '', ...rc('x:insert' + n, 'die')]) : [])];
+    B.push(extra.length ? {table:{heads:['Item','Details','Die (tick / no.)','Plates (tick / no.)', ...rh], rows:extra, minRow:20}} : none);
     B.push({h:'Check before sending to printing'}, {checks:[
       'Client has approved the final artwork. The approved version is in the file name.',
       'Dieline is made to the box size ' + (sizeText(c) || '(size not set)') + (RIGID.has(c.boxType) ? ', with board thickness ' + (boardThickText(c) || '(not set)') + ' and ' + (MAKING[c.making] ? MAKING[c.making].toLowerCase() : 'box making') + ' allowance' : '') + '.',
@@ -4060,8 +4129,8 @@ function teamBlocks(c, k){
     B.push({step:[2, 'Print the sheets']});
     if (!c.sheets.length) B.push({warn:'No printed sheets on this job card.'});
     else {
-      B.push({table:{heads:['Sheet','Paper & GSM','Sheet size','Parts & ups','Colours','Pantone','Sheets to print'],
-        rows:c.sheets.map(sh => [sh.name, [sh.paper, sh.gsm ? sh.gsm + ' GSM' : ''].filter(Boolean).join(' · '), shSize(sh), sh.ups, sheetColours(sh), sh.pantone, sh.count ? fmtN(sh.count) : ''])}});
+      B.push({table:{heads:['Sheet','Paper & GSM','Sheet size','Parts & ups','Colours','Pantone','Sheets to print', ...(isRepeat(c) ? ['Plates'] : [])],
+        rows:c.sheets.map(sh => [sh.name, [sh.paper, sh.gsm ? sh.gsm + ' GSM' : ''].filter(Boolean).join(' · '), shSize(sh), sh.ups, sheetColours(sh), sh.pantone, sh.count ? fmtN(sh.count) : '', ...(isRepeat(c) ? [toolText(c, 'plate:' + sh.name, 'plates')] : [])])}});
       B.push({kv:[['Total sheets to print', totalSheets(c) ? fmtN(totalSheets(c)) : 'Not set'], ['Job quantity', qty ? fmtN(qty) + ' pcs' : 'Not set']]});
     }
     B.push({step:[3, 'Count the printed sheets and pass them to fabrication']});
@@ -4077,9 +4146,11 @@ function teamBlocks(c, k){
     B.push(jobBlock(c));
     const steps = [], fx = fxSorted(c);
     if (c.coat && !/^none$/i.test(c.coat)) steps.push(['Coating', c.coat, 'All printed sheets', '', '', fmtN(totalSheets(c)) || '']);
-    fx.forEach(f => steps.push([FX[f.kind], f.part, f.sheet || 'Not set', f.blocks ?? '', f.colour, sheetCount(c, f.sheet) ? fmtN(sheetCount(c, f.sheet)) : '']));
+    const R = isRepeat(c), fk = f => (f.kind === 'spotuv' ? 'uv:' : 'block:') + f.kind + ':' + (f.part || '') + ':' + (f.sheet || '');
+    if (steps.length && R) steps[0].push('');
+    fx.forEach(f => steps.push([FX[f.kind], f.part, f.sheet || 'Not set', f.blocks ?? '', f.colour, sheetCount(c, f.sheet) ? fmtN(sheetCount(c, f.sheet)) : '', ...(R ? [toolText(c, fk(f), f.kind === 'spotuv' ? 'positive' : 'block')] : [])]));
     if (!steps.length) B.push({warn:'No coating or special effects on this job. Pass the printed sheets straight to the die team.'});
-    else B.push({h:'Work in this order'}, {table:{heads:['Step','Process','Part / type','On sheet','Blocks','Foil colour / UV type','Sheets'], rows:steps.map((s, i) => [String(i + 1), ...s])}});
+    else B.push({h:'Work in this order'}, {table:{heads:['Step','Process','Part / type','On sheet','Blocks','Foil colour / UV type','Sheets', ...(R ? ['Block / positive'] : [])], rows:steps.map((s, i) => [String(i + 1), ...s])}});
     if (/^none$/i.test(c.coat || '')) B.push({text:'No coating on this job.'});
     B.push({h:'Check'}, {checks:[
       ...(c.coat && !/^none$/i.test(c.coat) ? ['Coating done on every printed sheet before any special effect.'] : []),
@@ -4092,19 +4163,20 @@ function teamBlocks(c, k){
     // Raj: rigid and MDF boxes — cut the pastels to be pasted on board, then cut the board (grooving / half cut).
     // Mono cartons (and corrugated) — cut the boxes, then check creasing and pasting before the full run.
     B.push(jobBlock(c, [['Number of dies', c.dies ?? 'Not set']]));
-    const D = dieWork(c), each = qty ? fmtN(qty) + ' of each part' : '';
+    const D = dieWork(c), each = qty ? fmtN(qty) + ' of each part' : '', R = isRepeat(c), dh = R ? ['Die'] : [], dc = key => R ? [toolText(c, key, 'die')] : [];
+    if (R && toolsOf(c).some(t => t.group === 'Dies' && toolChoice(c, t.key).choice === 'fix')) B.push({warn:'A die has a correction. Check the corrected die against the job card before cutting.'});
     if (D.pasted){
       B.push({step:[1, 'Cut the pastels to be pasted on the board']});
-      B.push(D.pastels.length ? {table:{heads:['Sheet','Parts & ups','Sheets to cut','Pieces needed','Pieces cut'], minRow:22,
-        rows:D.pastels.map(sh => [sh.name, sh.ups, sh.count ? fmtN(sh.count) : '', each, ''])}} : {warn:'No pastel sheets on this job card.'});
+      B.push(D.pastels.length ? {table:{heads:['Sheet','Parts & ups','Sheets to cut','Pieces needed', ...dh, 'Pieces cut'], minRow:22,
+        rows:D.pastels.map(sh => [sh.name, sh.ups, sh.count ? fmtN(sh.count) : '', each, ...dc('die:' + sh.name), ''])}} : {warn:'No pastel sheets on this job card.'});
       B.push({step:[2, 'Cut the board' + (MAKING[c.making] ? ' for ' + MAKING[c.making].toLowerCase() : '')]});
-      if (D.boards.length) B.push({table:{heads:['Board','Thickness','Sheet size','Ups','Sheets','Pieces','Pieces cut'], minRow:22,
-        rows:D.boards.map(b => [b.type, b.thick ? b.thick + ' mm' : '', shSize(b), b.ups ?? '', b.count ? fmtN(b.count) : '', b.count && b.ups ? fmtN(n0(b.count) * n0(b.ups)) : '', ''])}});
+      if (D.boards.length) B.push({table:{heads:['Board','Thickness','Sheet size','Ups','Sheets','Pieces', ...dh, 'Pieces cut'], minRow:22,
+        rows:D.boards.map(b => [b.type, b.thick ? b.thick + ' mm' : '', shSize(b), b.ups ?? '', b.count ? fmtN(b.count) : '', b.count && b.ups ? fmtN(n0(b.count) * n0(b.ups)) : '', ...dc('bdie:' + b.type + '|' + b.thick), ''])}});
       else if (c.boxType === 'mdf') B.push({table:{heads:['Board','Thickness','Pieces needed','Pieces cut'], rows:[['MDF board', boardThickText(c), each, '']], minRow:22}});
       else B.push({warn:'No kappa board on this job card.'});
       if (D.others.length){
         B.push({step:[3, 'Cut the other printed items']});
-        B.push({table:{heads:['Item','Ups','Sheets to cut','Pieces expected','Pieces cut'], minRow:22, rows:D.others.map(sh => [sh.name, sh.ups, sh.count ? fmtN(sh.count) : '', upsNum(sh) && sh.count ? fmtN(upsNum(sh) * n0(sh.count)) : '', ''])}});
+        B.push({table:{heads:['Item','Ups','Sheets to cut','Pieces expected', ...dh, 'Pieces cut'], minRow:22, rows:D.others.map(sh => [sh.name, sh.ups, sh.count ? fmtN(sh.count) : '', upsNum(sh) && sh.count ? fmtN(upsNum(sh) * n0(sh.count)) : '', ...dc('die:' + sh.name), ''])}});
       }
       B.push({h:'Check'}, {checks:[
         'Die matches the approved dieline from the designer.',
@@ -4114,8 +4186,8 @@ function teamBlocks(c, k){
     } else {
       const word = c.boxType === 'printing' ? 'printed items' : 'boxes';
       B.push({step:[1, 'Cut the ' + word]});
-      B.push(c.sheets.length ? {table:{heads:['Sheet','Sheet size','Ups','Sheets to cut','Expected', word === 'boxes' ? 'Boxes cut' : 'Pieces cut'], minRow:22,
-        rows:c.sheets.map(sh => [sh.name, shSize(sh), sh.ups, sh.count ? fmtN(sh.count) : '', upsNum(sh) && sh.count ? fmtN(upsNum(sh) * n0(sh.count)) : '', ''])}} : {warn:'No printed sheets on this job card.'});
+      B.push(c.sheets.length ? {table:{heads:['Sheet','Sheet size','Ups','Sheets to cut','Expected', ...dh, word === 'boxes' ? 'Boxes cut' : 'Pieces cut'], minRow:22,
+        rows:c.sheets.map(sh => [sh.name, shSize(sh), sh.ups, sh.count ? fmtN(sh.count) : '', upsNum(sh) && sh.count ? fmtN(upsNum(sh) * n0(sh.count)) : '', ...dc('die:' + sh.name), ''])}} : {warn:'No printed sheets on this job card.'});
       if (word === 'boxes'){
         B.push({step:[2, 'Check creasing and pasting']}, {checks:[
           'Fold the first cut boxes: every crease folds cleanly, without cracking on the print.',
@@ -4185,6 +4257,7 @@ function masterBlocks(c){
   // One A4 page (Raj): the floor-manager points, order details, each team's work in one line with Done by / Date to sign,
   // and materials. Each team's full details and checklist stay on that team's own sheet.
   if (B.length) B[0].screenOnly = true;
+  if (isRepeat(c)) B.push({text:repeatLine(c)});
   B.push({h:'First, discuss with the floor manager'}, {discuss:discussPoints(c)});
   B.push({h:'Order details'}, {job:true, kv:[['Order type', SERIES[c.series] || ''], ['Item', c.description], ['Delivery due', fmtDate(c.due)]]});
   B.push({h:'Work order'}, {table:{heads:['#','Team','Work','Done by','Date'], minRow:24, widths:[0.04, 0.15, 0.53, 0.15, 0.13],
@@ -4208,7 +4281,7 @@ function teamSummary(c, k){
     const bl = [...new Set(fx.filter(f => f.kind !== 'spotuv').map(f => FX[f.kind]))];
     const extra = [...c.acc.filter(a => a.name && !/magnet/i.test(a.name)).map(a => a.name), ...(P.includes('insert') ? c.inserts.filter(i => i.type).map(i => 'insert – ' + (INSERTS[i.type] || i.type).toLowerCase()) : [])];
     const dies = c.dies != null && c.dies !== '' ? c.dies + (n0(c.dies) === 1 ? ' die' : ' dies') : 'number not set';
-    const L = ['1. Share file with sales for client approval',
+    const L = [isRepeat(c) && artSame(c) ? '1. Same artwork as ' + (c.repeatOf || 'the earlier job') + ': no new approval' : '1. Share file with sales for client approval',
       '2. Sheets with ups: ' + (c.sheets.length ? c.sheets.map(sh => sh.name).join(', ') : 'none yet'),
       '3. Dies for ' + (RIGID.has(c.boxType) ? 'pastels and board' : 'the job') + ': ' + dies + (sizeText(c) ? ', dieline ' + sizeText(c).split('(')[0].trim() : ''),
       '4. Blocks: ' + (bl.length ? bl.join(', ') : 'not needed'),
@@ -4563,6 +4636,7 @@ function renderCard(){
         RIGID.has(c.boxType) ? fld('Inside paper printed?', sel([['','—'], ['yes','Yes, printed inside'], ['no','No, plain']], c.inPrint || '', {onchange:e => set('inPrint', e.target.value)})) : null),
       hasDiff(c) ? h('div',{class:'note', id:'jc-lid'}, n0(c.h) && diffText(c) ? 'Lid height ' + fmtN(n0(c.h) - n0(c.diff), 1) + ' mm' : '') : null,
       RIGID.has(c.boxType) ? h('div',{class:'note'}, 'Size, height difference, board thickness, box making, inside paper, coating & special effects and inserts are what you settle with the floor manager first. They print at the top of the master sheet.') : null),
+    isRepeat(c) ? reuseEditor(c, sec) : null,
     P.includes('print') ? sec('1', 'Printing & paper',
       h('div',{class:'row', style:'align-items:flex-end;gap:12px;margin-bottom:6px'},
         fld('Repeat job?', sel([['','—'], ['no','No, new job'], ['yes','Yes, repeat job']], c.repeat || '', {onchange:e => { set('repeat', e.target.value); renderCard(); }})),
@@ -4597,7 +4671,12 @@ function renderCard(){
           h('button',{class:'btn', onclick:e => downloadPdf(c, [shownTab], e.currentTarget)}, shownTab === 'master' ? 'Download master sheet (PDF)' : 'Download this sheet (PDF)'),
           h('button',{class:'btn', title:'Master sheet plus one page for each team', onclick:e => downloadPdf(c, ['master', ...teamsFor(c).map(t => t.k)], e.currentTarget)},'Download all sheets (PDF)'),
           h('button',{class:'btn', onclick:() => window.print()}, 'Print'),
-          copyBtn, isOwnerRole() ? pullBtn : null, isOwnerRole() ? delBtn : null)),
+          copyBtn, h('button',{class:'btn', title:'Make a new job card for a repeat order of this job', onclick:() => repeatCard(c)}, 'Repeat this job'),
+          isOwnerRole() ? pullBtn : null, isOwnerRole() ? delBtn : null)),
+      isRepeat(c) || (c.repeats && c.repeats.length) ? h('div',{class:'note', style:'margin:-6px 0 10px'},
+        isRepeat(c) ? ['Repeat of ', c.repeatOf && S.cards.has(c.repeatOf) ? h('button',{class:'linkbtn', onclick:() => go('card', c.repeatOf)}, c.repeatOf) : (c.repeatOf || 'an earlier job'), '. '] : '',
+        c.repeats && c.repeats.length ? ['Repeated as ', ...c.repeats.flatMap((id, i) => [i ? ', ' : '', S.cards.has(id) ? h('button',{class:'linkbtn', onclick:() => go('card', id)}, id) : id]), '.'] : '') : null,
+      S.repeatNew === c.id ? h('div',{class:'banner'}, 'New repeat job card made from ' + c.repeatOf + '. Check the quantity, sheets to print and delivery date, choose below what is reused and what is new, then press Save.') : null,
       copyBox, h('div',{id:'jc-alert'}),
       h('nav',{class:'jump', 'aria-label':'Job card sheets', style:'margin-bottom:14px'}, tabs.map(([k, n]) => h('button',{type:'button', class:'jctab', 'aria-current': k === tab ? 'page' : 'false', onclick:() => { S.cardTab = k; if (k === 'mat') S.issue = null; renderCard(); }}, n)))),
     tab === 'mat' ? h('div',{class:'noprint'}, cardStockPanel(c)) : '',
