@@ -917,8 +917,8 @@ function calcLine(l, j, byId){
     let qd = colourText(n0(l.colours), pn) + '  ·  ' + fmtN(sh) + ' sheets' + (pn && l.pantone ? '  ·  ' + l.pantone : '');
     if (n0(l.minCharge) && amt < n0(l.minCharge)){ amt = n0(l.minCharge); d += '  ·  minimum ₹' + fmtN(amt) + ' applied'; qd += '  ·  minimum charge applied'; }
     if (pn){
-      const kg = Math.max(1, Math.ceil(sh / pmsInkSheets(l))), ink = pn * kg * n0(pmsInkRate(l));
-      amt += ink; d += '  ·  Pantone ink ' + pn + ' × ' + kg + ' kg × ₹' + fmtN(n0(pmsInkRate(l))) + ' = ₹' + fmtN(ink) + ' (1 kg per ' + fmtN(pmsInkSheets(l)) + ' sheets)';
+      const kg = Math.round(sh / pmsInkSheets(l) * 100) / 100, ink = Math.round(pn * kg * n0(pmsInkRate(l)));
+      amt += ink; d += '  ·  Pantone ink ' + pn + ' × ' + fmtN(kg, 2) + ' kg × ₹' + fmtN(n0(pmsInkRate(l))) + ' = ₹' + fmtN(ink) + ' (1 kg per ' + fmtN(pmsInkSheets(l)) + ' sheets)';
       qd += '  ·  Pantone ink ₹' + fmtN(ink);
     }
     return {amount:amt, detail:d, qd};
@@ -1051,7 +1051,7 @@ const printTable = () => S.settings.printing || S.printDefaults;
 const dieTable = () => ({...S.diecutDefaults, ...(S.settings.diecut || {})});
 function snapDie(l){ const D = dieTable(); l.setup = D.die ?? null; l.first = D.first ?? null; l.next = D.next ?? null; }
 // Pantone (Raj): each Pantone is one more colour on the press (2 colours + 1 Pantone = priced as 3 colours),
-// plus Pantone ink at ₹1,500 per kg, 1 kg good for 3,000 sheets (whole kg per Pantone, at least 1 kg).
+// plus Pantone ink at ₹1,500 per kg, 1 kg good for 3,000 sheets, charged for the part kg used (2,100 sheets = 0.7 kg).
 const pmsN = l => l.pms === 'yes' ? Math.max(1, n0(l.pmsCount) || 1) : 0;
 const pmsInkRate = l => l.pmsInk ?? S.settings.pmsInkRate ?? 1500;
 const pmsInkSheets = l => n0(l.pmsSheets ?? S.settings.pmsInkSheets ?? 3000) || 3000;
