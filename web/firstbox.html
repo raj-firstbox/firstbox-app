@@ -43,7 +43,7 @@ h1{font-size:22px} h2{font-size:17px} h3{font-size:14px}
 .hgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:26px}
 .hgrid.work{grid-template-columns:repeat(6,1fr)}
 .hgrid.work .htile{grid-column:span 2}
-.hgrid.set{grid-template-columns:repeat(4,1fr)}
+.hgrid.set{grid-template-columns:repeat(5,1fr)}
 @media (max-width:1000px){.hgrid.work,.hgrid.set{grid-template-columns:repeat(2,1fr)}.hgrid.work .htile{grid-column:auto}}
 @media (max-width:760px){.hgrid,.hgrid.work,.hgrid.set{grid-template-columns:1fr}}
 .htile{display:flex;align-items:center;gap:16px;text-align:left;background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:18px;font:inherit;color:var(--fg);cursor:pointer;min-height:108px;transition:box-shadow .15s,border-color .15s,transform .15s}
@@ -507,9 +507,9 @@ body:not(.show-rates) .adv{display:none}
       <button class="tab" id="tab-jobs" data-go="jobs">Cost calculator</button>
       <button class="tab" id="tab-cards" data-go="cards">Job cards</button>
       <button class="tab" id="tab-orders" data-go="orders">Orders</button>
+      <button class="tab" id="tab-pos" data-go="pos">POs &amp; dispatches</button>
       <button class="tab" id="tab-bills" data-go="bills">Sales &amp; invoices</button>
       <button class="tab" id="tab-stock" data-go="stock">Stock</button>
-      <button class="tab" id="tab-past" data-go="past">Database</button>
     </nav>
     <div class="spacer"></div>
     <span class="savestate" id="savestate"></span>
@@ -522,6 +522,7 @@ body:not(.show-rates) .adv{display:none}
         <div class="setmenu-h">Settings</div>
         <button type="button" role="menuitem" id="tab-rates" data-go="rates"><b>Rate list</b><span>Paper, board, lamination, printing and all other rates</span></button>
         <button type="button" role="menuitem" id="tab-history" data-go="history"><b>Price history</b><span>How raw material prices have changed over time</span></button>
+        <button type="button" role="menuitem" id="tab-past" data-go="past"><b>Database</b><span>Boxes made before and their selling prices</span></button>
         <button type="button" role="menuitem" id="tab-billing" data-go="billing"><b>Billing details</b><span>Firstbox GSTIN, address, bank, invoice numbers and terms</span></button>
         <button type="button" role="menuitem" id="tab-team" data-go="team"><b>Team &amp; access</b><span>Choose who can use inventory and job cards</span></button>
       </div>
@@ -543,6 +544,7 @@ body:not(.show-rates) .adv{display:none}
   <section id="view-billing" hidden></section>
   <section id="view-orders" hidden></section>
   <section id="view-order" hidden></section>
+  <section id="view-pos" hidden></section>
   <section id="view-stock" hidden></section>
   <section id="view-team" hidden></section>
   <section id="view-access" hidden></section>
@@ -1217,7 +1219,7 @@ function fromHash(){
   else if (hsh.startsWith('order-')) go('order', hsh.slice(6));
   else if (hsh.startsWith('bill-')) go('bill', hsh.slice(5));
   else if (hsh.startsWith('pay-')) go('pay', hsh.slice(4));
-  else go(['home','jobs','rates','history','cards','stock','team','past','orders','bills','billing'].includes(hsh) ? hsh : homeView());
+  else go(['home','jobs','rates','history','cards','stock','team','past','orders','pos','bills','billing'].includes(hsh) ? hsh : homeView());
 }
 document.querySelectorAll('[data-go]').forEach(b => b.addEventListener('click', () => { closeSettings(); go(b.dataset.go); }));
 // Settings menu (top-left gear): Rate list and Price history.
@@ -1237,7 +1239,7 @@ function render(){
   applyRoleChrome();
   const ready = S.role === 'owner' || !!ROLES[S.role];
   $('#view-access').hidden = ready;
-  if (!ready){ ['home','past','jobs','job','rates','history','cards','stock','card','team','orders','order','bills','bill','billing','pay'].forEach(v => $('#view-' + v).hidden = true); renderAccess(); return; }
+  if (!ready){ ['home','past','jobs','job','rates','history','cards','stock','card','team','orders','order','pos','bills','bill','billing','pay'].forEach(v => $('#view-' + v).hidden = true); renderAccess(); return; }
   $('#view-team').hidden = S.view !== 'team';
   $('#tab-team').setAttribute('aria-current', S.view === 'team' ? 'page' : 'false');
   $('#view-home').hidden = S.view !== 'home';
@@ -1251,6 +1253,7 @@ function render(){
   $('#view-cards').hidden = S.view !== 'cards';
   $('#view-stock').hidden = S.view !== 'stock';
   $('#view-orders').hidden = S.view !== 'orders';
+  $('#view-pos').hidden = S.view !== 'pos';
   $('#view-bills').hidden = S.view !== 'bills';
   $('#view-bill').hidden = S.view !== 'bill';
   $('#view-pay').hidden = S.view !== 'pay';
@@ -1258,14 +1261,15 @@ function render(){
   $('#tab-bills').setAttribute('aria-current', S.view === 'bills' || S.view === 'bill' || S.view === 'pay' ? 'page' : 'false');
   $('#tab-billing').setAttribute('aria-current', S.view === 'billing' ? 'page' : 'false');
   $('#view-order').hidden = S.view !== 'order';
-  $('#tab-orders').setAttribute('aria-current', S.view === 'orders' || S.view === 'order' ? 'page' : 'false');
+  $('#tab-orders').setAttribute('aria-current', S.view === 'orders' ? 'page' : 'false');
+  $('#tab-pos').setAttribute('aria-current', S.view === 'pos' || S.view === 'order' ? 'page' : 'false');
   $('#tab-stock').setAttribute('aria-current', S.view === 'stock' ? 'page' : 'false');
   $('#view-card').hidden = S.view !== 'card';
   $('#tab-cards').setAttribute('aria-current', S.view === 'cards' || S.view === 'card' ? 'page' : 'false');
   $('#tab-jobs').setAttribute('aria-current', S.view === 'jobs' || S.view === 'job' ? 'page' : 'false');
   $('#tab-rates').setAttribute('aria-current', S.view === 'rates' ? 'page' : 'false');
   $('#tab-history').setAttribute('aria-current', S.view === 'history' ? 'page' : 'false');
-  $('#setbtn').classList.toggle('on', S.view === 'rates' || S.view === 'history' || S.view === 'team' || S.view === 'billing');
+  $('#setbtn').classList.toggle('on', S.view === 'rates' || S.view === 'history' || S.view === 'team' || S.view === 'billing' || S.view === 'past');
   if (S.view === 'team'){ renderTeam(); return; }
   if (S.view === 'home') renderHome();
   else if (S.view === 'past') renderPast();
@@ -1276,6 +1280,7 @@ function render(){
   else if (S.view === 'stock') renderStock();
   else if (S.view === 'card') renderCard();
   else if (S.view === 'orders') renderOrders();
+  else if (S.view === 'pos') renderPos();
   else if (S.view === 'order') renderOrder();
   else if (S.view === 'bills') renderBills();
   else if (S.view === 'bill') renderBill();
@@ -1532,13 +1537,6 @@ function knownClients(){
   return [...s].sort((a, b) => a.localeCompare(b));
 }
 
-function ordersTabs(){
-  const openN = [...S.orders.values()].filter(o => poStats(o).status !== 'done').length, allN = S.orders.size;
-  const t = (k, n, sub) => h('button',{type:'button', class:'saletab', 'aria-current': (S.ordTab || 'running') === k ? 'page' : 'false', onclick:() => { S.ordTab = k; try { localStorage.setItem('fb-ordTab', k); } catch(e){} renderOrders(); }}, h('b',{}, n), h('span',{}, sub));
-  return h('nav',{class:'saletabs two', 'aria-label':'Orders'},
-    t('running', 'Running orders', openN + ' order' + (openN === 1 ? '' : 's') + ' not fully delivered'),
-    t('dispatch', 'Client POs & dispatches', allN + ' PO' + (allN === 1 ? '' : 's') + ': parts, delivery requests, dispatches'));
-}
 const daysTo = d => d ? Math.round((new Date(d + 'T00:00:00') - new Date(today() + 'T00:00:00')) / 864e5) : null;
 // Running orders (Raj): every client order not yet fully delivered, oldest order first, for the whole team.
 const runningRows = () => [...S.orders.values()].map(o => ({o, s: poStats(o)})).filter(r => r.s.status !== 'done')
@@ -1597,8 +1595,7 @@ function renderRunning(root){
   const canAdd = canView('order');
   root.append(h('div',{class:'head'},
     h('div',{}, h('h1',{},'Orders'), h('div',{class:'note'},'Running orders: every client order not yet fully delivered. Oldest order first, so you know the priority.')),
-    canAdd ? h('button',{class:'btn primary', onclick:() => { S.ordTab = 'dispatch'; S.ordNew = true; renderOrders(); }}, '+ New PO') : null));
-  if (canAdd) root.append(ordersTabs());
+    canAdd ? h('button',{class:'btn primary', onclick:() => { S.ordNew = true; go('pos'); }}, '+ New PO') : null));
   if (!S.db){ root.append(h('div',{class:'card empty'},'Saved data is not available here.')); return; }
   if (!S.loaded.orders){ root.append(h('div',{class:'card empty'},'Loading orders…')); return; }
   const rows = runningRows(), groups = runningByGroup(rows);
@@ -1611,13 +1608,15 @@ function renderRunning(root){
 }
 function renderOrders(){
   const root = $('#view-orders'); root.replaceChildren();
+  renderRunning(root);
+}
+// Client POs & dispatches (its own section, Raj): the PO list; each PO opens its page (view 'order').
+function renderPos(){
+  const root = $('#view-pos'); root.replaceChildren();
   const own = isOwnerRole();
-  if (!S.ordTab){ try { S.ordTab = localStorage.getItem('fb-ordTab') || 'running'; } catch(e){ S.ordTab = 'running'; } }   // remembers the last section on this computer
-  if (S.ordTab === 'running' || !canView('order')){ renderRunning(root); return; }
   root.append(h('div',{class:'head'},
-    h('div',{}, h('h1',{},'Orders'), h('div',{class:'note'},'Client POs with their parts and variants. Add delivery requests when the client asks, and record each dispatch.')),
-    h('button',{class:'btn primary', onclick:() => { S.ordNew = !S.ordNew; renderOrders(); }}, S.ordNew ? 'Close' : '+ New PO')));
-  root.append(ordersTabs());
+    h('div',{}, h('h1',{},'Client POs & dispatches'), h('div',{class:'note'},'Client POs with their parts and variants. Add delivery requests when the client asks, and record each dispatch.')),
+    h('button',{class:'btn primary', onclick:() => { S.ordNew = !S.ordNew; renderPos(); }}, S.ordNew ? 'Close' : '+ New PO')));
   if (S.ordNew) root.append(poForm(null));
   const box = h('div',{}); root.append(box);
   if (!S.db){ box.append(h('div',{class:'card empty'},'Saved data is not available here.')); return; }
@@ -1634,7 +1633,7 @@ function renderOrders(){
     own ? kpi('Value still to deliver', rs(valPending), 'remaining pcs × rates') : null));
   const search = h('input',{type:'search', placeholder:'Search client, PO no., item or variant', value:S.ordQ, style:'flex:1 1 240px'});
   const filt = h('nav',{class:'jump', 'aria-label':'Show', style:'position:static;padding:4px'}, [['open','Open'],['done','Completed'],['all','All']].map(([k, n]) =>
-    h('button',{type:'button', class:'jctab', 'aria-current': S.ordFilter === k ? 'page' : 'false', onclick:() => { S.ordFilter = k; renderOrders(); }}, n)));
+    h('button',{type:'button', class:'jctab', 'aria-current': S.ordFilter === k ? 'page' : 'false', onclick:() => { S.ordFilter = k; renderPos(); }}, n)));
   const tbox = h('div',{class:'tablebox'});
   box.append(h('div',{class:'row', style:'margin-bottom:10px'}, search, filt), tbox);
   const draw = () => {
@@ -1654,7 +1653,7 @@ function renderOrders(){
         h('td',{}, progBar(s.pct, s.status === 'done'), h('div',{class:'sub'}, Math.round(s.pct) + '%')),
         h('td',{}, poPill(poStatus(o, s))), h('td',{}, fmtDate(s.last) || '—'),
         own ? h('td',{class:'n'}, pv.known ? rs(pv.rem) : '—') : null,
-        own ? h('td',{class:'act'}, rowDelete('PO for ' + (o.client || 'no client'), async () => { await deleteOrder(o.id); renderOrders(); })) : null); }))));
+        own ? h('td',{class:'act'}, rowDelete('PO for ' + (o.client || 'no client'), async () => { await deleteOrder(o.id); renderPos(); })) : null); }))));
   };
   search.addEventListener('input', e => { S.ordQ = e.target.value; draw(); });
   draw();
@@ -1744,7 +1743,7 @@ function poForm(ex){
           S.ordNew = false; S.ordEdit = false;
           if (ex) renderOrder(); else go('order', o.id);
         }}, ex ? 'Save changes' : 'Create PO'),
-        h('button',{class:'btn', onclick:() => { S.ordNew = false; S.ordEdit = false; if (ex) renderOrder(); else renderOrders(); }}, 'Cancel')));
+        h('button',{class:'btn', onclick:() => { S.ordNew = false; S.ordEdit = false; if (ex) renderOrder(); else renderPos(); }}, 'Cancel')));
   };
   draw();
   return wrap;
@@ -1753,16 +1752,16 @@ function poForm(ex){
 function renderOrder(){
   const root = $('#view-order'); root.replaceChildren();
   const o = S.orders.get(S.orderId);
-  if (!o){ root.append(h('div',{class:'empty'}, S.loaded.orders ? 'This PO no longer exists.' : 'Loading PO…'), h('div',{class:'row', style:'justify-content:center'}, h('button',{class:'btn', onclick:() => go('orders')},'Back to orders'))); return; }
+  if (!o){ root.append(h('div',{class:'empty'}, S.loaded.orders ? 'This PO no longer exists.' : 'Loading PO…'), h('div',{class:'row', style:'justify-content:center'}, h('button',{class:'btn', onclick:() => go('pos')},'Back to client POs'))); return; }
   const own = isOwnerRole(), s = poStats(o), pv = poValues(o, s), vs = o.variants || [], parts = partsOf(o);
   root.append(h('div',{class:'head'},
-    h('div',{}, h('button',{class:'linkbtn', onclick:() => go('orders')}, '← All orders'),
+    h('div',{}, h('button',{class:'linkbtn', onclick:() => go('pos')}, '← All client POs'),
       h('h1',{style:'margin-top:6px'}, poTitle(o), ' ', poPill(poStatus(o, s))),
       h('div',{class:'note'}, [o.poDate ? 'PO date ' + fmtDate(o.poDate) : '', o.due ? 'deliver everything by ' + fmtDate(o.due) : '', o.notes].filter(Boolean).join(' · '))),
     h('div',{class:'row'},
       h('button',{class:'btn', onclick:() => proformaFromPO(o)}, 'Make proforma'),
       h('button',{class:'btn', onclick:() => { S.ordEdit = !S.ordEdit; renderOrder(); }}, S.ordEdit ? 'Close edit' : 'Edit PO'),
-      own ? rowDelete('this PO', async () => { await deleteOrder(o.id); go('orders'); }) : null)));
+      own ? rowDelete('this PO', async () => { await deleteOrder(o.id); go('pos'); }) : null)));
   if (S.ordEdit) root.append(poForm(o));
   const olds = olderOpen(o), newer = newerOf(o).filter(x => poStats(x).status !== 'done');
   if (olds.length) root.append(h('div',{class:'banner'}, 'Older PO first: ', olds.flatMap((r, i) => [i ? ', ' : '', h('button',{class:'linkbtn', onclick:() => go('order', r.o.id)}, 'PO ' + (r.o.poNo || '(no no.)')), (r.o.poDate ? ' of ' + fmtDate(r.o.poDate) : '') + ' still has ' + fmtN(r.rem) + ' pcs to deliver']), '. Dispatches recorded here are counted against the older PO until it is finished.'));
@@ -2784,7 +2783,7 @@ function challanList(box){
   box.append(h('div',{class:'row', style:'margin-bottom:10px'}, search), tbox);
   const draw = () => {
     tbox.replaceChildren();
-    if (!all.length){ tbox.append(h('div',{class:'empty'}, S.bills.size && (S.billPeriod || 'month') !== 'all' ? 'No delivery challans in this period. Choose another period above, or “All time”.' : 'No delivery challans yet. Press “+ Create delivery challan”, use “Make delivery challan” on a tax invoice, or “Make challan” on a dispatch in Orders.')); return; }
+    if (!all.length){ tbox.append(h('div',{class:'empty'}, S.bills.size && (S.billPeriod || 'month') !== 'all' ? 'No delivery challans in this period. Choose another period above, or “All time”.' : 'No delivery challans yet. Press “+ Create delivery challan”, use “Make delivery challan” on a tax invoice, or “Make challan” on a dispatch in Client POs & dispatches.')); return; }
     const q = S.billQ.trim().toLowerCase();
     const rows = all.filter(b => !q || [b.no, (b.client || {}).name, (b.transport || {}).vehicle, ...(b.items || []).map(i => i.name)].join(' ').toLowerCase().includes(q)).sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')) || n0(b.createdAt) - n0(a.createdAt));
     if (!rows.length){ tbox.append(h('div',{class:'empty'},'Nothing matches.')); return; }
@@ -2802,7 +2801,7 @@ function challanList(box){
   draw();
 }
 
-// ----- Delivery challans: from a tax invoice, or from a dispatch in Orders -----
+// ----- Delivery challans: from a tax invoice, or from a dispatch (Client POs & dispatches) -----
 function challanFromInvoice(inv){
   saveAll();
   if (inv.challanId && S.bills.has(inv.challanId)){ go('bill', inv.challanId); return; }
@@ -3098,11 +3097,12 @@ const ICONS = {
   past:'<ellipse cx="12" cy="5.5" rx="7.5" ry="2.5"/><path d="M4.5 5.5v6c0 1.4 3.4 2.5 7.5 2.5s7.5-1.1 7.5-2.5v-6"/><path d="M4.5 11.5v6c0 1.4 3.4 2.5 7.5 2.5s7.5-1.1 7.5-2.5v-6"/>',
   bills:'<path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h6M9 16h3"/>',
   billing:'<path d="M3 7h18v12H3z"/><path d="M3 11h18"/><path d="M7 15h4"/>',
-  orders:'<path d="M2 6h12v10H2z"/><path d="M14 9h4l3 3v4h-7"/><circle cx="6.5" cy="17.5" r="2"/><circle cx="17.5" cy="17.5" r="2"/>',
+  orders:'<path d="M9 4h6v3H9z"/><path d="M15 5h3v16H6V5h3"/><path d="M9 11h6M9 15h4"/>',
+  pos:'<path d="M2 6h12v10H2z"/><path d="M14 9h4l3 3v4h-7"/><circle cx="6.5" cy="17.5" r="2"/><circle cx="17.5" cy="17.5" r="2"/>',
   team:'<circle cx="9" cy="8" r="3"/><path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6"/><circle cx="17" cy="9" r="2.5"/><path d="M15.5 14.2c2.8.3 5 2.6 5 5.8"/>'
 };
 // Phones: icons and short names on the section tabs (shown as a bottom bar on small screens).
-{ const SHORT = {jobs:'Costing', cards:'Job cards', orders:'Orders', bills:'Sales', stock:'Stock', past:'Database'};
+{ const SHORT = {jobs:'Costing', cards:'Job cards', orders:'Orders', pos:'POs', bills:'Sales', stock:'Stock'};
   document.querySelectorAll('.bar nav .tab').forEach(b => { const v = b.dataset.go, full = b.textContent.trim();
     b.innerHTML = '<svg class="tico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + (ICONS[v] || '') + '</svg>';
     b.append(h('span',{class:'tabfull'}, full), h('span',{class:'tabshort', 'aria-hidden':'true'}, SHORT[v] || full)); b.setAttribute('aria-label', full); }); }
@@ -3139,16 +3139,16 @@ function renderHome(){
   root.append(h('div',{class:'hgrid work'},
     tile('jobs', 'jobs', 'Cost calculator', 'Work out cost and quote for an order'),
     tile('cards', 'cards', 'Job cards', 'Instructions for the team, master sheet, PDFs'),
-    tile('orders', 'orders', 'Orders', 'Running orders in the factory, and dispatches against client POs'),
+    tile('orders', 'orders', 'Orders', 'Running orders in the factory, by product'),
+    tile('pos', 'pos', 'Client POs & dispatches', 'Client POs, parts, delivery requests and dispatches'),
     tile('bills', 'bills', 'Sales & invoices', 'Proforma, tax invoice, delivery challan, payment receipts'),
-    tile('stock', 'stock', 'Stock', 'Materials in stock, what to buy for upcoming jobs'),
-    tile('past', 'past', 'Database', 'Boxes made before and their selling prices')));
+    tile('stock', 'stock', 'Stock', 'Materials in stock, what to buy for upcoming jobs')));
   // Live running orders (Raj): updates by itself whenever an order or dispatch changes.
   if (S.db && S.loaded.orders){
     const rows = runningRows();
     root.append(h('div',{class:'row', style:'justify-content:space-between;align-items:baseline;margin-top:22px'},
       h('h2',{class:'hsub', style:'margin:0'}, 'Running orders' + (rows.length ? ' (' + rows.length + ')' : '')),
-      h('button',{class:'linkbtn', onclick:() => { S.ordTab = 'running'; S.runGroup = 'all'; go('orders'); }}, 'All running orders →')));
+      h('button',{class:'linkbtn', onclick:() => { S.runGroup = 'all'; go('orders'); }}, 'All running orders →')));
     root.append(runningKpis(rows));
     if (!rows.length) root.append(h('div',{class:'card empty'}, 'No running orders. Every client PO is fully delivered.'));
     for (const [k, list] of runningByGroup(rows)){
@@ -3156,7 +3156,7 @@ function renderHome(){
       root.append(h('div',{class:'rungroup'},
         h('div',{class:'row', style:'justify-content:space-between;align-items:baseline'},
           h('h3',{}, runGroupName(k), h('span',{class:'sub'}, ' · ' + list.length + ' order' + (list.length === 1 ? '' : 's') + ' · ' + fmtN(pcs) + ' pcs to deliver')),
-          list.length > 5 ? h('button',{class:'linkbtn', onclick:() => { S.ordTab = 'running'; S.runGroup = k; go('orders'); }}, 'See all ' + list.length + ' →') : null),
+          list.length > 5 ? h('button',{class:'linkbtn', onclick:() => { S.runGroup = k; go('orders'); }}, 'See all ' + list.length + ' →') : null),
         runningTable(list, 5)));
     }
   }
@@ -3164,6 +3164,7 @@ function renderHome(){
   root.append(h('div',{class:'hgrid set'},
     tile('rates', 'rates', 'Rate list', 'Paper, board, lamination, printing and other rates', S.loaded.rates ? S.rates.size + ' rates' : loading, false, true),
     tile('history', 'history', 'Price history', 'How raw material prices changed over time', '', false, true),
+    tile('past', 'past', 'Database', 'Boxes made before and their selling prices', '', false, true),
     tile('billing', 'billing', 'Billing details', 'GSTIN, address, bank and invoice numbers', '', false, true),
     tile('team', 'team', 'Team & access', 'Logins and roles for your team', S.team.size ? S.team.size + (S.team.size === 1 ? ' person' : ' people') : '', false, true)));
 }
@@ -3266,7 +3267,7 @@ function rowDelete(what, onConfirm){
 // job cards, stock and the shared lists are open to people the page is shared with for editing.
 const ROLES = {
   inventory:{n:'Inventory', d:'Stock: add materials, record purchases when they arrive, correct counts, see what to buy; see running orders', views:['stock','orders']},
-  jobcards:{n:'Job cards', d:'Job cards: create, edit, print and download team sheets; client POs, dispatches, invoices, challans and payment receipts', views:['cards','card','orders','order','bills','bill','pay']}
+  jobcards:{n:'Job cards', d:'Job cards: create, edit, print and download team sheets; client POs, dispatches, invoices, challans and payment receipts', views:['cards','card','orders','pos','order','bills','bill','pay']}
 };
 const isOwnerRole = () => S.role === 'owner';
 const allowedViews = () => S.role === 'owner' ? null : (ROLES[S.role] || {views:[]}).views;
@@ -3275,7 +3276,7 @@ const homeView = () => S.role === 'owner' ? 'home' : ((ROLES[S.role] || {views:[
 
 function applyRoleChrome(){
   const own = isOwnerRole(), r = ROLES[S.role];
-  [['tab-jobs','jobs'], ['tab-cards','cards'], ['tab-orders','orders'], ['tab-bills','bills'], ['tab-stock','stock'], ['tab-past','past']].forEach(([id, v]) => { const el = $('#' + id); if (el) el.hidden = !(S.role && canView(v) && (own || r)); });
+  [['tab-jobs','jobs'], ['tab-cards','cards'], ['tab-orders','orders'], ['tab-pos','pos'], ['tab-bills','bills'], ['tab-stock','stock']].forEach(([id, v]) => { const el = $('#' + id); if (el) el.hidden = !(S.role && canView(v) && (own || r)); });
   const sw = $('.setwrap'); if (sw) sw.hidden = !own;
   const chip = $('#rolechip');
   if (chip){ chip.hidden = !r; chip.textContent = r ? r.n + ' access' : ''; }
@@ -5780,6 +5781,7 @@ async function boot(){
       for (const [id, x] of S.orders) if (!m.has(id) && busy('orders/' + id)) m.set(id, x);
       S.orders = m; if (!snap.metadata.fromCache) S.loaded.orders = true;
       if (S.view === 'orders' && !$('#view-orders').contains(document.activeElement)) renderOrders();
+      if (S.view === 'pos' && !$('#view-pos').contains(document.activeElement)) renderPos();
       if (S.view === 'order' && !$('#view-order').contains(document.activeElement)) renderOrder();
       if (S.view === 'home') renderHome();
     }, () => { S.loaded.orders = true; });
@@ -5858,6 +5860,7 @@ async function boot(){
       for (const d of snap.docs){ const path = 'poRates/' + d.id; m.set(d.id, busy(path) && S.poRates.has(d.id) ? S.poRates.get(d.id) : d.data()); }
       S.poRates = m;
       if (S.view === 'orders' && !$('#view-orders').contains(document.activeElement)) renderOrders();
+      if (S.view === 'pos' && !$('#view-pos').contains(document.activeElement)) renderPos();
       if (S.view === 'order' && !$('#view-order').contains(document.activeElement)) renderOrder();
     }, () => {});
     db.collection('pastwork').onSnapshot(snap => {
