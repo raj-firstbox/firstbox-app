@@ -3974,6 +3974,7 @@ const totalSheets = c => c.sheets.reduce((a, s) => a + n0(s.count), 0);
 const fxSorted = c => [...c.fx].filter(f => f.kind).sort((a, b) => FX_ORDER.indexOf(a.kind) - FX_ORDER.indexOf(b.kind));
 const thickList = c => [...new Set(c.boards.map(b => b.thick).filter(Boolean))].map(t => t + ' mm').join(', ');
 
+const repeatTitle = c => c.repeat === 'yes' ? 'Repeat job: match the colours with the earlier job' + (c.repeatOf ? ' ' + c.repeatOf : '') : c.repeat === 'no' ? 'New job: get the colours approved before full production' : 'Colour approval before full production';
 // "2 colour + 1 Pantone" on job cards.
 const sheetColours = s => s.colours || n0(s.pms) ? (n0(s.colours) + ' colour' + (n0(s.pms) ? ' + ' + n0(s.pms) + ' Pantone' : '')) : '';
 // What the job card person settles with the floor manager before anything starts (Raj's list, in his order).
@@ -4041,18 +4042,27 @@ function teamBlocks(c, k){
     notes('design');
   }
   if (k === 'print'){
+    // Raj: a repeat job must match the colours of the earlier job; a new job's colours are approved before full production.
     B.push(jobBlock(c));
+    B.push({step:[1, repeatTitle(c)]});
+    if (c.repeat === 'yes') B.push({text:'Keep the approved printed sheet of ' + (c.repeatOf || 'the earlier job') + ' next to the machine. Compare the first sheets with it before running the full quantity.'});
+    else if (c.repeat === 'no') B.push({text:'Print the first sheets and get the colours approved before running the full quantity.'});
+    else B.push({warn:'Repeat job not marked on the job card. Ask the job card person before printing.'});
+    B.push({table:{heads:['Sheet','Colours checked against','Approved by','Date & time'], rows:(c.sheets.length ? c.sheets : [{name:''}]).map(sh => [sh.name, c.repeat === 'yes' ? 'Earlier job' + (c.repeatOf ? ' ' + c.repeatOf : '') : 'Approved proof', '', '']), minRow:22}});
+    B.push({step:[2, 'Print the sheets']});
     if (!c.sheets.length) B.push({warn:'No printed sheets on this job card.'});
     else {
-      B.push({h:'Sheets to print'}, {table:{heads:['Sheet','Paper','GSM','Sheet size','Sheets to print','Colours','Pantone','Parts on sheet'],
-        rows:c.sheets.map(s => [s.name, s.paper, s.gsm, shSize(s), s.count ? fmtN(s.count) : '', sheetColours(s), s.pantone, s.ups])}});
-      if (c.sheets.length > 1) B.push({kv:[['Total sheets to print', fmtN(totalSheets(c))]]});
+      B.push({table:{heads:['Sheet','Paper & GSM','Sheet size','Parts & ups','Colours','Pantone','Sheets to print'],
+        rows:c.sheets.map(sh => [sh.name, [sh.paper, sh.gsm ? sh.gsm + ' GSM' : ''].filter(Boolean).join(' · '), shSize(sh), sh.ups, sheetColours(sh), sh.pantone, sh.count ? fmtN(sh.count) : ''])}});
+      B.push({kv:[['Total sheets to print', totalSheets(c) ? fmtN(totalSheets(c)) : 'Not set'], ['Job quantity', qty ? fmtN(qty) + ' pcs' : 'Not set']]});
     }
-    B.push({h:'Check before and after printing'}, {checks:[
+    B.push({step:[3, 'Count the printed sheets and pass them to fabrication']});
+    if (c.sheets.length) B.push({table:{heads:['Sheet','Sheets to print','Sheets printed','Short / extra'], rows:c.sheets.map(sh => [sh.name, sh.count ? fmtN(sh.count) : '', '', '']), minRow:22}});
+    B.push({h:'Check'}, {checks:[
       'Print only the client-approved artwork version.',
       'Right paper and GSM loaded for each sheet.',
-      'First sheet checked against the approved proof and Pantone shades.',
-      'Sheets counted after printing. Short count reported before passing to fabrication.']});
+      c.repeat === 'yes' ? 'Colours match the earlier job before running the full quantity.' : 'Colours approved before running the full quantity.',
+      'Short count reported before passing to fabrication.']});
     notes('print');
   }
   if (k === 'fab'){
@@ -4115,6 +4125,8 @@ function missingFor(c){
   if (RIGID.has(c.boxType) && !c.making) m.push('Box making (grooving or half cut)');
   if (RIGID.has(c.boxType) && !c.inPrint) m.push('Inside paper printed (yes or no)');
   if (P.includes('print') && !c.sheets.length) m.push('Printed sheets');
+  if (P.includes('print') && !c.repeat) m.push('Repeat job (yes or no)');
+  if (c.repeat === 'yes' && !c.repeatOf) m.push('Earlier job card no. for the repeat job');
   c.sheets.forEach(s => { const miss = [!s.paper && 'paper', !s.gsm && 'GSM', !(s.L && s.W) && 'sheet size', !s.ups && 'ups', !s.count && 'sheets to print'].filter(Boolean); if (miss.length) m.push(s.name + ': ' + miss.join(', ')); });
   if (P.includes('finish') && !c.coat) m.push('Coating (write None if there is no coating)');
   c.fx.forEach(f => { if (!f.kind) m.push('Special effect type'); else if (f.kind !== 'spotuv' && !f.blocks) m.push(FX[f.kind] + ': number of blocks'); if (f.kind === 'foil' && !f.colour) m.push('Foiling: foil colour'); });
@@ -4173,8 +4185,11 @@ function teamSummary(c, k){
     return L.join('\n') + (note ? '\nNote: ' + note : '');
   }
   if (k === 'print'){
-    if (!c.sheets.length) out.push('No printed sheets');
-    c.sheets.forEach(sh => out.push((sh.name || 'Sheet') + ': ' + join([[sh.paper, sh.gsm ? sh.gsm + ' GSM' : ''].filter(Boolean).join(' '), shSize(sh), sh.count ? fmtN(sh.count) + ' sheets' : '', sheetColours(sh), sh.pantone])));
+    const L = ['1. ' + (c.repeat === 'yes' ? 'Repeat job: match colours with ' + (c.repeatOf || 'the earlier job') : c.repeat === 'no' ? 'New job: colours approved before full production' : 'Colour approval before full production (repeat job not marked)')];
+    if (!c.sheets.length) L.push('2. No printed sheets');
+    c.sheets.forEach((sh, i) => L.push((i ? '   ' : '2. ') + (sh.name || 'Sheet') + ': ' + join([sh.count ? fmtN(sh.count) + ' sheets' : 'sheets not set', sheetColours(sh), sh.pantone, [sh.paper, sh.gsm ? sh.gsm + ' GSM' : ''].filter(Boolean).join(' '), shSize(sh)])));
+    L.push('3. Total ' + (totalSheets(c) ? fmtN(totalSheets(c)) + ' sheets' : 'sheets not set') + (qty ? ' for ' + fmtN(qty) + ' pcs' : '') + ', counted and passed to fabrication');
+    return L.join('\n') + (c.notesPrint ? '\nNote: ' + c.notesPrint : '');
   }
   if (k === 'fab'){
     const steps = [c.coat && !/^none$/i.test(c.coat) ? c.coat : '', ...fx.map(f => FX[f.kind] + (f.colour ? ' (' + f.colour + ')' : '') + (f.part ? ' – ' + f.part : ''))].filter(Boolean);
@@ -4504,7 +4519,13 @@ function renderCard(){
         RIGID.has(c.boxType) ? fld('Inside paper printed?', sel([['','—'], ['yes','Yes, printed inside'], ['no','No, plain']], c.inPrint || '', {onchange:e => set('inPrint', e.target.value)})) : null),
       hasDiff(c) ? h('div',{class:'note', id:'jc-lid'}, n0(c.h) && diffText(c) ? 'Lid height ' + fmtN(n0(c.h) - n0(c.diff), 1) + ' mm' : '') : null,
       RIGID.has(c.boxType) ? h('div',{class:'note'}, 'Size, height difference, board thickness, box making, inside paper, coating & special effects and inserts are what you settle with the floor manager first. They print at the top of the master sheet.') : null),
-    P.includes('print') ? sec('1', 'Printing & paper', rowsFor('sheets', [['name','Sheet'],['paper','Paper'],['gsm','GSM','num'],['L','Size L (in)','num'],['W','Size W (in)','num'],['ups','Parts & ups on sheet','wide','e.g. Top × 2, Bottom × 2'],['colours','Colours','num'],['pms','Pantones','num'],['pantone','Pantone code','', 'e.g. 186 C'],['count','Sheets to print','num']],
+    P.includes('print') ? sec('1', 'Printing & paper',
+      h('div',{class:'row', style:'align-items:flex-end;gap:12px;margin-bottom:6px'},
+        fld('Repeat job?', sel([['','—'], ['no','No, new job'], ['yes','Yes, repeat job']], c.repeat || '', {onchange:e => { set('repeat', e.target.value); renderCard(); }})),
+        c.repeat === 'yes' ? fld('Earlier job card no.', h('input',{value:c.repeatOf || '', placeholder:'e.g. CO-102', list:'jc-ids', style:'width:150px;text-transform:uppercase', oninput:e => set('repeatOf', e.target.value.toUpperCase().trim())})) : null,
+        h('datalist',{id:'jc-ids'}, [...S.cards.keys()].filter(id => id !== c.id).map(id => h('option',{value:id}))),
+        h('div',{class:'note', style:'flex:1;min-width:220px'}, c.repeat === 'yes' ? 'The printing team matches the colours with that job.' : c.repeat === 'no' ? 'The printing team gets the colours approved before full production.' : 'Repeat jobs are matched with the earlier job; new jobs get colour approval first.')),
+      rowsFor('sheets', [['name','Sheet'],['paper','Paper'],['gsm','GSM','num'],['L','Size L (in)','num'],['W','Size W (in)','num'],['ups','Parts & ups on sheet','wide','e.g. Top × 2, Bottom × 2'],['colours','Colours','num'],['pms','Pantones','num'],['pantone','Pantone code','', 'e.g. 186 C'],['count','Sheets to print','num']],
       () => ({name:'Printed sheet ' + (c.sheets.length + 1), paper:'', gsm:null, L:null, W:null, ups:'', colours:4, pantone:'', count:null}), 'Add printed sheet')) : '',
     P.includes('finish') ? sec('2', 'Finishing', txt('Coating (all printed sheets)', 'coat', {ph:'e.g. Lamination – Thermal matte, or None'}),
       rowsFor('fx', [['kind','Special effect','sel',Object.entries(FX)],['sheet','On sheet', sheetNames.length ? 'sel' : '', sheetNames.length ? sheetNames : ''],['part','Part','wide','e.g. logo on lid'],['blocks','Blocks','num'],['colour','Foil colour / UV type','', 'e.g. Gold']],
