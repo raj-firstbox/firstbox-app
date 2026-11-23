@@ -79,6 +79,7 @@ drop policy if exists docs_delete on public.docs;
 create policy docs_read on public.docs for select to authenticated using (
   public.my_role() = 'owner'
   or (public.my_role() in ('inventory','jobcards') and col in ('jobcards','stock','stockLog','shared'))
+  or (public.my_role() = 'inventory' and col = 'orders')   -- the stock team sees the running orders list (read only)
   or (public.my_role() = 'jobcards' and col in ('orders','invoices','clients','billItems','payments'))
 );
 create policy docs_insert on public.docs for insert to authenticated with check (
