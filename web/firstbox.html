@@ -334,6 +334,10 @@ input[type=date]{cursor:pointer}
 .chip{display:inline-flex;align-items:center;gap:4px;background:var(--accent-soft);color:var(--accent);border-radius:999px;padding:2px 4px 2px 10px;font-weight:700;font-size:12px}
 .chip button{border:0;background:none;color:inherit;font-size:14px;cursor:pointer;padding:0 4px}
 .cardhits{display:flex;flex-wrap:wrap;gap:6px}
+.rungroup{margin-top:16px}
+@media (min-width:641px){.rungroup table.runtable{table-layout:fixed;width:100%}.rungroup table.runtable td{white-space:normal!important;min-width:0!important}.rungroup .runtable th:nth-child(1){width:12%}.rungroup .runtable td:nth-child(1){white-space:nowrap!important}.rungroup .runtable th:nth-child(2){width:8%}.rungroup .runtable th:nth-child(3){width:14%}.rungroup .runtable th:nth-child(4){width:7%}.rungroup .runtable th:nth-child(5){width:21%}.rungroup .runtable th:nth-child(6){width:15%}.rungroup .runtable th:nth-child(7){width:14%}.rungroup .runtable th:nth-child(8){width:9%}}
+.rungroup h3{margin:0 0 8px;font-size:16px}
+.rungroup h3 .sub{font-weight:400;font-size:13px}
 .urgtag{display:inline-block;background:var(--bad);color:#fff;border-radius:4px;padding:0 6px;font-size:11px;font-weight:700}
 .runstep[disabled]{cursor:default}
 .runlist{display:grid;gap:12px}
@@ -1539,19 +1543,43 @@ const daysTo = d => d ? Math.round((new Date(d + 'T00:00:00') - new Date(today()
 // Running orders (Raj): every client order not yet fully delivered, oldest order first, for the whole team.
 const runningRows = () => [...S.orders.values()].map(o => ({o, s: poStats(o)})).filter(r => r.s.status !== 'done')
   .sort((a, b) => String(a.o.poDate || '').localeCompare(String(b.o.poDate || '')) || n0(a.o.createdAt) - n0(b.o.createdAt));
+// Running orders by product (Raj): each part of a PO goes under the product of its linked job card(s);
+// a PO with a box and printed manuals shows under Rigid boxes (box part) and under Printing (manuals).
+const RUN_GROUPS = [['rigid','Rigid boxes'], ['mono','Mono cartons'], ['corrugated','Corrugated boxes'], ['mdf','MDF boxes'], ['custom','Custom boxes'], ['printing','Printing'], ['none','No job card linked yet']];
+const runGroupName = k => (RUN_GROUPS.find(g => g[0] === k) || [k, k])[1];
+const cardGroup = id => { const c = S.cards.get(id); if (!c) return null; const t = c.boxType; return RIGID.has(t) ? 'rigid' : ['mono','corrugated','mdf','custom','printing'].includes(t) ? t : 'rigid'; };
+const partGroups = p => { const g = [...new Set((p.cards || []).map(cardGroup).filter(Boolean))]; return g.length ? g : ['none']; };
+function runningByGroup(rows){
+  const out = new Map(RUN_GROUPS.map(([k]) => [k, []]));
+  for (const r of rows){
+    const all = partsOf(r.o), by = new Map();
+    for (const p of all) for (const g of partGroups(p)){ if (!by.has(g)) by.set(g, []); by.get(g).push(p); }
+    for (const [g, parts] of by){
+      const vids = new Set(parts.flatMap(p => p.variants.map(v => v.id)));
+      const vs = (r.o.variants || []).filter(v => vids.has(v.id));
+      const ordered = vs.reduce((a, v) => a + n0(v.qty), 0), delivered = vs.reduce((a, v) => a + Math.min(n0(v.qty), n0(r.s.del[v.id])), 0);
+      const remaining = Math.max(0, ordered - delivered);
+      if (ordered && remaining <= 0) continue;   // this product is fully delivered, other parts still running
+      out.get(g).push({o:r.o, s:r.s, parts, others: all.length - parts.length, pct: ordered ? Math.min(100, delivered / ordered * 100) : 0, remaining});
+    }
+  }
+  return [...out].filter(([, list]) => list.length);
+}
 function runningTable(rows, limit){
   const canOpen = canView('order'), list = limit ? rows.slice(0, limit) : rows;
   return h('div',{class:'tablebox'}, h('table',{class:'jobs runtable'},
     h('thead',{}, h('tr',{}, h('th',{},'Order date'), h('th',{},'Running'), h('th',{},'Client'), h('th',{},'PO no.'), h('th',{},'What’s in it'), h('th',{},'Delivered'), h('th',{},'Next delivery'), h('th',{},'Job cards'))),
-    h('tbody',{}, list.map(({o, s}) => {
-      const age = o.poDate ? -daysTo(o.poDate) : null, nx = openReqs(o)[0], due = nx ? nx.needBy : o.due, dd = daysTo(due), cards = poCards(o);
+    h('tbody',{}, list.map(r => {
+      const {o, s} = r, parts = r.parts || partsOf(o), pct = r.parts ? r.pct : s.pct, left = r.parts ? r.remaining : s.remaining;
+      const age = o.poDate ? -daysTo(o.poDate) : null, nx = openReqs(o)[0], due = nx ? nx.needBy : o.due, dd = daysTo(due), cards = [...new Set(parts.flatMap(p => p.cards || []))];
       return h('tr',{tabindex: canOpen ? '0' : null, style: canOpen ? '' : 'cursor:default', onclick:() => { if (canOpen) go('order', o.id); }, onkeydown:e => { if (canOpen && e.key === 'Enter') go('order', o.id); }},
         h('td',{}, fmtDate(o.poDate) || '—'),
         h('td',{}, age == null ? '—' : h('span',{class: age > 30 ? 'neg' : ''}, age + (age === 1 ? ' day' : ' days'))),
         h('td',{}, h('div',{class:'jobno'}, o.client || '(no client)')),
         h('td',{}, o.poNo || '—'),
-        h('td',{style:'white-space:normal;min-width:180px'}, partsOf(o).map(p => p.name + (p.variants.length > 1 ? ' (' + p.variants.length + ')' : '')).join(', ')),
-        h('td',{}, progBar(s.pct, false), h('div',{class:'sub'}, Math.round(s.pct) + '% · ' + fmtN(s.remaining) + ' pcs left')),
+        h('td',{style:'white-space:normal;min-width:180px'}, parts.map(p => p.name + (p.variants.length > 1 ? ' (' + p.variants.length + ')' : '')).join(', '),
+          r.others ? h('div',{class:'sub'}, '+ ' + r.others + ' other part' + (r.others === 1 ? '' : 's') + ' in this PO') : null),
+        h('td',{}, progBar(pct, false), h('div',{class:'sub'}, Math.round(pct) + '% · ' + fmtN(left) + ' pcs left')),
         h('td',{style:'white-space:normal;min-width:170px'}, nx ? [nx.urgent ? h('span',{class:'urgtag'}, 'URGENT') : null, ' ', reqText(o, nx)] : h('span',{class:'muted'}, 'Whole PO'),
           h('div',{class:'sub' + (dd != null && dd < 0 ? ' neg' : '')}, due ? (dd < 0 ? 'late by ' + (-dd) + ' day' + (dd === -1 ? '' : 's') + ' · ' : 'by ') + fmtDate(due) : 'no date')),
         h('td',{style:'white-space:normal;min-width:90px'}, cards.length ? cards.join(', ') : h('span',{class:'muted'}, '—')));
@@ -1573,9 +1601,13 @@ function renderRunning(root){
   if (canAdd) root.append(ordersTabs());
   if (!S.db){ root.append(h('div',{class:'card empty'},'Saved data is not available here.')); return; }
   if (!S.loaded.orders){ root.append(h('div',{class:'card empty'},'Loading orders…')); return; }
-  const rows = runningRows();
+  const rows = runningRows(), groups = runningByGroup(rows);
   root.append(runningKpis(rows));
-  root.append(rows.length ? runningTable(rows) : h('div',{class:'card empty'}, 'No running orders. Every client PO is fully delivered.'));
+  if (!rows.length){ root.append(h('div',{class:'card empty'}, 'No running orders. Every client PO is fully delivered.')); return; }
+  const cur = S.runGroup && groups.some(([k]) => k === S.runGroup) ? S.runGroup : 'all';
+  const tab = (k, label, n) => h('button',{type:'button', class:'jctab', 'aria-current': cur === k ? 'page' : 'false', onclick:() => { S.runGroup = k; renderOrders(); }}, label + ' (' + n + ')');
+  root.append(h('nav',{class:'jump', 'aria-label':'Products', style:'margin-bottom:14px;position:static'}, tab('all', 'All', rows.length), groups.map(([k, list]) => tab(k, runGroupName(k), list.length))));
+  root.append(cur === 'all' ? runningTable(rows) : runningTable(groups.find(([k]) => k === cur)[1]));
 }
 function renderOrders(){
   const root = $('#view-orders'); root.replaceChildren();
@@ -3116,9 +3148,17 @@ function renderHome(){
     const rows = runningRows();
     root.append(h('div',{class:'row', style:'justify-content:space-between;align-items:baseline;margin-top:22px'},
       h('h2',{class:'hsub', style:'margin:0'}, 'Running orders' + (rows.length ? ' (' + rows.length + ')' : '')),
-      h('button',{class:'linkbtn', onclick:() => { S.ordTab = 'running'; go('orders'); }}, rows.length > 10 ? 'See all ' + rows.length + ' →' : 'Open orders →')));
+      h('button',{class:'linkbtn', onclick:() => { S.ordTab = 'running'; S.runGroup = 'all'; go('orders'); }}, 'All running orders →')));
     root.append(runningKpis(rows));
-    root.append(rows.length ? runningTable(rows, 10) : h('div',{class:'card empty'}, 'No running orders. Every client PO is fully delivered.'));
+    if (!rows.length) root.append(h('div',{class:'card empty'}, 'No running orders. Every client PO is fully delivered.'));
+    for (const [k, list] of runningByGroup(rows)){
+      const pcs = list.reduce((a, r) => a + r.remaining, 0);
+      root.append(h('div',{class:'rungroup'},
+        h('div',{class:'row', style:'justify-content:space-between;align-items:baseline'},
+          h('h3',{}, runGroupName(k), h('span',{class:'sub'}, ' · ' + list.length + ' order' + (list.length === 1 ? '' : 's') + ' · ' + fmtN(pcs) + ' pcs to deliver')),
+          list.length > 5 ? h('button',{class:'linkbtn', onclick:() => { S.ordTab = 'running'; S.runGroup = k; go('orders'); }}, 'See all ' + list.length + ' →') : null),
+        runningTable(list, 5)));
+    }
   }
   root.append(h('h2',{class:'hsub', style:'margin-top:26px'}, 'Settings'));
   root.append(h('div',{class:'hgrid set'},
