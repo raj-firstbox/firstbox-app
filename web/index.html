@@ -1627,13 +1627,13 @@ function renderRunning(root){
     canAdd ? h('button',{class:'btn primary', onclick:() => { S.ordNew = true; go('pos'); }}, '+ New PO') : null));
   if (!S.db){ root.append(h('div',{class:'card empty'},'Saved data is not available here.')); return; }
   if (!S.loaded.orders){ root.append(h('div',{class:'card empty'},'Loading orders…')); return; }
-  const rows = runningRows(), groups = runningByGroup(rows);
+  const rows = runningRows(), groups = runningByGroup(rows), todo = S.loaded.samples ? smpTodo() : [];
   root.append(runningKpis(rows));
-  if (!rows.length){ root.append(h('div',{class:'card empty'}, 'No running orders. Every client PO is fully delivered.')); return; }
-  const cur = S.runGroup && groups.some(([k]) => k === S.runGroup) ? S.runGroup : 'all';
+  if (!rows.length && !todo.length){ root.append(h('div',{class:'card empty'}, 'No running orders. Every client PO is fully delivered.')); return; }
+  const cur = S.runGroup === 'samples' && todo.length ? 'samples' : S.runGroup && groups.some(([k]) => k === S.runGroup) ? S.runGroup : 'all';
   const tab = (k, label, n) => h('button',{type:'button', class:'jctab', 'aria-current': cur === k ? 'page' : 'false', onclick:() => { S.runGroup = k; renderOrders(); }}, label + ' (' + n + ')');
-  root.append(h('nav',{class:'jump', 'aria-label':'Products', style:'margin-bottom:14px;position:static'}, tab('all', 'All', rows.length), groups.map(([k, list]) => tab(k, runGroupName(k), list.length))));
-  root.append(cur === 'all' ? runningTable(rows) : runningTable(groups.find(([k]) => k === cur)[1]));
+  root.append(h('nav',{class:'jump', 'aria-label':'Products', style:'margin-bottom:14px;position:static'}, tab('all', 'All', rows.length), groups.map(([k, list]) => tab(k, runGroupName(k), list.length)), todo.length ? tab('samples', 'Samples to make', todo.length) : null));
+  root.append(cur === 'samples' ? sampleRows(todo, true) : !rows.length ? h('div',{class:'card empty'}, 'No running orders. Every client PO is fully delivered.') : cur === 'all' ? runningTable(rows) : runningTable(groups.find(([k]) => k === cur)[1]));
 }
 function renderOrders(){
   const root = $('#view-orders'); root.replaceChildren();
@@ -3167,7 +3167,7 @@ function saveSample(s){ s.updatedAt = Date.now(); S.samples.set(s.id, s); const 
 function markSample(s, ready){
   const x = {...s, status: ready ? 'ready' : 'todo'};
   if (ready){ x.readyBy = S.myName || ROLES[S.role]?.n || 'Owner'; x.readyAt = today(); } else { delete x.readyBy; delete x.readyAt; }
-  saveSample(x); renderSamples(); if (S.view === 'home') renderHome();
+  saveSample(x); renderSamples(); if (S.view === 'home') renderHome(); if (S.view === 'orders') renderOrders();
 }
 function sampleForm(ex){
   const st = ex ? clone(ex) : {date: today(), client:'', boxType:'rigid', item:'', l:null, w:null, h:null, unit: (() => { try { return localStorage.getItem('fb-smpUnit') || 'mm'; } catch(e){ return 'mm'; } })(), kind:'printed', details:'', needBy:'', urgent:false, notes:''};
@@ -3303,14 +3303,13 @@ function renderHome(){
           list.length > 5 ? h('button',{class:'linkbtn', onclick:() => { S.runGroup = k; go('orders'); }}, 'See all ' + list.length + ' →') : null),
         runningTable(list, 5)));
     }
-  }
-  // Samples still to make (Raj): first 5, urgent and earliest needed-by first.
-  if (S.db && S.loaded.samples){
-    const todo = smpTodo();
-    root.append(h('div',{class:'row', style:'justify-content:space-between;align-items:baseline;margin-top:26px'},
-      h('h2',{class:'hsub', style:'margin:0'}, 'Samples to make' + (todo.length ? ' (' + todo.length + ')' : '')),
-      h('button',{class:'linkbtn', onclick:() => { S.smpTab = 'todo'; go('samples'); }}, todo.length > 5 ? 'See all ' + todo.length + ' →' : 'Open samples →')));
-    root.append(todo.length ? sampleRows(todo.slice(0, 5), true) : h('div',{class:'card empty'}, 'No samples waiting to be made.'));
+    // Samples to make sit with the running orders too (Raj), as their own group after the products.
+    const todo = S.loaded.samples ? smpTodo() : [];
+    if (todo.length) root.append(h('div',{class:'rungroup'},
+      h('div',{class:'row', style:'justify-content:space-between;align-items:baseline'},
+        h('h3',{}, 'Samples to make', h('span',{class:'sub'}, ' · ' + todo.length + ' sample' + (todo.length === 1 ? '' : 's') + (todo.some(smpLate) ? ' · ' + todo.filter(smpLate).length + ' late' : ''))),
+        h('button',{class:'linkbtn', onclick:() => { S.smpTab = 'todo'; go('samples'); }}, todo.length > 5 ? 'See all ' + todo.length + ' →' : 'Open samples →')),
+      sampleRows(todo.slice(0, 5), true)));
   }
   root.append(h('h2',{class:'hsub', style:'margin-top:26px'}, 'Settings'));
   root.append(h('div',{class:'hgrid set'},
@@ -5943,6 +5942,7 @@ async function boot(){
       for (const [id, x] of S.samples) if (!m.has(id) && busy('samples/' + id)) m.set(id, x);
       S.samples = m; if (!snap.metadata.fromCache) S.loaded.samples = true;
       if (S.view === 'samples' && !$('#view-samples').contains(document.activeElement)) renderSamples();
+      if (S.view === 'orders' && !$('#view-orders').contains(document.activeElement)) renderOrders();
       homeSoon();
     }, () => { S.loaded.samples = true; if (S.view === 'samples') renderSamples(); });
 
