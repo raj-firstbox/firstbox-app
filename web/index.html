@@ -1536,16 +1536,9 @@ function reqStats(o, r){
 const reqOrder = (a, b) => (b.urgent ? 1 : 0) - (a.urgent ? 1 : 0) || String(a.needBy || '9999').localeCompare(String(b.needBy || '9999'));
 const openReqs = o => (o.requests || []).filter(r => !r.cancelled && !reqStats(o, r).done).sort(reqOrder);
 const reqText = (o, r) => Object.entries(r.items || {}).filter(([, q]) => n0(q) > 0).map(([vid, q]) => { const v = (o.variants || []).find(x => x.id === vid); return (v ? v.name : '?') + ' ' + fmtN(q); }).join(' · ');
-// Job cards linked to a PO's parts, and where each one is in the factory.
+// Job cards linked to a PO's parts.
 const poCards = o => [...new Set(partsOf(o).flatMap(p => p.cards || []))];
-const cardParts = (o, id) => partsOf(o).filter(p => (p.cards || []).includes(id)).map(p => p.name);
 const posOfCard = id => [...S.orders.values()].filter(o => poCards(o).includes(id));
-function nowWith(o){
-  const out = [];
-  for (const id of poCards(o)){ const c = S.cards.get(id); if (!c) continue; const st = runStage(c);
-    out.push((st.next ? st.next.n.replace(/ team$/, '') : 'All teams done') + ' (' + cardParts(o, id).join(', ') + ')'); }
-  return out;
-}
 function knownClients(){
   const s = new Set();
   for (const m of [S.orders, S.cards, S.jobs, S.past]) for (const x of m.values()) if (x.client && String(x.client).trim()) s.add(String(x.client).trim());
@@ -1559,20 +1552,36 @@ function ordersTabs(){
     t('running', 'Running orders', openN + ' order' + (openN === 1 ? '' : 's') + ' not fully delivered'),
     t('dispatch', 'Client POs & dispatches', allN + ' PO' + (allN === 1 ? '' : 's') + ': parts, delivery requests, dispatches'));
 }
-// Team ticks for a job card (stored on the job card: run.done = {team: date}).
 const daysTo = d => d ? Math.round((new Date(d + 'T00:00:00') - new Date(today() + 'T00:00:00')) / 864e5) : null;
-function saveRun(c){ c.updatedAt = Date.now(); S.cards.set(c.id, c); const snap = clone(c); flush('jobcards/' + c.id, () => snap);
-  if (S.cdraft && S.cdraft.id === c.id){ S.cdraft.run = clone(c.run); } }
-function runStage(c){ const T = teamsFor(c), done = (c.run && c.run.done) || {}; const next = T.find(t => !done[t.k]); return {T, done, next, n: T.filter(t => done[t.k]).length}; }
-function teamTicks(c, after, readOnly){
-  const {T, done, next} = runStage(c);
-  return h('div',{class:'runsteps'}, T.map((t, i) => { const on = !!done[t.k];
-    return h('button',{type:'button', class:'runstep' + (on ? ' on' : '') + (next && next.k === t.k ? ' now' : ''), 'aria-pressed': on ? 'true' : 'false', disabled: readOnly,
-      title: on ? t.n + ' done on ' + fmtDate(done[t.k]) + (readOnly ? '' : '. Click to undo.') : readOnly ? t.n : 'Mark ' + t.n.toLowerCase() + ' as done',
-      onclick:() => { const cc = S.cards.get(c.id) || c; cc.run = cc.run || {}; cc.run.done = cc.run.done || {}; if (on) delete cc.run.done[t.k]; else cc.run.done[t.k] = today(); saveRun(cc); if (after) after(); }},
-      h('span',{class:'rsn'}, on ? '✓' : String(i + 1)), h('span',{class:'rst'}, t.n.replace(/ team$/, '')), on ? h('span',{class:'rsd'}, fmtDate(done[t.k])) : null); }));
-}
 // Running orders (Raj): every client order not yet fully delivered, oldest order first, for the whole team.
+const runningRows = () => [...S.orders.values()].map(o => ({o, s: poStats(o)})).filter(r => r.s.status !== 'done')
+  .sort((a, b) => String(a.o.poDate || '').localeCompare(String(b.o.poDate || '')) || n0(a.o.createdAt) - n0(b.o.createdAt));
+function runningTable(rows, limit){
+  const canOpen = canView('order'), list = limit ? rows.slice(0, limit) : rows;
+  return h('div',{class:'tablebox'}, h('table',{class:'jobs runtable'},
+    h('thead',{}, h('tr',{}, h('th',{},'Order date'), h('th',{},'Running'), h('th',{},'Client'), h('th',{},'PO no.'), h('th',{},'What’s in it'), h('th',{},'Delivered'), h('th',{},'Next delivery'), h('th',{},'Job cards'))),
+    h('tbody',{}, list.map(({o, s}) => {
+      const age = o.poDate ? -daysTo(o.poDate) : null, nx = openReqs(o)[0], due = nx ? nx.needBy : o.due, dd = daysTo(due), cards = poCards(o);
+      return h('tr',{tabindex: canOpen ? '0' : null, style: canOpen ? '' : 'cursor:default', onclick:() => { if (canOpen) go('order', o.id); }, onkeydown:e => { if (canOpen && e.key === 'Enter') go('order', o.id); }},
+        h('td',{}, fmtDate(o.poDate) || '—'),
+        h('td',{}, age == null ? '—' : h('span',{class: age > 30 ? 'neg' : ''}, age + (age === 1 ? ' day' : ' days'))),
+        h('td',{}, h('div',{class:'jobno'}, o.client || '(no client)')),
+        h('td',{}, o.poNo || '—'),
+        h('td',{style:'white-space:normal;min-width:180px'}, partsOf(o).map(p => p.name + (p.variants.length > 1 ? ' (' + p.variants.length + ')' : '')).join(', ')),
+        h('td',{}, progBar(s.pct, false), h('div',{class:'sub'}, Math.round(s.pct) + '% · ' + fmtN(s.remaining) + ' pcs left')),
+        h('td',{style:'white-space:normal;min-width:170px'}, nx ? [nx.urgent ? h('span',{class:'urgtag'}, 'URGENT') : null, ' ', reqText(o, nx)] : h('span',{class:'muted'}, 'Whole PO'),
+          h('div',{class:'sub' + (dd != null && dd < 0 ? ' neg' : '')}, due ? (dd < 0 ? 'late by ' + (-dd) + ' day' + (dd === -1 ? '' : 's') + ' · ' : 'by ') + fmtDate(due) : 'no date')),
+        h('td',{style:'white-space:normal;min-width:90px'}, cards.length ? cards.join(', ') : h('span',{class:'muted'}, '—')));
+    }))));
+}
+function runningKpis(rows){
+  const urgent = rows.filter(r => openReqs(r.o).some(q => q.urgent)).length;
+  const late = rows.filter(r => { const q = openReqs(r.o)[0], d = q ? q.needBy : r.o.due; return d && daysTo(d) < 0; }).length;
+  return h('div',{class:'kpis'},
+    kpi('Running orders', String(rows.length), fmtN(rows.reduce((a, r) => a + r.s.remaining, 0)) + ' pcs still to deliver'),
+    kpi('Urgent requests', String(urgent), urgent ? 'client asked for something urgently' : 'none'),
+    kpi('Late', String(late), late ? 'needed-by date has passed' : 'none', late ? 'bad' : ''));
+}
 function renderRunning(root){
   const canAdd = canView('order');
   root.append(h('div',{class:'head'},
@@ -1581,31 +1590,9 @@ function renderRunning(root){
   if (canAdd) root.append(ordersTabs());
   if (!S.db){ root.append(h('div',{class:'card empty'},'Saved data is not available here.')); return; }
   if (!S.loaded.orders){ root.append(h('div',{class:'card empty'},'Loading orders…')); return; }
-  const rows = [...S.orders.values()].map(o => ({o, s: poStats(o)})).filter(r => r.s.status !== 'done')
-    .sort((a, b) => String(a.o.poDate || '').localeCompare(String(b.o.poDate || '')) || n0(a.o.createdAt) - n0(b.o.createdAt));
-  const urgent = rows.filter(r => openReqs(r.o).some(q => q.urgent)).length;
-  const late = rows.filter(r => { const q = openReqs(r.o)[0], d = q ? q.needBy : r.o.due; return d && daysTo(d) < 0; }).length;
-  root.append(h('div',{class:'kpis'},
-    kpi('Running orders', String(rows.length), fmtN(rows.reduce((a, r) => a + r.s.remaining, 0)) + ' pcs still to deliver'),
-    kpi('Urgent requests', String(urgent), urgent ? 'client asked for something urgently' : 'none'),
-    kpi('Late', String(late), late ? 'needed-by date has passed' : 'none', late ? 'bad' : '')));
-  if (!rows.length){ root.append(h('div',{class:'card empty'}, 'No running orders. Every client PO is fully delivered.')); return; }
-  root.append(h('div',{class:'tablebox'}, h('table',{class:'jobs runtable'},
-    h('thead',{}, h('tr',{}, h('th',{},'Order date'), h('th',{},'Running'), h('th',{},'Client'), h('th',{},'PO no.'), h('th',{},'What’s in it'), h('th',{},'Delivered'), h('th',{},'Next delivery'), h('th',{},'Now with'))),
-    h('tbody',{}, rows.map(({o, s}) => {
-      const age = o.poDate ? -daysTo(o.poDate) : null, nx = openReqs(o)[0], due = nx ? nx.needBy : o.due, dd = daysTo(due), nw = nowWith(o);
-      const parts = partsOf(o);
-      return h('tr',{tabindex: canAdd ? '0' : null, style: canAdd ? '' : 'cursor:default', onclick:() => { if (canAdd) go('order', o.id); }, onkeydown:e => { if (canAdd && e.key === 'Enter') go('order', o.id); }},
-        h('td',{}, fmtDate(o.poDate) || '—'),
-        h('td',{}, age == null ? '—' : h('span',{class: age > 30 ? 'neg' : ''}, age + (age === 1 ? ' day' : ' days'))),
-        h('td',{}, h('div',{class:'jobno'}, o.client || '(no client)')),
-        h('td',{}, o.poNo || '—'),
-        h('td',{style:'white-space:normal;min-width:180px'}, parts.map(p => p.name + (p.variants.length > 1 ? ' (' + p.variants.length + ')' : '')).join(', ')),
-        h('td',{}, progBar(s.pct, false), h('div',{class:'sub'}, Math.round(s.pct) + '% · ' + fmtN(s.remaining) + ' pcs left')),
-        h('td',{style:'white-space:normal;min-width:170px'}, nx ? [nx.urgent ? h('span',{class:'urgtag'}, 'URGENT') : null, ' ', reqText(o, nx)] : h('span',{class:'muted'}, 'Whole PO'),
-          h('div',{class:'sub' + (dd != null && dd < 0 ? ' neg' : '')}, due ? (dd < 0 ? 'late by ' + (-dd) + ' day' + (dd === -1 ? '' : 's') + ' · ' : 'by ') + fmtDate(due) : 'no date')),
-        h('td',{style:'white-space:normal;min-width:140px'}, nw.length ? nw.map(x => h('div',{}, x)) : h('span',{class:'muted'}, 'No job card linked')));
-    })))));
+  const rows = runningRows();
+  root.append(runningKpis(rows));
+  root.append(rows.length ? runningTable(rows) : h('div',{class:'card empty'}, 'No running orders. Every client PO is fully delivered.'));
 }
 function renderOrders(){
   const root = $('#view-orders'); root.replaceChildren();
@@ -1789,10 +1776,9 @@ function renderOrder(){
             h('td',{}, h('b',{}, vname(v))), h('td',{class:'n'}, fmtN(qq)), h('td',{class:'n'}, fmtN(dd)), h('td',{class:'n'}, h('b',{}, fmtN(Math.max(0, rem)))),
             h('td',{}, progBar(qq ? Math.min(100, dd / qq * 100) : 0, rem <= 0)),
             h('td',{}, rem < 0 ? h('span',{class:'warnline'}, fmtN(-rem) + ' extra sent') : rem === 0 ? h('span',{class:'pos'}, '✓ Done') : dd > 0 ? 'Part sent' : 'Not sent yet')); }))))),
-        (p.cards || []).length ? (p.cards || []).map(id => { const c = S.cards.get(id);
-          return h('div',{class:'pocard'}, h('div',{class:'row', style:'gap:8px'}, h('button',{class:'linkbtn jcno', onclick:() => go('card', id)}, id), c ? h('span',{class:'note'}, [c.client, c.description].filter(Boolean).join(' · ')) : h('span',{class:'note'}, 'job card not found')),
-            c ? teamTicks(c, () => renderOrder()) : null); })
-          : h('div',{class:'note'}, 'No job card linked yet. Link one in “Edit PO”.'));
+        h('div',{class:'row', style:'gap:8px'}, h('span',{class:'note'}, 'Job card:'), (p.cards || []).length ? (p.cards || []).map(id => { const c = S.cards.get(id);
+          return h('span',{}, h('button',{class:'linkbtn jcno', onclick:() => go('card', id)}, id), c && c.description ? h('span',{class:'note'}, ' ' + c.description) : null); })
+          : h('span',{class:'note'}, 'none linked yet (link one in “Edit PO”)')));
     }),
     parts.length > 1 ? h('div',{class:'row', style:'justify-content:space-between'}, h('b',{}, 'Whole PO: ' + fmtN(s.delivered) + ' of ' + fmtN(s.ordered) + ' pcs delivered'), progBar(s.pct, s.status === 'done')) : null));
 
@@ -3142,7 +3128,16 @@ function renderHome(){
     tile('bills', 'bills', 'Sales & invoices', 'Proforma, tax invoice, delivery challan, payment receipts'),
     tile('stock', 'stock', 'Stock', 'Materials in stock, what to buy for upcoming jobs'),
     tile('past', 'past', 'Database', 'Boxes made before and their selling prices')));
-  root.append(h('h2',{class:'hsub'}, 'Settings'));
+  // Live running orders (Raj): updates by itself whenever an order or dispatch changes.
+  if (S.db && S.loaded.orders){
+    const rows = runningRows();
+    root.append(h('div',{class:'row', style:'justify-content:space-between;align-items:baseline;margin-top:22px'},
+      h('h2',{class:'hsub', style:'margin:0'}, 'Running orders' + (rows.length ? ' (' + rows.length + ')' : '')),
+      h('button',{class:'linkbtn', onclick:() => { S.ordTab = 'running'; go('orders'); }}, rows.length > 10 ? 'See all ' + rows.length + ' →' : 'Open orders →')));
+    root.append(runningKpis(rows));
+    root.append(rows.length ? runningTable(rows, 10) : h('div',{class:'card empty'}, 'No running orders. Every client PO is fully delivered.'));
+  }
+  root.append(h('h2',{class:'hsub', style:'margin-top:26px'}, 'Settings'));
   root.append(h('div',{class:'hgrid set'},
     tile('rates', 'rates', 'Rate list', 'Paper, board, lamination, printing and other rates', S.loaded.rates ? S.rates.size + ' rates' : loading, false, true),
     tile('history', 'history', 'Price history', 'How raw material prices changed over time', '', false, true),
@@ -5710,6 +5705,7 @@ async function boot(){
       S.orders = m; if (!snap.metadata.fromCache) S.loaded.orders = true;
       if (S.view === 'orders' && !$('#view-orders').contains(document.activeElement)) renderOrders();
       if (S.view === 'order' && !$('#view-order').contains(document.activeElement)) renderOrder();
+      if (S.view === 'home') renderHome();
     }, () => { S.loaded.orders = true; });
 
     db.collection('jobcards').onSnapshot(snap => {
