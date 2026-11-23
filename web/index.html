@@ -3170,7 +3170,7 @@ function markSample(s, ready){
   saveSample(x); renderSamples(); if (S.view === 'home') renderHome();
 }
 function sampleForm(ex){
-  const st = ex ? clone(ex) : {date: today(), client:'', boxType:'rigid', item:'', l:null, w:null, h:null, qty:1, kind:'printed', details:'', needBy:'', urgent:false, notes:''};
+  const st = ex ? clone(ex) : {date: today(), client:'', boxType:'rigid', item:'', l:null, w:null, h:null, kind:'printed', details:'', needBy:'', urgent:false, notes:''};
   const wrap = h('div',{class:'newjob'}), listId = 'smp-clients';
   wrap.append(h('h2',{}, ex ? 'Edit sample ' + ex.id : 'New sample'),
     h('datalist',{id:listId}, knownClients().map(c => h('option',{value:c}))),
@@ -3181,7 +3181,6 @@ function sampleForm(ex){
       fld('Length (mm)', numIn(st.l, x => st.l = x, {placeholder:'L'})),
       fld('Width (mm)', numIn(st.w, x => st.w = x, {placeholder:'W'})),
       fld('Height (mm)', numIn(st.h, x => st.h = x, {placeholder:'H'})),
-      fld('No. of samples', numIn(st.qty, x => st.qty = x, {placeholder:'e.g. 2'})),
       fld('Type of sample', sel(Object.entries(SMP_KIND), st.kind || 'printed', {onchange:e => st.kind = e.target.value})),
       fld('Asked on', h('input',{type:'date', value:String(st.date || '').slice(0, 10), onchange:e => st.date = e.target.value})),
       fld('Needed by', h('input',{type:'date', value:String(st.needBy || '').slice(0, 10), onchange:e => st.needBy = e.target.value})),
@@ -3202,7 +3201,7 @@ function sampleForm(ex){
 function sampleRows(list, compact){
   const edit = canEditSamples(), own = isOwnerRole();
   return h('div',{class:'tablebox'}, h('table',{class:'jobs smptable'},
-    h('thead',{}, h('tr',{}, h('th',{},'Sample'), h('th',{},'Client'), h('th',{},'What to make'), h('th',{},'Size'), h('th',{class:'n'},'Qty'), h('th',{},'Needed by'), h('th',{},'Status'))),
+    h('thead',{}, h('tr',{}, h('th',{},'Sample'), h('th',{},'Client'), h('th',{},'What to make'), h('th',{},'Size'), h('th',{},'Needed by'), h('th',{},'Status'))),
     h('tbody',{}, list.map(s => {
       const open = !compact && S.smpOpen === s.id, dd = daysTo(s.needBy);
       const toggle = () => { if (compact){ S.smpOpen = s.id; S.smpTab = s.status === 'ready' ? 'ready' : 'todo'; go('samples'); return; } S.smpOpen = open ? null : s.id; renderSamples(); };
@@ -3220,7 +3219,6 @@ function sampleRows(list, compact){
               edit ? h('button',{type:'button', class:'btn small', onclick:e => { e.stopPropagation(); S.smpEdit = s.id; S.smpNew = false; renderSamples(); window.scrollTo(0, 0); }}, 'Edit') : null,
               own ? rowDelete('sample ' + s.id, async () => { S.samples.delete(s.id); S.smpOpen = null; await removeDoc('samples/' + s.id); renderSamples(); }) : null) : null) : null),
         h('td',{}, smpSize(s) || '—'),
-        h('td',{class:'n'}, s.qty != null && s.qty !== '' ? fmtN(s.qty) : '—'),
         h('td',{}, s.needBy ? h('div',{class: smpLate(s) ? 'neg' : ''}, fmtDate(s.needBy)) : h('span',{class:'muted'}, '—'),
           s.needBy && s.status !== 'ready' ? h('div',{class:'sub' + (smpLate(s) ? ' neg' : '')}, dd < 0 ? 'late by ' + (-dd) + ' day' + (dd === -1 ? '' : 's') : dd === 0 ? 'today' : 'in ' + dd + ' day' + (dd === 1 ? '' : 's')) : null),
         h('td',{}, s.status === 'ready'
@@ -3242,7 +3240,7 @@ function renderSamples(){
   const all = [...S.samples.values()], todo = all.filter(s => s.status !== 'ready'), ready = all.filter(s => s.status === 'ready');
   const month = today().slice(0, 7);
   root.append(h('div',{class:'kpis'},
-    kpi('To make', String(todo.length), todo.reduce((a, s) => a + n0(s.qty), 0) + ' pcs'),
+    kpi('To make', String(todo.length), 'samples waiting'),
     kpi('Urgent', String(todo.filter(s => s.urgent).length), 'marked urgent'),
     kpi('Late', String(todo.filter(smpLate).length), 'needed-by date has passed', todo.some(smpLate) ? 'bad' : ''),
     kpi('Ready this month', String(ready.filter(s => String(s.readyAt || '').startsWith(month)).length), new Date().toLocaleDateString('en-IN',{month:'long'}))));
