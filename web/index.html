@@ -4419,7 +4419,7 @@ async function buildPdf(c, tabs){
   }
   // Numbered step of a team's work, with a Done box on the right.
   function step(n, t){
-    ensure(64); y -= 10;
+    ensure(64); y -= 6;
     page.drawCircle({x:M + 9, y:y - 8, size:9, color:C.brand});
     const ns = String(n); text(ns, M + 9 - tw(ns, FB, 9.5) / 2, y - 11.3, FB, 9.5, C.white);
     text(t, M + 24, y - 12, FB, 11.5, C.ink);
@@ -4451,10 +4451,11 @@ async function buildPdf(c, tabs){
     (labels || ['Done by','Date','Checked by']).forEach((t, i) => { const x = M + i * (w + 18); page.drawLine({start:{x, y}, end:{x:x + w, y}, thickness:0.8, color:C.ink}); text(t, x, y - 10, F, 8, C.muted); });
     y -= 16;
   }
-  // The master sheet always fits one A4 page: drawn on a tall page first, then cut to A4, or shrunk to fit if it is longer.
+  // Every sheet (master and each team) fits one A4 page, so it is easy to hand out (Raj):
+  // drawn on a tall page first, then cut to A4, or shrunk to fit if it is longer.
   const HT = 4000;
   for (const tab of tabs){
-    const one = tab === 'master';
+    const one = true;
     title = tabTitle(c, tab); newPage(false, one ? HT : 0); header();
     for (const b of blocksFor(c, tab)){
       if (b.screenOnly) continue;
