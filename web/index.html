@@ -55,8 +55,8 @@ h1{font-size:22px} h2{font-size:17px} h3{font-size:14px}
 .hsub{display:flex;align-items:center;gap:12px;font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin:0 0 12px}
 .hsub::after{content:"";flex:1;height:1px;background:var(--line)}
 .hgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:26px}
-.hgrid.work{grid-template-columns:repeat(6,1fr)}
-.hgrid.work .htile{grid-column:span 2}
+.hgrid.work{grid-template-columns:repeat(4,1fr)}
+.hgrid.work .htile{grid-column:auto}
 .hgrid.set{grid-template-columns:repeat(5,1fr)}
 @media (max-width:1000px){.hgrid.work,.hgrid.set{grid-template-columns:repeat(2,1fr)}.hgrid.work .htile{grid-column:auto}}
 @media (max-width:760px){.hgrid,.hgrid.work,.hgrid.set{grid-template-columns:1fr}}
@@ -352,6 +352,9 @@ input[type=date]{cursor:pointer}
 @media (min-width:641px){.rungroup table.runtable{table-layout:fixed;width:100%}.rungroup table.runtable td{white-space:normal!important;min-width:0!important}.rungroup .runtable th:nth-child(1){width:12%}.rungroup .runtable td:nth-child(1){white-space:nowrap!important}.rungroup .runtable th:nth-child(2){width:8%}.rungroup .runtable th:nth-child(3){width:14%}.rungroup .runtable th:nth-child(4){width:7%}.rungroup .runtable th:nth-child(5){width:21%}.rungroup .runtable th:nth-child(6){width:15%}.rungroup .runtable th:nth-child(7){width:14%}.rungroup .runtable th:nth-child(8){width:9%}}
 .rungroup h3{margin:0 0 8px;font-size:16px}
 .rungroup h3 .sub{font-weight:400;font-size:13px}
+.smptable tr.open td{background:var(--accent-soft)}
+.smpdet{margin-top:8px;display:grid;gap:4px}
+.smptext{white-space:pre-wrap;background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:8px 10px;font-size:13px;line-height:1.45}
 .urgtag{display:inline-block;background:var(--bad);color:#fff;border-radius:4px;padding:0 6px;font-size:11px;font-weight:700}
 .runstep[disabled]{cursor:default}
 .runlist{display:grid;gap:12px}
@@ -501,6 +504,7 @@ body:not(.show-rates) .adv{display:none}
   table.jobs td{display:block;padding:0;border:0;white-space:normal;min-width:0!important;max-width:none!important;width:auto;text-align:left}
   table.jobs td[data-lab]::before{content:attr(data-lab);display:block;font-size:10.5px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:var(--muted);margin-bottom:1px}
   table.jobs td.lead{grid-column:1/-1;padding-right:44px}
+  table.smptable td:nth-child(3){grid-column:1/-1}
   table.jobs td.act{position:absolute;top:8px;right:8px;padding:0}
   table.jobs td:empty{display:none}
   table.jobs .sub{max-width:none}
@@ -512,6 +516,7 @@ body:not(.show-rates) .adv{display:none}
   .hlogo{width:min(200px,56vw);margin-bottom:10px}
 }
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
+@media (max-width:420px){.bar nav{gap:0!important}.bar nav .tab{padding:6px 0 5px;font-size:10.5px;letter-spacing:-.01em}}
 </style>
 </head>
 <body>
@@ -521,6 +526,7 @@ body:not(.show-rates) .adv{display:none}
     <nav>
       <button class="tab" id="tab-jobs" data-go="jobs">Cost calculator</button>
       <button class="tab" id="tab-cards" data-go="cards">Job cards</button>
+      <button class="tab" id="tab-samples" data-go="samples">Samples</button>
       <button class="tab" id="tab-orders" data-go="orders">Orders</button>
       <button class="tab" id="tab-pos" data-go="pos">POs &amp; dispatches</button>
       <button class="tab" id="tab-bills" data-go="bills">Sales &amp; invoices</button>
@@ -560,6 +566,7 @@ body:not(.show-rates) .adv{display:none}
   <section id="view-orders" hidden></section>
   <section id="view-order" hidden></section>
   <section id="view-pos" hidden></section>
+  <section id="view-samples" hidden></section>
   <section id="view-stock" hidden></section>
   <section id="view-team" hidden></section>
   <section id="view-access" hidden></section>
@@ -719,7 +726,7 @@ const partOf = l => l.calc === 'diecut' && (l.part === 'print' || l.part === 'di
 
 // ---------- state ----------
 const S = {db:null, rates:new Map(), jobs:new Map(), settings:{overheadPct:12, marginPct:25, wastagePct:5},
-  loaded:{rates:false, jobs:false, hist:false, cards:false, stock:false, shared:false, past:false, orders:false, bills:false, payments:false}, bills:new Map(), clients:new Map(), billItems:new Map(), payments:new Map(), paydraft:null, payId:null, billTab:'proforma', clientEdit:false, billing:null, bdraft:null, billQ:'', billFilter:'all', orders:new Map(), poRates:new Map(), orderId:null, ordQ:'', ordFilter:'open', ordNew:false, ordEdit:false, dispEdit:null, dispOpen:false, hist:new Map(), cards:new Map(), cardId:null, cdraft:null, newCardOpen:false, cardQ:'', past:new Map(), pq:null, pastNew:false, pastEdit:null, role:null, myId:null, myRequest:null, user:null, team:new Map(), requests:new Map(), shared:{}, cardTab:'master', printAll:false, stock:new Map(), slog:new Map(), stockCat:'all', stockQ:'', stockOpen:null, stockNew:false, issue:null,
+  loaded:{rates:false, jobs:false, hist:false, cards:false, stock:false, shared:false, past:false, orders:false, bills:false, payments:false, samples:false}, samples:new Map(), smpTab:'todo', smpQ:'', smpNew:false, smpEdit:null, smpOpen:null, bills:new Map(), clients:new Map(), billItems:new Map(), payments:new Map(), paydraft:null, payId:null, billTab:'proforma', clientEdit:false, billing:null, bdraft:null, billQ:'', billFilter:'all', orders:new Map(), poRates:new Map(), orderId:null, ordQ:'', ordFilter:'open', ordNew:false, ordEdit:false, dispEdit:null, dispOpen:false, hist:new Map(), cards:new Map(), cardId:null, cdraft:null, newCardOpen:false, cardQ:'', past:new Map(), pq:null, pastNew:false, pastEdit:null, role:null, myId:null, myRequest:null, user:null, team:new Map(), requests:new Map(), shared:{}, cardTab:'master', printAll:false, stock:new Map(), slog:new Map(), stockCat:'all', stockQ:'', stockOpen:null, stockNew:false, issue:null,
   hs:{cat:null, sel:null, slots:{}, mode:'rs', range:'all', focus:null}, slow:false, view:'jobs', jobId:null, draft:null,
   filters:{q:'', status:'all', month:'all'},
   diecutDefaults:{die:1500, first:1200, next:800},
@@ -1238,7 +1245,7 @@ function fromHash(){
   else if (hsh.startsWith('order-')) go('order', hsh.slice(6));
   else if (hsh.startsWith('bill-')) go('bill', hsh.slice(5));
   else if (hsh.startsWith('pay-')) go('pay', hsh.slice(4));
-  else go(['home','jobs','rates','history','cards','stock','team','past','orders','pos','bills','billing'].includes(hsh) ? hsh : homeView());
+  else go(['home','jobs','rates','history','cards','stock','team','past','orders','pos','samples','bills','billing'].includes(hsh) ? hsh : homeView());
 }
 document.querySelectorAll('[data-go]').forEach(b => b.addEventListener('click', () => { closeSettings(); go(b.dataset.go); }));
 // Settings menu (top-left gear): Rate list and Price history.
@@ -1258,7 +1265,7 @@ function render(){
   applyRoleChrome();
   const ready = S.role === 'owner' || !!ROLES[S.role];
   $('#view-access').hidden = ready;
-  if (!ready){ ['home','past','jobs','job','rates','history','cards','stock','card','team','orders','order','pos','bills','bill','billing','pay'].forEach(v => $('#view-' + v).hidden = true); renderAccess(); return; }
+  if (!ready){ ['home','past','jobs','job','rates','history','cards','stock','card','team','orders','order','pos','samples','bills','bill','billing','pay'].forEach(v => $('#view-' + v).hidden = true); renderAccess(); return; }
   $('#view-team').hidden = S.view !== 'team';
   $('#tab-team').setAttribute('aria-current', S.view === 'team' ? 'page' : 'false');
   $('#view-home').hidden = S.view !== 'home';
@@ -1273,6 +1280,8 @@ function render(){
   $('#view-stock').hidden = S.view !== 'stock';
   $('#view-orders').hidden = S.view !== 'orders';
   $('#view-pos').hidden = S.view !== 'pos';
+  $('#view-samples').hidden = S.view !== 'samples';
+  $('#tab-samples').setAttribute('aria-current', S.view === 'samples' ? 'page' : 'false');
   $('#view-bills').hidden = S.view !== 'bills';
   $('#view-bill').hidden = S.view !== 'bill';
   $('#view-pay').hidden = S.view !== 'pay';
@@ -1300,6 +1309,7 @@ function render(){
   else if (S.view === 'card') renderCard();
   else if (S.view === 'orders') renderOrders();
   else if (S.view === 'pos') renderPos();
+  else if (S.view === 'samples') renderSamples();
   else if (S.view === 'order') renderOrder();
   else if (S.view === 'bills') renderBills();
   else if (S.view === 'bill') renderBill();
@@ -3117,11 +3127,12 @@ const ICONS = {
   bills:'<path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h6M9 16h3"/>',
   billing:'<path d="M3 7h18v12H3z"/><path d="M3 11h18"/><path d="M7 15h4"/>',
   orders:'<path d="M9 4h6v3H9z"/><path d="M15 5h3v16H6V5h3"/><path d="M9 11h6M9 15h4"/>',
+  samples:'<path d="M9 3h6M10 3v6l-5 9a2 2 0 0 0 1.7 3h10.6a2 2 0 0 0 1.7-3l-5-9V3"/><path d="M7.5 15h9"/>',
   pos:'<path d="M2 6h12v10H2z"/><path d="M14 9h4l3 3v4h-7"/><circle cx="6.5" cy="17.5" r="2"/><circle cx="17.5" cy="17.5" r="2"/>',
   team:'<circle cx="9" cy="8" r="3"/><path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6"/><circle cx="17" cy="9" r="2.5"/><path d="M15.5 14.2c2.8.3 5 2.6 5 5.8"/>'
 };
 // Phones: icons and short names on the section tabs (shown as a bottom bar on small screens).
-{ const SHORT = {jobs:'Costing', cards:'Job cards', orders:'Orders', pos:'POs', bills:'Sales', stock:'Stock'};
+{ const SHORT = {jobs:'Costing', cards:'Job cards', samples:'Samples', orders:'Orders', pos:'POs', bills:'Sales', stock:'Stock'};
   document.querySelectorAll('.bar nav .tab').forEach(b => { const v = b.dataset.go, full = b.textContent.trim();
     b.innerHTML = '<svg class="tico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + (ICONS[v] || '') + '</svg>';
     b.append(h('span',{class:'tabfull'}, full), h('span',{class:'tabshort', 'aria-hidden':'true'}, SHORT[v] || full)); b.setAttribute('aria-label', full); }); }
@@ -3138,6 +3149,118 @@ document.addEventListener('focusin', e => { if (e.target.matches('input:not([typ
 document.addEventListener('focusout', () => document.body.classList.remove('typing'));
 let homeT = null;
 function homeSoon(){ if (S.view !== 'home') return; clearTimeout(homeT); homeT = setTimeout(() => { if (S.view === 'home') renderHome(); }, 120); }
+// ---------- Samples (Raj): samples to be made, seen by the whole team; whoever makes one marks it ready ----------
+// samples/<SM-n>: {id, date, client, boxType, item, l, w, h, qty, kind ('plain'|'printed'), details, needBy, urgent, notes,
+//   status ('todo'|'ready'), readyBy, readyAt, by, createdAt, updatedAt}. Owner + job cards add/edit; every login can mark ready; owner deletes.
+const SMP_KIND = {plain:'Plain dummy (no printing)', printed:'Printed sample'};
+const canEditSamples = () => S.role === 'owner' || S.role === 'jobcards';
+const smpLate = s => s.status !== 'ready' && s.needBy && daysTo(s.needBy) < 0;
+const smpOrder = (a, b) => (b.urgent ? 1 : 0) - (a.urgent ? 1 : 0) || String(a.needBy || '9999').localeCompare(String(b.needBy || '9999')) || String(a.date || '').localeCompare(String(b.date || '')) || n0(a.createdAt) - n0(b.createdAt);
+const smpTodo = () => [...S.samples.values()].filter(s => s.status !== 'ready').sort(smpOrder);
+const smpSize = s => [s.l, s.w, s.h].some(v => v != null && v !== '') ? [s.l, s.w, s.h].map(v => v == null || v === '' ? '?' : fmtN(v, 1)).join(' × ') + ' mm' : '';
+const smpWhat = s => [BOX[s.boxType] || '', s.item || ''].filter(Boolean).join(' · ');
+function nextSampleNo(){
+  let n = 0; for (const id of S.samples.keys()){ const m = /^SM-(\d+)$/.exec(id); if (m) n = Math.max(n, +m[1]); }
+  return 'SM-' + (n + 1);
+}
+function saveSample(s){ s.updatedAt = Date.now(); S.samples.set(s.id, s); const snap = clone(s); flush('samples/' + s.id, () => snap); }
+function markSample(s, ready){
+  const x = {...s, status: ready ? 'ready' : 'todo'};
+  if (ready){ x.readyBy = S.myName || ROLES[S.role]?.n || 'Owner'; x.readyAt = today(); } else { delete x.readyBy; delete x.readyAt; }
+  saveSample(x); renderSamples(); if (S.view === 'home') renderHome();
+}
+function sampleForm(ex){
+  const st = ex ? clone(ex) : {date: today(), client:'', boxType:'rigid', item:'', l:null, w:null, h:null, qty:1, kind:'printed', details:'', needBy:'', urgent:false, notes:''};
+  const wrap = h('div',{class:'newjob'}), listId = 'smp-clients';
+  wrap.append(h('h2',{}, ex ? 'Edit sample ' + ex.id : 'New sample'),
+    h('datalist',{id:listId}, knownClients().map(c => h('option',{value:c}))),
+    h('div',{class:'grid'},
+      fld('Client', h('input',{value:st.client || '', list:listId, placeholder:'e.g. Bombay Musk', oninput:e => st.client = e.target.value})),
+      fld('Product', sel(boxOptions(st.boxType), st.boxType || 'rigid', {onchange:e => st.boxType = e.target.value})),
+      fld('What is it', h('input',{value:st.item || '', placeholder:'e.g. Perfume box with foam insert', oninput:e => st.item = e.target.value}), 'wide'),
+      fld('Length (mm)', numIn(st.l, x => st.l = x, {placeholder:'L'})),
+      fld('Width (mm)', numIn(st.w, x => st.w = x, {placeholder:'W'})),
+      fld('Height (mm)', numIn(st.h, x => st.h = x, {placeholder:'H'})),
+      fld('No. of samples', numIn(st.qty, x => st.qty = x, {placeholder:'e.g. 2'})),
+      fld('Type of sample', sel(Object.entries(SMP_KIND), st.kind || 'printed', {onchange:e => st.kind = e.target.value})),
+      fld('Asked on', h('input',{type:'date', value:String(st.date || '').slice(0, 10), onchange:e => st.date = e.target.value})),
+      fld('Needed by', h('input',{type:'date', value:String(st.needBy || '').slice(0, 10), onchange:e => st.needBy = e.target.value})),
+      h('label',{class:'fld', style:'align-self:end;flex-direction:row;display:flex;gap:8px;align-items:center'}, h('input',{type:'checkbox', checked: !!st.urgent, onchange:e => st.urgent = e.target.checked}), h('span',{}, 'Urgent'))),
+    fld('Details for the team', h('textarea',{rows:5, placeholder:'Board, paper, printing, lamination, foiling, insert, magnets… everything the team needs to make it', oninput:e => st.details = e.target.value}, st.details || ''), 'wide'),
+    fld('Notes', h('input',{value:st.notes || '', placeholder:'Anything else (e.g. send with courier, show to client on Monday)', oninput:e => st.notes = e.target.value}), 'wide'),
+    h('div',{class:'row'},
+      h('button',{class:'btn primary', onclick:() => {
+        st.client = String(st.client || '').trim(); st.item = String(st.item || '').trim();
+        if (!st.client){ alert0(wrap, 'Enter the client name.'); return; }
+        if (!st.item && !String(st.details || '').trim()){ alert0(wrap, 'Write what the sample is, or the details for the team.'); return; }
+        const s = ex ? {...ex, ...st} : {...st, id: nextSampleNo(), status:'todo', by: S.myName || '', createdAt: Date.now()};
+        saveSample(s); S.smpNew = false; S.smpEdit = null; S.smpOpen = s.id; S.smpTab = s.status === 'ready' ? S.smpTab : 'todo'; renderSamples();
+      }}, ex ? 'Save changes' : 'Add sample'),
+      h('button',{class:'btn', onclick:() => { S.smpNew = false; S.smpEdit = null; renderSamples(); }}, 'Cancel')));
+  return wrap;
+}
+function sampleRows(list, compact){
+  const edit = canEditSamples(), own = isOwnerRole();
+  return h('div',{class:'tablebox'}, h('table',{class:'jobs smptable'},
+    h('thead',{}, h('tr',{}, h('th',{},'Sample'), h('th',{},'Client'), h('th',{},'What to make'), h('th',{},'Size'), h('th',{class:'n'},'Qty'), h('th',{},'Needed by'), h('th',{},'Status'))),
+    h('tbody',{}, list.map(s => {
+      const open = !compact && S.smpOpen === s.id, dd = daysTo(s.needBy);
+      const toggle = () => { if (compact){ S.smpOpen = s.id; S.smpTab = s.status === 'ready' ? 'ready' : 'todo'; go('samples'); return; } S.smpOpen = open ? null : s.id; renderSamples(); };
+      return h('tr',{tabindex:'0', class: open ? 'open' : '', 'aria-expanded': compact ? null : String(open), onclick:toggle, onkeydown:e => { if (e.key === 'Enter' && e.target === e.currentTarget) toggle(); }},
+        h('td',{}, h('div',{class:'jobno'}, s.id), h('div',{class:'sub'}, fmtDate(s.date))),
+        h('td',{}, h('b',{}, s.client || '—')),
+        h('td',{style:'white-space:normal;min-width:200px'},
+          h('div',{}, s.urgent && s.status !== 'ready' ? h('span',{class:'urgtag'}, 'URGENT') : null, s.urgent && s.status !== 'ready' ? ' ' : null, smpWhat(s) || '—'),
+          h('div',{class:'sub'}, SMP_KIND[s.kind] || ''),
+          open ? h('div',{class:'smpdet'},
+            s.details ? h('div',{class:'smptext'}, s.details) : h('div',{class:'muted'}, 'No details written.'),
+            s.notes ? h('div',{class:'sub'}, 'Note: ' + s.notes) : null,
+            h('div',{class:'sub'}, 'Added' + (s.by ? ' by ' + s.by : '') + ' on ' + fmtDate(s.date)),
+            (edit || own) ? h('div',{class:'row', style:'gap:8px;margin-top:6px'},
+              edit ? h('button',{type:'button', class:'btn small', onclick:e => { e.stopPropagation(); S.smpEdit = s.id; S.smpNew = false; renderSamples(); window.scrollTo(0, 0); }}, 'Edit') : null,
+              own ? rowDelete('sample ' + s.id, async () => { S.samples.delete(s.id); S.smpOpen = null; await removeDoc('samples/' + s.id); renderSamples(); }) : null) : null) : null),
+        h('td',{}, smpSize(s) || '—'),
+        h('td',{class:'n'}, s.qty != null && s.qty !== '' ? fmtN(s.qty) : '—'),
+        h('td',{}, s.needBy ? h('div',{class: smpLate(s) ? 'neg' : ''}, fmtDate(s.needBy)) : h('span',{class:'muted'}, '—'),
+          s.needBy && s.status !== 'ready' ? h('div',{class:'sub' + (smpLate(s) ? ' neg' : '')}, dd < 0 ? 'late by ' + (-dd) + ' day' + (dd === -1 ? '' : 's') : dd === 0 ? 'today' : 'in ' + dd + ' day' + (dd === 1 ? '' : 's')) : null),
+        h('td',{}, s.status === 'ready'
+          ? [h('span',{class:'pill Completed'}, 'Ready'), h('div',{class:'sub'}, (s.readyBy ? s.readyBy + ' · ' : '') + fmtDate(s.readyAt)),
+             compact ? null : h('button',{type:'button', class:'linkbtn', style:'font-size:12px', onclick:e => { e.stopPropagation(); markSample(s, false); }}, 'Not ready yet')]
+          : h('button',{type:'button', class:'btn small primary', onclick:e => { e.stopPropagation(); markSample(s, true); }}, 'Mark ready')));
+    }))));
+}
+function renderSamples(){
+  const root = $('#view-samples'); if (!root) return; root.replaceChildren();
+  const edit = canEditSamples();
+  root.append(h('div',{class:'head'},
+    h('div',{}, h('h1',{},'Samples'), h('div',{class:'note'},'Samples to be made for clients. Tap a sample to see its details; whoever makes it presses “Mark ready”.')),
+    edit ? h('button',{class:'btn primary', onclick:() => { S.smpNew = !S.smpNew; S.smpEdit = null; renderSamples(); }}, S.smpNew ? 'Close' : '+ New sample') : null));
+  if (S.smpNew && edit) root.append(sampleForm(null));
+  if (S.smpEdit && edit && S.samples.has(S.smpEdit)) root.append(sampleForm(S.samples.get(S.smpEdit)));
+  if (!S.db){ root.append(h('div',{class:'card empty'},'Saved data is not available here.')); return; }
+  if (!S.loaded.samples){ root.append(h('div',{class:'card empty'},'Loading samples…')); return; }
+  const all = [...S.samples.values()], todo = all.filter(s => s.status !== 'ready'), ready = all.filter(s => s.status === 'ready');
+  const month = today().slice(0, 7);
+  root.append(h('div',{class:'kpis'},
+    kpi('To make', String(todo.length), todo.reduce((a, s) => a + n0(s.qty), 0) + ' pcs'),
+    kpi('Urgent', String(todo.filter(s => s.urgent).length), 'marked urgent'),
+    kpi('Late', String(todo.filter(smpLate).length), 'needed-by date has passed', todo.some(smpLate) ? 'bad' : ''),
+    kpi('Ready this month', String(ready.filter(s => String(s.readyAt || '').startsWith(month)).length), new Date().toLocaleDateString('en-IN',{month:'long'}))));
+  const tab = S.smpTab || 'todo';
+  const t = (k, n, c) => h('button',{type:'button', class:'jctab', 'aria-current': tab === k ? 'page' : 'false', onclick:() => { S.smpTab = k; renderSamples(); }}, n + ' (' + c + ')');
+  const search = h('input',{type:'search', placeholder:'Search sample no., client or item', value:S.smpQ || '', style:'flex:1 1 240px'});
+  const tbox = h('div',{});
+  root.append(h('div',{class:'row', style:'margin-bottom:10px'}, h('nav',{class:'jump', 'aria-label':'Show', style:'position:static;padding:4px'}, t('todo', 'To make', todo.length), t('ready', 'Ready', ready.length), t('all', 'All', all.length)), search), tbox);
+  const draw = () => {
+    const q = String(S.smpQ || '').trim().toLowerCase();
+    const list = (tab === 'todo' ? todo.sort(smpOrder) : tab === 'ready' ? ready.sort((a, b) => String(b.readyAt || '').localeCompare(String(a.readyAt || ''))) : all.sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')) || n0(b.createdAt) - n0(a.createdAt)))
+      .filter(s => !q || [s.id, s.id.replace('-', ''), s.client, s.item, BOX[s.boxType], s.details].join(' ').toLowerCase().includes(q));
+    tbox.replaceChildren(list.length ? sampleRows(list) : h('div',{class:'card empty'}, q ? 'No samples match.' : tab === 'todo' ? 'No samples to make right now.' + (edit ? ' Press “+ New sample” to add one.' : '') : tab === 'ready' ? 'No samples marked ready yet.' : 'No samples yet.'));
+  };
+  search.addEventListener('input', e => { S.smpQ = e.target.value; draw(); });
+  draw();
+}
+
 function renderHome(){
   const root = $('#view-home'); root.replaceChildren();
   const month = today().slice(0, 7), loading = '…';
@@ -3158,6 +3281,7 @@ function renderHome(){
   root.append(h('div',{class:'hgrid work'},
     tile('jobs', 'jobs', 'Cost calculator', 'Work out cost and quote for an order'),
     tile('cards', 'cards', 'Job cards', 'Instructions for the team, master sheet, PDFs'),
+    tile('samples', 'samples', 'Samples', 'Samples to be made for clients; the team marks them ready'),
     tile('orders', 'orders', 'Orders', 'Running orders in the factory, by product'),
     tile('pos', 'pos', 'Client POs & dispatches', 'Client POs, parts, delivery requests and dispatches'),
     tile('bills', 'bills', 'Sales & invoices', 'Proforma, tax invoice, delivery challan, payment receipts'),
@@ -3178,6 +3302,14 @@ function renderHome(){
           list.length > 5 ? h('button',{class:'linkbtn', onclick:() => { S.runGroup = k; go('orders'); }}, 'See all ' + list.length + ' →') : null),
         runningTable(list, 5)));
     }
+  }
+  // Samples still to make (Raj): first 5, urgent and earliest needed-by first.
+  if (S.db && S.loaded.samples){
+    const todo = smpTodo();
+    root.append(h('div',{class:'row', style:'justify-content:space-between;align-items:baseline;margin-top:26px'},
+      h('h2',{class:'hsub', style:'margin:0'}, 'Samples to make' + (todo.length ? ' (' + todo.length + ')' : '')),
+      h('button',{class:'linkbtn', onclick:() => { S.smpTab = 'todo'; go('samples'); }}, todo.length > 5 ? 'See all ' + todo.length + ' →' : 'Open samples →')));
+    root.append(todo.length ? sampleRows(todo.slice(0, 5), true) : h('div',{class:'card empty'}, 'No samples waiting to be made.'));
   }
   root.append(h('h2',{class:'hsub', style:'margin-top:26px'}, 'Settings'));
   root.append(h('div',{class:'hgrid set'},
@@ -3285,8 +3417,8 @@ function rowDelete(what, onConfirm){
 // Costings, rates, price history and settings are readable by the owner only (database rules);
 // job cards, stock and the shared lists are open to people the page is shared with for editing.
 const ROLES = {
-  inventory:{n:'Inventory', d:'Stock: add materials, record purchases when they arrive, correct counts, see what to buy; see running orders', views:['stock','orders']},
-  jobcards:{n:'Job cards', d:'Job cards: create, edit, print and download team sheets; client POs, dispatches, invoices, challans and payment receipts', views:['cards','card','orders','pos','order','bills','bill','pay']}
+  inventory:{n:'Inventory', d:'Stock: add materials, record purchases when they arrive, correct counts, see what to buy; see running orders; see samples and mark them ready', views:['stock','orders','samples']},
+  jobcards:{n:'Job cards', d:'Job cards: create, edit, print and download team sheets; samples; client POs, dispatches, invoices, challans and payment receipts', views:['cards','card','samples','orders','pos','order','bills','bill','pay']}
 };
 const isOwnerRole = () => S.role === 'owner';
 const allowedViews = () => S.role === 'owner' ? null : (ROLES[S.role] || {views:[]}).views;
@@ -3295,7 +3427,7 @@ const homeView = () => S.role === 'owner' ? 'home' : ((ROLES[S.role] || {views:[
 
 function applyRoleChrome(){
   const own = isOwnerRole(), r = ROLES[S.role];
-  [['tab-jobs','jobs'], ['tab-cards','cards'], ['tab-orders','orders'], ['tab-pos','pos'], ['tab-bills','bills'], ['tab-stock','stock']].forEach(([id, v]) => { const el = $('#' + id); if (el) el.hidden = !(S.role && canView(v) && (own || r)); });
+  [['tab-jobs','jobs'], ['tab-cards','cards'], ['tab-samples','samples'], ['tab-orders','orders'], ['tab-pos','pos'], ['tab-bills','bills'], ['tab-stock','stock']].forEach(([id, v]) => { const el = $('#' + id); if (el) el.hidden = !(S.role && canView(v) && (own || r)); });
   const sw = $('.setwrap'); if (sw) sw.hidden = !own;
   const chip = $('#rolechip');
   if (chip){ chip.hidden = !r; chip.textContent = r ? r.n + ' access' : ''; }
@@ -5804,6 +5936,14 @@ async function boot(){
       if (S.view === 'order' && !$('#view-order').contains(document.activeElement)) renderOrder();
       if (S.view === 'home') renderHome();
     }, () => { S.loaded.orders = true; });
+    if (S.role === 'owner' || canView('samples')) db.collection('samples').onSnapshot(snap => {
+      const m = new Map();
+      for (const d of snap.docs){ const path = 'samples/' + d.id; m.set(d.id, busy(path) && S.samples.has(d.id) ? S.samples.get(d.id) : {...d.data(), id:d.id}); }
+      for (const [id, x] of S.samples) if (!m.has(id) && busy('samples/' + id)) m.set(id, x);
+      S.samples = m; if (!snap.metadata.fromCache) S.loaded.samples = true;
+      if (S.view === 'samples' && !$('#view-samples').contains(document.activeElement)) renderSamples();
+      homeSoon();
+    }, () => { S.loaded.samples = true; if (S.view === 'samples') renderSamples(); });
 
     db.collection('jobcards').onSnapshot(snap => {
       const m = new Map();
