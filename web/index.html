@@ -419,6 +419,7 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center}
 .qgrid th{font-size:12px;color:var(--muted);font-weight:600}
 .qgrid td input{width:110px;max-width:100%}
 .linkbtn.danger{color:var(--bad)}
+.qconv{grid-column:1/-1;margin-top:-4px}
 .qquote{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.qquote .sub{white-space:nowrap}
 .qrow{display:flex;gap:8px;align-items:center}
 .qrow input{flex:1 1 120px;min-width:0;width:0}
@@ -4059,7 +4060,10 @@ const printName = p => ((QUOTE_PRINT.find(x => x[0] === p.print) || [, ''])[1] |
 const quoteHasPrice = q => quoteItems(q).some(it => Object.values(it.prices || {}).some(v => v != null && v !== ''));
 const quoteProducts = q => [...new Set(quoteItems(q).map(it => qProdName(it.product)).filter(Boolean))].join(' + ');
 const quoteQtyText = q => quoteItems(q).map(it => it.rows.map(r => r.qty ? fmtN(r.qty) : '').filter(Boolean).join(' / ')).filter(Boolean).map(x => x + ' pcs').join(' + ');
-const itemSize = it => [it.l, it.w, it.h].some(v => v != null && v !== '') ? [it.l, it.w, it.h].map(v => v == null || v === '' ? '?' : fmtN(v, 2)).join(' × ') + (it.unit === 'in' ? ' inch' : ' mm') : '';
+// Size with the other unit in brackets (Raj): inches → "(… mm)", mm → "(… inch)", so the client can double-check.
+const qSizeIn = (it, unit) => { const k = it.unit === 'in' ? (unit === 'in' ? 1 : 25.4) : (unit === 'in' ? 1 / 25.4 : 1);
+  return [it.l, it.w, it.h].map(v => v == null || v === '' ? '?' : fmtN(n0(v) * k, unit === 'in' ? 2 : 1)).join(' × ') + (unit === 'in' ? ' inch' : ' mm'); };
+const itemSize = it => [it.l, it.w, it.h].some(v => v != null && v !== '') ? qSizeIn(it, it.unit === 'in' ? 'in' : 'mm') + ' (' + qSizeIn(it, it.unit === 'in' ? 'mm' : 'in') + ')' : '';
 // What one box is, one line each (in the client message and in the request to Raj).
 function itemSpec(it){
   const lines = [], add = (k, v) => { if (v) lines.push(k + ': ' + v); };
@@ -4147,7 +4151,8 @@ function quoteForm(){
   const leads = [...S.leads.values()].sort((a, b) => String(a.name).localeCompare(String(b.name)));
   // the right-hand box: the request for Raj while asking, the client's message once there is a price
   const showClientMsg = own || mode === 'send' || mode === 'quoted';
-  const refresh = () => { if (!q.msgEdited){ q.msg = showClientMsg ? quoteMessage(q, mode === 'send' ? (q.askedBy || myName()) : myName()) : quoteAskText(q); msgBox.value = q.msg; } };
+  const refresh = () => { for (const it of q.items || []){ const c = wrap.querySelector('[data-conv="' + it.id + '"]'); if (c) c.textContent = [it.l, it.w, it.h].some(v => v != null && v !== '') ? '= ' + qSizeIn(it, it.unit === 'in' ? 'mm' : 'in') : ''; }
+    if (!q.msgEdited){ q.msg = showClientMsg ? quoteMessage(q, mode === 'send' ? (q.askedBy || myName()) : myName()) : quoteAskText(q); msgBox.value = q.msg; } };
   const pickLead = name => { const l = leads.find(x => String(x.name).trim().toLowerCase() === String(name).trim().toLowerCase()); q.leadId = l ? l.id : ''; if (l){ q.contact = q.contact || l.contact || ''; q.phone = q.phone || l.phone || ''; } };
   const ro = mode !== 'new';   // pricing or sending: the details are fixed
   let contactIn, phoneIn;
@@ -4212,7 +4217,8 @@ function quoteForm(){
           fld('Size in', sel([['mm','mm'], ['in','inches']], it.unit, {onchange:e => { it.unit = e.target.value; try { localStorage.setItem('fb-smpUnit', it.unit); } catch(err){} refresh(); draw(); }})),
           fld('Length (' + u + ')', numIn(it.l, x => { it.l = x; refresh(); }, {placeholder:'L'})),
           fld('Width (' + u + ')', numIn(it.w, x => { it.w = x; refresh(); }, {placeholder:'W'})),
-          fld('Height (' + u + ')', numIn(it.h, x => { it.h = x; refresh(); }, {placeholder:'H'}))), true),
+          fld('Height (' + u + ')', numIn(it.h, x => { it.h = x; refresh(); }, {placeholder:'H'})),
+          h('div',{class:'sub qconv', 'data-conv':it.id}, [it.l, it.w, it.h].some(v => v != null && v !== '') ? '= ' + qSizeIn(it, it.unit === 'in' ? 'mm' : 'in') : '')), true),
         isRigid ? Q('Board thickness', sel([['', 'Choose…'], ...THICK.map(t => [t, t + ' mm'])], it.board || '', {onchange:e => { it.board = e.target.value; refresh(); }}))
           : mono ? Q('Paper', h('div',{}, choice(MONO_PAPERS, it.paperType, v => it.paperType = v),
               h('div',{class:'qrow', style:'margin-top:8px;max-width:240px'}, numIn(it.gsm, x => { it.gsm = x; refresh(); }, {placeholder:'GSM', 'aria-label':'Paper GSM'}), h('span',{class:'sub'}, 'GSM'))), true)
