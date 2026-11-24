@@ -12,7 +12,8 @@
 
   const cfg = window.FIRSTBOX_CONFIG || {};
   const desktop = window.firstboxDesktop || null;
-  const STAFF = ['inventory', 'jobcards', 'sales'];
+  const STAFF = ['inventory', 'jobcards', 'sales', 'manager', 'admin'];
+  const ADMIN = ['owner', 'admin'];   // admin = full control, the page treats them like the owner
   const VIRTUAL = ['team', 'requests'];
 
   let sb = null, session = null, me = null;
@@ -268,11 +269,11 @@
   });
 
   const user = Object.freeze({
-    isOwner: async () => !!(me && me.role === 'owner'),
-    canEdit: async () => !!(me && me.role === 'owner'),
+    isOwner: async () => !!(me && ADMIN.includes(me.role)),
+    canEdit: async () => !!(me && ADMIN.includes(me.role)),
     can: async () => true,
     id: async () => (session ? session.user.id : null),
-    me: async () => ({ id: session ? session.user.id : null, name: (me && me.name) || '', email: session ? session.user.email : null, isOwner: !!(me && me.role === 'owner'), canEdit: !!(me && me.role === 'owner'), avatarUrl: '', color: '#EB6123' }),
+    me: async () => ({ id: session ? session.user.id : null, name: (me && me.name) || '', email: session ? session.user.email : null, isOwner: !!(me && ADMIN.includes(me.role)), canEdit: !!(me && ADMIN.includes(me.role)), avatarUrl: '', color: '#EB6123' }),
     async profiles(ids) {
       const out = {};
       for (const id of [].concat(ids)) { const r = members.get(id); out[id] = { id, name: r ? (r.name || r.email || '') : '', email: r ? r.email : null, avatarUrl: '', color: '#EB6123', isMe: !!(session && id === session.user.id), guest: false }; }

@@ -8,14 +8,14 @@ create table if not exists public.members (
   email      text,
   name       text,
   role       text not null default 'pending'
-             check (role in ('owner','inventory','jobcards','sales','pending','removed')),
+             check (role in ('owner','admin','manager','inventory','jobcards','sales','pending','removed')),
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
 
 -- The Sales team role (added Nov 2026): widen the allowed roles on an existing table too.
 alter table public.members drop constraint if exists members_role_check;
-alter table public.members add constraint members_role_check check (role in ('owner','inventory','jobcards','sales','pending','removed'));
+alter table public.members add constraint members_role_check check (role in ('owner','admin','manager','inventory','jobcards','sales','pending','removed'));
 
 -- 2. All app data, stored as small JSON documents grouped by collection
 --    (jobs, rates, rateHistory, config, jobcards, stock, stockLog, shared).
@@ -32,6 +32,11 @@ create table if not exists public.docs (
 create or replace function public.my_role() returns text
 language sql stable security definer set search_path = public as $$
   select coalesce((select role from public.members where user_id = auth.uid()), '');
+$$;
+-- Owner or admin: full control.
+create or replace function public.is_admin() returns boolean
+language sql stable security definer set search_path = public as $$
+  select public.my_role() in ('owner','admin');
 $$;
 
 -- 4. New account → member row. First account ever = owner; everyone after waits for approval.
@@ -60,8 +65,12 @@ begin
    where user_id = auth.uid();
 end $$;
 
--- 6. Rules. Costings, rates, price history and settings: owner only.
---    Job cards role: job cards + stock + client POs (orders; PO rates in poRates stay owner only) + invoices, the client list and saved invoice items. Inventory role: stock (reads job cards to see what is needed).
+-- 6. Rules (Nov 2026).
+--    Owner + admin: everything. Costings, rates, price history, settings and PO rates stay with them only.
+--    Accounts team (role jobcards): job cards, running orders + client POs (orders), billing (invoices, clients, billItems, payments), stock — read and write.
+--    Sales team: Sales & marketing (leads), samples (+ photos) — read and write; running orders, job cards (to group them), Database without costs — read only.
+--    Manager: read only — job cards, samples, Sales & marketing, running orders, stock, Database without costs. No costings, client POs pages or billing.
+--    Stock team (role inventory): stock — read and write; job cards, running orders, samples — read; can mark samples ready.
 alter table public.members enable row level security;
 alter table public.docs    enable row level security;
 
@@ -69,54 +78,54 @@ drop policy if exists members_read   on public.members;
 drop policy if exists members_update on public.members;
 drop policy if exists members_delete on public.members;
 create policy members_read   on public.members for select to authenticated
-  using (user_id = auth.uid() or public.my_role() = 'owner');
+  using (user_id = auth.uid() or public.is_admin());
+-- owner/admin change other people's roles, never their own and never the owner's
 create policy members_update on public.members for update to authenticated
-  using (public.my_role() = 'owner' and user_id <> auth.uid())
-  with check (public.my_role() = 'owner' and role <> 'owner');
+  using (public.is_admin() and user_id <> auth.uid() and role <> 'owner')
+  with check (public.is_admin() and role <> 'owner');
 create policy members_delete on public.members for delete to authenticated
-  using (public.my_role() = 'owner' and user_id <> auth.uid());
+  using (public.is_admin() and user_id <> auth.uid() and role <> 'owner');
 
 drop policy if exists docs_read   on public.docs;
 drop policy if exists docs_insert on public.docs;
 drop policy if exists docs_update on public.docs;
 drop policy if exists docs_delete on public.docs;
 create policy docs_read on public.docs for select to authenticated using (
-  public.my_role() = 'owner'
-  or (public.my_role() in ('inventory','jobcards') and col in ('jobcards','stock','stockLog','shared'))
-  or (public.my_role() = 'inventory' and col = 'orders')   -- the stock team sees the running orders list (read only)
-  or (public.my_role() in ('inventory','jobcards') and col in ('samples','samplePics'))   -- samples (and their photos): the whole team sees them
-  or (public.my_role() = 'jobcards' and col in ('orders','invoices','clients','billItems','payments'))
-  -- sales team: clients & leads, samples, running orders (+ job cards to group them), Database without costs (pastwork + priceBook), shared lists
-  or (public.my_role() = 'sales' and col in ('leads','samples','samplePics','orders','jobcards','pastwork','priceBook','shared'))
+  public.is_admin()
+  or (public.my_role() = 'jobcards'  and col in ('jobcards','stock','stockLog','shared','orders','invoices','clients','billItems','payments'))
+  or (public.my_role() = 'sales'     and col in ('leads','samples','samplePics','orders','jobcards','pastwork','priceBook','shared'))
+  or (public.my_role() = 'manager'   and col in ('jobcards','stock','stockLog','shared','orders','samples','samplePics','leads','pastwork','priceBook'))
+  or (public.my_role() = 'inventory' and col in ('jobcards','stock','stockLog','shared','orders','samples','samplePics'))
 );
 create policy docs_insert on public.docs for insert to authenticated with check (
-  public.my_role() = 'owner'
-  or (public.my_role() = 'jobcards'  and col in ('jobcards','stock','stockLog','orders','invoices','clients','billItems','payments','samples','samplePics'))
-  or (public.my_role() = 'inventory' and col in ('stock','stockLog','samples'))   -- (saving is insert-or-update)
+  public.is_admin()
+  or (public.my_role() = 'jobcards'  and col in ('jobcards','stock','stockLog','orders','invoices','clients','billItems','payments'))
   or (public.my_role() = 'sales'     and col in ('leads','samples','samplePics'))
+  or (public.my_role() = 'inventory' and col in ('stock','stockLog','samples'))   -- (saving is insert-or-update)
 );
 create policy docs_update on public.docs for update to authenticated
   using (
-    public.my_role() = 'owner'
-    or (public.my_role() = 'jobcards'  and col in ('jobcards','stock','stockLog','orders','invoices','clients','billItems','payments','samples','samplePics'))
-    or (public.my_role() = 'inventory' and col in ('stock','stockLog','samples'))   -- stock team can mark a sample ready
+    public.is_admin()
+    or (public.my_role() = 'jobcards'  and col in ('jobcards','stock','stockLog','orders','invoices','clients','billItems','payments'))
     or (public.my_role() = 'sales'     and col in ('leads','samples','samplePics'))
+    or (public.my_role() = 'inventory' and col in ('stock','stockLog','samples'))   -- stock team can mark a sample ready
   )
   with check (
-    public.my_role() = 'owner'
-    or (public.my_role() = 'jobcards'  and col in ('jobcards','stock','stockLog','orders','invoices','clients','billItems','payments','samples','samplePics'))
-    or (public.my_role() = 'inventory' and col in ('stock','stockLog','samples'))   -- stock team can mark a sample ready
+    public.is_admin()
+    or (public.my_role() = 'jobcards'  and col in ('jobcards','stock','stockLog','orders','invoices','clients','billItems','payments'))
     or (public.my_role() = 'sales'     and col in ('leads','samples','samplePics'))
+    or (public.my_role() = 'inventory' and col in ('stock','stockLog','samples'))
   );
 create policy docs_delete on public.docs for delete to authenticated using (
-  public.my_role() = 'owner'
+  public.is_admin()
   or (public.my_role() = 'inventory' and col = 'stock')
-  or (public.my_role() in ('jobcards','inventory','sales') and col = 'samplePics')   -- photos go when a sample is marked ready (anyone can mark it)
+  or (public.my_role() in ('inventory','sales') and col = 'samplePics')   -- photos go when a sample is marked ready
 );
 
 grant select, insert, update, delete on public.docs to authenticated;
 grant select, update, delete on public.members to authenticated;
 grant execute on function public.my_role() to authenticated;
+grant execute on function public.is_admin() to authenticated;
 grant execute on function public.request_access(text) to authenticated;
 
 -- 7. Live updates: every open app sees changes within seconds.
@@ -143,7 +152,7 @@ create unique index if not exists members_username_key on public.members (lower(
 create or replace function public.login_email(p_username text) returns text
 language sql immutable as $$ select lower(trim(p_username)) || '@firstbox.local' $$;
 
--- Owner adds a team member. Returns the new member's id.
+-- Owner or admin adds a team member. Returns the new member's id.
 create or replace function public.create_member(p_username text, p_password text, p_name text, p_role text)
 returns uuid
 language plpgsql security definer set search_path = public, extensions, auth as $$
@@ -153,10 +162,10 @@ declare
   v_id    uuid := gen_random_uuid();
   v_now   timestamptz := now();
 begin
-  if public.my_role() <> 'owner' then raise exception 'Only the owner can add team members'; end if;
+  if not public.is_admin() then raise exception 'Only the owner or an admin can add team members'; end if;
   if v_user !~ '^[a-z0-9][a-z0-9._-]{2,29}$' then raise exception 'Username: 3 to 30 letters or numbers (dots, dashes allowed), no spaces'; end if;
   if length(coalesce(p_password, '')) < 8 then raise exception 'Password: at least 8 characters'; end if;
-  if p_role not in ('inventory', 'jobcards', 'sales') then raise exception 'Choose Inventory, Job cards or Sales team'; end if;
+  if p_role not in ('jobcards', 'sales', 'manager', 'inventory', 'admin') then raise exception 'Choose Accounts team, Sales team, Manager, Stock team or Admin'; end if;
   if exists (select 1 from auth.users where lower(email) = v_email)
      or exists (select 1 from public.members where lower(username) = v_user) then
     raise exception 'The username "%" is already taken', v_user;
@@ -184,23 +193,25 @@ begin
   return v_id;
 end $$;
 
--- Owner sets a new password for a team member (e.g. they forgot it).
+-- Owner or admin sets a new password for a team member (e.g. they forgot it). Nobody can change the owner's this way.
 create or replace function public.set_member_password(p_user uuid, p_password text) returns void
 language plpgsql security definer set search_path = public, extensions, auth as $$
 begin
-  if public.my_role() <> 'owner' then raise exception 'Only the owner can change passwords'; end if;
+  if not public.is_admin() then raise exception 'Only the owner or an admin can change passwords'; end if;
   if p_user = auth.uid() then raise exception 'Change your own password from Supabase'; end if;
+  if exists (select 1 from public.members where user_id = p_user and role = 'owner') then raise exception 'The owner''s password cannot be changed here'; end if;
   if length(coalesce(p_password, '')) < 8 then raise exception 'Password: at least 8 characters'; end if;
   update auth.users set encrypted_password = crypt(p_password, gen_salt('bf')), updated_at = now() where id = p_user;
   if not found then raise exception 'Team member not found'; end if;
 end $$;
 
--- Owner removes a team member's login completely (their username can then be used again).
+-- Owner or admin removes a team member's login completely (their username can then be used again). Never the owner.
 create or replace function public.delete_member(p_user uuid) returns void
 language plpgsql security definer set search_path = public, auth as $$
 begin
-  if public.my_role() <> 'owner' then raise exception 'Only the owner can remove team members'; end if;
+  if not public.is_admin() then raise exception 'Only the owner or an admin can remove team members'; end if;
   if p_user = auth.uid() then raise exception 'You cannot remove yourself'; end if;
+  if exists (select 1 from public.members where user_id = p_user and role = 'owner') then raise exception 'The owner cannot be removed'; end if;
   delete from auth.users where id = p_user;
 end $$;
 

@@ -925,12 +925,13 @@ function setSave(state){
   el.textContent = state === 'saving' ? 'Saving…' : state === 'saved' ? 'All changes saved' : state === 'error' ? "Couldn't save. Check your internet and edit again." : '';
 }
 function scheduleSave(path, getData, delay){
-  if (!S.db) return;
+  if (!S.db || isRO()) return;
   clearTimeout(SV.timers[path]);
   setSave('saving');
   SV.timers[path] = setTimeout(() => { delete SV.timers[path]; flush(path, getData); }, delay ?? 700);
 }
 async function flush(path, getData){
+  if (isRO()) return true;   // manager: view only
   if (SV.inflight[path]){ SV.pending[path] = getData; return true; }
   SV.inflight[path] = true; let ok = true;
   try { await S.db.doc(path).set(getData()); setSave('saved'); }
@@ -944,7 +945,7 @@ async function flush(path, getData){
 }
 // On an editing page this waits for Save; anywhere else it saves as before.
 function pageSave(path, getData, delay){
-  if (!S.db) return;
+  if (!S.db || isRO()) return;
   if (!MANUAL.has(S.view)) return scheduleSave(path, getData, delay);
   ED.q.set(path, getData); updateSaveUi();
 }
@@ -1002,6 +1003,7 @@ document.addEventListener('keydown', e => { if ((e.metaKey || e.ctrlKey) && !e.s
 // Closing the browser tab with unsaved changes asks too. The desktop app asks only from a version that can show the question.
 window.addEventListener('beforeunload', e => { if (!isDirty()) return; if (window.firstboxDesktop && !window.firstboxDesktop.confirmsUnload) return; e.preventDefault(); e.returnValue = ''; });
 async function removeDoc(path){
+  if (isRO()) return;
   clearTimeout(SV.timers[path]); delete SV.timers[path]; delete SV.pending[path];
   if (ED.q.has(path)) ED.q.clear();
   try { await S.db.doc(path).delete(); setSave('saved'); } catch(e){ setSave('error'); }
@@ -3348,7 +3350,7 @@ const SIDE = [
   {key:'jobs', n:'Cost calculator', icon: () => ICONS.jobs, view:'jobs', on:() => ['jobs', 'job'].includes(S.view)},
   {key:'cards', n:'Job cards', icon: () => ICONS.cards, view:'cards', on:() => ['cards', 'card'].includes(S.view)},
   {key:'crm', n:'Sales & marketing', icon: () => ICONS.crm, view:'crm', subs:[
-    {n:'Clients & leads', ...crmSub('leads')}, {n:'Create a quotation', ...crmSub('quote'), badge:() => { const qs = allQuotes(); return isOwnerRole() ? qs.filter(x => qStatus(x.q) === 'asked').length : qs.filter(x => qStatus(x.q) === 'priced').length; }}, {n:'Create sample', ...crmSub('sample')}]},
+    {n:'Clients & leads', ...crmSub('leads')}, {n:'Create a quotation', ...crmSub('quote'), badge:() => { const qs = allQuotes(); return isOwnerRole() ? qs.filter(x => qStatus(x.q) === 'asked').length : qs.filter(x => qStatus(x.q) === 'priced').length; }}, {n:'Create sample', ...crmSub('sample'), hideFor:['manager']}]},
   {key:'samples', n:'Samples', icon: () => ICONS.samples, view:'samples', hideFor:['sales']},
   {key:'orders', n:'Orders', icon: () => ICONS.orders, view:'orders', subs:[
     {n:'Running orders', view:'orders', on:() => S.view === 'orders'}, {n:'Client POs & dispatches', view:'pos', on:() => ['pos', 'order'].includes(S.view)}]},
@@ -3435,6 +3437,28 @@ document.addEventListener('focusin', e => { if (e.target.matches('input:not([typ
 // Bring it back a moment later, so it doesn't pop up under the finger that is tapping a button below the field.
 let typingOff = 0;
 document.addEventListener('focusout', () => { clearTimeout(typingOff); typingOff = setTimeout(() => { const a = document.activeElement; if (!a || !a.matches || !a.matches('input:not([type=checkbox]):not([type=radio]),textarea,select')) document.body.classList.remove('typing'); }, 400); });
+// Manager (view only, Raj): in the views a manager can open, every form control is switched off and every button that would
+// change something is hidden. Tabs, filters, search, opening things, copying and PDF downloads still work. (Writes are blocked in flush too.)
+const RO_VIEWS = ['crm','samples','cards','card','stock','orders'];
+const RO_KEEP = /pdf|download|print|^show|see all|^hide|^open|close|^back|←|copy|whatsapp|^call|more|less|^details$|^client$|^all\b/i;
+function lockRO(node){
+  if (!isRO() || !(node instanceof Element)) return;
+  const vw = node.closest('[id^="view-"]'); if (!vw || !RO_VIEWS.includes(vw.id.slice(5))) return;
+  const els = [...(node.matches('input,select,textarea,button,label.btn') ? [node] : []), ...node.querySelectorAll('input,select,textarea,button,label.btn')];
+  for (const el of els){
+    if (el.closest('[data-ro-ok]')) continue;
+    if (el.tagName === 'BUTTON' || el.tagName === 'LABEL'){
+      const t = (el.getAttribute('aria-label') || '') + ' ' + el.textContent.trim();
+      if (el.tagName === 'BUTTON' && (el.classList.contains('jctab') || el.classList.contains('jcno') || el.closest('nav,.jump,.crmtabs') || RO_KEEP.test(el.textContent.trim()) || RO_KEEP.test(el.getAttribute('aria-label') || ''))) continue;
+      el.style.setProperty('display', 'none', 'important');
+      continue;
+    }
+    // search boxes and the filters next to them stay on
+    if (el.type === 'search' || /^(search|find)\b/i.test(el.placeholder || '') || (el.tagName === 'SELECT' && el.parentElement && el.parentElement.closest('.row') && el.parentElement.closest('.row').querySelector('input[type=search]'))) continue;
+    el.disabled = true;
+  }
+}
+new MutationObserver(ms => { if (!isRO()) return; for (const m of ms) for (const n of m.addedNodes) lockRO(n); }).observe(document.body, {childList:true, subtree:true});
 let homeT = null;
 function homeSoon(){ if (S.view !== 'home') return; clearTimeout(homeT); homeT = setTimeout(() => { if (S.view === 'home') renderHome(); }, 120); }
 // ---------- Samples (Raj): samples to be made, seen by the whole team; whoever makes one marks it ready ----------
@@ -3456,7 +3480,7 @@ function fixCoat(o){
 }
 const coatName = k => k && k !== 'none' ? (SMP_LAM.find(x => x[0] === k) || [k, k])[1] : '';
 const SMP_KIND = {plain:'Plain dummy (no printing)', printed:'Printed sample'};   // older samples
-const canEditSamples = () => S.role === 'owner' || S.role === 'jobcards' || S.role === 'sales';
+const canEditSamples = () => isOwnerRole() || S.role === 'sales';
 const smpProd = s => s.prod || (s.boxType === 'mono' ? 'mono' : RIGID.has(s.boxType) ? 'rigid' : '');
 const smpLate = s => s.status !== 'ready' && s.needBy && daysTo(s.needBy) < 0;   // older samples only
 const smpOrder = (a, b) => (b.urgent ? 1 : 0) - (a.urgent ? 1 : 0) || String(a.date || '').localeCompare(String(b.date || '')) || n0(a.createdAt) - n0(b.createdAt);
@@ -4320,6 +4344,7 @@ function quotePage(root){
 
 function renderCrm(){
   const root = $('#view-crm'); if (!root) return; root.replaceChildren();
+  if (isRO() && S.crmTab === 'sample') S.crmTab = 'leads';
   const own = isOwnerRole(), tab = S.crmTab || 'leads';
   root.append(h('div',{class:'head'},
     h('div',{}, h('h1',{},'Sales & marketing'), h('div',{class:'note'},'Clients and enquiries, quotations and samples.'))));
@@ -4329,14 +4354,14 @@ function renderCrm(){
   const waiting = own ? qs.filter(x => qStatus(x.q) === 'asked').length : qs.filter(x => qStatus(x.q) === 'priced').length;
   const t = (k, n, badge) => h('button',{type:'button', class:'jctab', 'aria-current': tab === k ? 'page' : 'false', onclick:() => { S.crmTab = k; S.qdraft = null; S.qsentText = null; S.crmSampleDone = null; renderCrm(); }}, n, badge ? h('span',{class:'tabbadge'}, String(badge)) : null);
   root.append(h('nav',{class:'jump crmtabs', 'aria-label':'Sales & marketing sections', style:'position:static;margin-bottom:14px'},
-    t('leads', 'Clients & leads'), t('quote', 'Create a quotation', waiting), t('sample', 'Create sample')));
+    t('leads', 'Clients & leads'), t('quote', isRO() ? 'Quotations' : 'Create a quotation', waiting), isRO() ? null : t('sample', 'Create sample')));
   if (tab === 'sample'){
     if (S.crmSampleDone && S.samples.has(S.crmSampleDone)){
       const s = S.samples.get(S.crmSampleDone);
       root.append(h('div',{class:'card qsent'}, h('b',{}, '✓ Sample ' + s.id + ' added.'), ' Everyone can see it in Samples and on the running orders list.', h('div',{style:'margin-top:8px'},
         h('button',{type:'button', class:'btn small', onclick:e => downloadSamplePdf(s, e.currentTarget)}, '⬇ A6 PDF for the sample maker'))));
     }
-    if (!canEditSamples()){ root.append(h('div',{class:'card empty'}, 'Only the sales team, the job cards team and Raj can add samples.')); return; }
+    if (!canEditSamples()){ root.append(h('div',{class:'card empty'}, 'Only the sales team and Raj can add samples.')); return; }
     root.append(sampleForm(null));
     const todo = S.loaded.samples ? smpTodo() : [];
     root.append(h('h3',{class:'crmh'}, 'Samples to make (' + todo.length + ')'), todo.length ? sampleRows(todo, true) : h('div',{class:'muted'}, 'None right now.'));
@@ -4570,12 +4595,18 @@ function rowDelete(what, onConfirm){
 // The owner sees everything. Team members get one role, set by the owner on Team & access.
 // Costings, rates, price history and settings are readable by the owner only (database rules);
 // job cards, stock and the shared lists are open to people the page is shared with for editing.
+// Logins (Raj, Nov 2026). The owner and admins (role 'admin' in the database) have full control: the page treats an admin like the owner.
 const ROLES = {
-  inventory:{n:'Inventory', d:'Stock: add materials, record purchases when they arrive, correct counts, see what to buy; see running orders; see samples and mark them ready', views:['stock','orders','samples']},
-  sales:{n:'Sales team', d:'Sales & marketing: clients & leads with talks and follow-ups, create samples, create a quotation (price from Raj) and send the ready message; see running orders; look up past boxes and selling prices in the Database (no costs)', views:['crm','orders','past','samples']},
-  jobcards:{n:'Job cards', d:'Job cards: create, edit, print and download team sheets; samples; client POs, dispatches, invoices, challans and payment receipts', views:['cards','card','samples','orders','pos','order','bills','bill','pay']}
+  jobcards:{n:'Accounts team', d:'Job cards, running orders, client POs & dispatches, billing (proforma, tax invoices, challans, payment receipts) and stock: view, add and edit', views:['cards','card','orders','pos','order','bills','bill','pay','stock']},
+  sales:{n:'Sales team', d:'Sales & marketing (clients & leads, quotations) and samples: view, add and edit. Running orders and the Database (selling prices, no costs): view only', views:['crm','orders','past','samples']},
+  manager:{n:'Manager', d:'View only: running orders, job cards, samples, Sales & marketing, stock and the Database. No cost calculator, client POs or billing', views:['orders','cards','card','samples','crm','stock','past'], ro:true},
+  inventory:{n:'Stock team', d:'Stock: add materials, record purchases when they arrive, correct counts, see what to buy; see running orders; see samples and mark them ready', views:['stock','orders','samples']}
 };
-const isOwnerRole = () => S.role === 'owner';
+// The roles the owner can give on Team & access (admin is not a page role: an admin signs in with full control).
+const TEAM_ROLES = {...ROLES, admin:{n:'Admin', d:'Full control, same as Raj: everything, including the cost calculator, rates, billing and team logins'}};
+// Manager: view only. Nothing is ever written to the database from that login.
+const isRO = () => !!(ROLES[S.role] && ROLES[S.role].ro);
+const isOwnerRole = () => S.role === 'owner';   // owner or admin (both sign in with full control)
 const allowedViews = () => S.role === 'owner' ? null : (ROLES[S.role] || {views:[]}).views;
 const canView = v => { const a = allowedViews(); return !a || a.includes(v); };
 const homeView = () => S.role === 'owner' ? 'home' : ((ROLES[S.role] || {views:['access']}).views[0]);
@@ -4639,9 +4670,9 @@ function credentialsCard(title, name, username, password){
 function renderTeamCloud(){
   const root = $('#view-team'); root.replaceChildren();
   const team = [...S.team.values()].sort((a, b) => String(a.label || '').localeCompare(String(b.label || '')));
-  root.append(h('div',{class:'head'}, h('div',{}, h('h1',{},'Team & access'), h('div',{class:'note'},'You have full access. Create a login for each team member and give them one role; they only see that part of the software. Costings, quotes, rates and profits stay visible to you only.'))));
-  root.append(h('div',{class:'kpis'}, kpi('Full access', 'You', 'Costings, rates, job cards, stock, settings'),
-    Object.entries(ROLES).map(([k, r]) => kpi(r.n + ' role', String(team.filter(t => t.role === k).length), r.d))));
+  root.append(h('div',{class:'head'}, h('div',{}, h('h1',{},'Team & access'), h('div',{class:'note'},'You have full access. Create a login for each team member and give them one role; they only see that part of the software. Costings, rates and profits stay with you and any Admin.'))));
+  root.append(h('div',{class:'kpis'}, kpi('Full access', 'You', 'Owner: everything, including team logins'),
+    Object.entries(TEAM_ROLES).map(([k, r]) => kpi(r.n + ' role', String(team.filter(t => t.role === k).length), r.d))));
   if (S.teamCred) root.append(credentialsCard(S.teamCred.title, S.teamCred.name, S.teamCred.username, S.teamCred.password));
 
   // Add a team member
@@ -4667,7 +4698,7 @@ function renderTeamCloud(){
     h('div',{class:'row', style:'align-items:flex-end'},
       fld('Name', nameIn), fld('Username', userIn),
       fld('Password', h('div',{class:'row', style:'gap:6px;flex-wrap:nowrap'}, passIn, h('button',{class:'btn small', title:'Make a new password', onclick:() => { f.password = makePassword(); passIn.value = f.password; }}, 'New'))),
-      fld('Role', sel(Object.entries(ROLES).map(([k, r]) => [k, r.n]), f.role, {onchange:e => f.role = e.target.value})),
+      fld('Role', sel(Object.entries(TEAM_ROLES).map(([k, r]) => [k, r.n]), f.role, {onchange:e => f.role = e.target.value})),
       addBtn), out));
 
   // People with access
@@ -4686,9 +4717,9 @@ function renderTeamCloud(){
       return h('tr',{},
         h('td',{style:'white-space:normal'}, h('div',{class:'jobno'}, x.label || x.username || 'Someone')),
         h('td',{}, x.username || '—'),
-        h('td',{}, sel(Object.entries(ROLES).map(([k, r]) => [k, r.n]), x.role, {'aria-label':'Role', onchange:e => setMember(x.id, e.target.value, x.label)})),
-        h('td',{}, reset),
-        h('td',{class:'act'}, rowDelete('login for ' + (x.label || 'this person'), async () => { await window.firstboxTeam.remove(x.id); S.team.delete(x.id); renderTeam(); })));
+        h('td',{}, x.id === S.myId ? (TEAM_ROLES[x.role] || {n:x.role}).n + ' (you)' : sel(Object.entries(TEAM_ROLES).map(([k, r]) => [k, r.n]), x.role, {'aria-label':'Role', onchange:e => setMember(x.id, e.target.value, x.label)})),
+        h('td',{}, x.id === S.myId ? '—' : reset),
+        h('td',{class:'act'}, x.id === S.myId ? null : rowDelete('login for ' + (x.label || 'this person'), async () => { await window.firstboxTeam.remove(x.id); S.team.delete(x.id); renderTeam(); })));
     })))) : h('div',{class:'note'},'Nobody else has access yet. Add your first team member above.'));
 }
 function renderTeam(){
@@ -6428,7 +6459,7 @@ function reservedOf(c){
 }
 // Takes out (or puts back) only the difference between what the job card needs now and what it already took.
 function syncCardStock(c, why){
-  if (S.role === 'inventory') return false; // inventory can’t change job cards; the next job-card or owner session catches up
+  if (S.role === 'inventory' || isRO()) return false; // inventory and the manager can’t change job cards; the next job-card or owner session catches up
   if (!S.db || !S.loaded.stock || !S.loaded.cards || !c || !S.cards.has(c.id)) return false;
   const want = {};
   for (const l of cardLines(c)) if (l.itemId && S.stock.has(l.itemId) && n0(l.qty) > 0) want[l.itemId] = Math.round(((want[l.itemId] || 0) + n0(l.qty)) * 1000) / 1000;
@@ -7176,6 +7207,7 @@ async function boot(){
   }, () => {});
   if (owner){
     S.role = 'owner'; fromHash();
+    if (user) user.id().then(id => { S.myId = id; if (S.view === 'team') renderTeam(); }).catch(() => {});   // an admin sees themselves on Team & access
     db.doc('config/defaults').onSnapshot(s => {
       if (busy('config/defaults')) return;
       if (s.exists){ S.settings = {...S.settings, ...s.data()}; if (S.view === 'rates' && !$('#view-rates').contains(document.activeElement)) renderRates(); }

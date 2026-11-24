@@ -17,7 +17,7 @@ returns void
 language plpgsql security definer set search_path = public as $$
 declare v_key text := trim(coalesce(p_key, ''));
 begin
-  if public.my_role() <> 'owner' then raise exception 'Only the owner can set the GST lookup key'; end if;
+  if public.my_role() not in ('owner','admin') then raise exception 'Only the owner or an admin can set the GST lookup key'; end if;
   if v_key = '' then delete from public.app_secrets where name = 'appyflow'; return; end if;
   if v_key !~ '^[A-Za-z0-9._-]{6,200}$' then raise exception 'That key does not look right. Copy the key secret again from AppyFlow.'; end if;
   insert into public.app_secrets (name, value) values ('appyflow', v_key)
@@ -27,10 +27,10 @@ end $$;
 create or replace function public.gst_key_set()
 returns boolean
 language sql stable security definer set search_path = public as $$
-  select public.my_role() in ('owner','jobcards') and exists (select 1 from public.app_secrets where name = 'appyflow');
+  select public.my_role() in ('owner','admin','jobcards') and exists (select 1 from public.app_secrets where name = 'appyflow');
 $$;
 
--- Owner and job cards logins: returns AppyFlow's taxpayerInfo (lgnm, tradeNam, sts, pradr.addr …).
+-- Owner, admin and accounts team logins: returns AppyFlow's taxpayerInfo (lgnm, tradeNam, sts, pradr.addr …).
 create or replace function public.gst_lookup(p_gstin text)
 returns jsonb
 language plpgsql security definer set search_path = public, extensions as $$
@@ -40,7 +40,7 @@ declare
   v_res extensions.http_response;
   v_j   jsonb;
 begin
-  if public.my_role() not in ('owner','jobcards') then raise exception 'Not allowed'; end if;
+  if public.my_role() not in ('owner','admin','jobcards') then raise exception 'Not allowed'; end if;
   if v_g !~ '^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][0-9A-Z]Z[0-9A-Z]$' then raise exception 'That is not a valid GSTIN'; end if;
   select value into v_key from public.app_secrets where name = 'appyflow';
   if v_key is null then raise exception 'GST lookup is not set up yet (⚙ Billing details)'; end if;

@@ -36,15 +36,18 @@ explain changes in plain words, never ask him to run commands, and test before p
 - `electron/` — the Mac/Windows app shell. Loads the online page (`electron/app-config.json` → `uiUrl`) when reachable, else the built-in `web/` copy. Saves PDFs in the **save folder** (default `Documents/Firstbox`; from v1.0.3 Raj can pick another with File › Change save folder… or the page's 📁 line, kept in `<userData>/firstbox-settings.json` `saveRoot`; a chosen folder that isn't there falls back to Documents/Firstbox): job cards → `Job cards/<job card no.>/`, proforma / tax invoice / delivery challan / payment receipt → `Invoices/`, sample sheets → `Samples/`, anything else → `Files/`. Preload exposes `getSaveFolder` / `chooseSaveFolder` / `resetSaveFolder` (trusted pages only); the page shows "📁 PDFs are saved in … · Change folder · Open folder · Use standard folder" on Billing, Job cards and Samples (`saveFolderBar`; older installs see a hint to update; browsers see nothing).
 - `.github/workflows/build.yml` — push to `main` publishes the page (GitHub Pages; the repo is public since Nov 2026 so phones can open it); push a tag `vX.Y.Z` builds the Mac (.dmg) and Windows (.exe) installers into a GitHub release.
 
-## Roles (enforced in `supabase/setup.sql`, mirrored in the page's `ROLES`)
+## Roles (enforced in `supabase/setup.sql`, mirrored in the page's `ROLES`; Raj's set, Nov 2026)
 - owner: everything. The first account ever created becomes the owner (Raj, signs in with his email).
-- Team logins are created by the owner on ⚙ › Team & access (username + password, shown once with "Copy for WhatsApp").
+- admin: full control like the owner (SQL `is_admin()` = owner or admin; `firstbox-cloud.js` reports an admin as owner, so the page runs the owner branch). Can add/remove logins, but never change, remove or reset the owner, nor change their own role.
+- Team logins are created by the owner or an admin on Settings › Team & access (username + password, shown once with "Copy for WhatsApp"; role list = `TEAM_ROLES` = `ROLES` + Admin).
   Behind the scenes a username is the Supabase login `<username>@firstbox.local`; SQL functions `create_member`,
-  `set_member_password`, `delete_member` (owner only) in `supabase/team-logins.sql`. Self sign-up is switched off in Supabase.
-- inventory: reads job cards/stock, writes stock + stockLog only.
-- sales: reads leads, samples, samplePics, orders, jobcards (to group running orders), pastwork, priceBook, shared; writes leads, samples, samplePics; deletes samplePics only. Members role check includes 'sales' (setup.sql drops/re-adds `members_role_check`).
-- jobcards: reads/writes job cards, stock, stockLog, orders, invoices, clients, billItems, payments; can use gst_lookup. Cannot delete job cards, POs or invoices.
-- Costings (`jobs`), `rates`, `rateHistory`, `config`, `poRates`: owner only; `pastwork` + `priceBook`: owner writes, sales reads. `shared/lists` (paper names, lamination divisors): owner writes, staff read.
+  `set_member_password`, `delete_member` (owner/admin only) in `supabase/team-logins.sql`. Self sign-up is switched off in Supabase.
+- jobcards = **Accounts team**: job cards, running orders + client POs & dispatches, billing (invoices, clients, billItems, payments), stock — read and write; gst_lookup. No samples (Raj). Cannot delete job cards, POs or invoices.
+- sales = **Sales team**: Sales & marketing (leads) and samples (+ samplePics) read/write; running orders, job cards (to group them), Database (pastwork + priceBook, no costs), shared — read only.
+- manager = **Manager** (`ro:true`): view only — running orders (lands there), job cards, samples, Sales & marketing (Clients & leads + Quotations; no Create sample tab), stock, Database. No cost calculator, client POs or billing. Nothing is written from this login: `isRO()` makes `flush` / `scheduleSave` / `pageSave` / `removeDoc` no-ops, and `lockRO` (a MutationObserver on the views in `RO_VIEWS`) disables form controls and hides buttons except tabs, filters, search, opening, copying, WhatsApp/call and PDF/print (`RO_KEEP`).
+- inventory = **Stock team**: stock read/write; job cards, running orders, samples read; can mark samples ready.
+- Costings (`jobs`), `rates`, `rateHistory`, `config`, `poRates`: owner/admin only; `pastwork` + `priceBook`: owner/admin write, sales + manager read. `shared/lists` (paper names, lamination divisors): owner/admin write, staff read.
+- `tools/test/fake-supabase.js` mirrors these rules (READ / WRITE maps).
 
 ## Data model notes
 - Everything the page stores is a JSON document at `collection/id` (e.g. `jobcards/CO-102`, `stock/<id>`, `config/defaults`).
