@@ -349,6 +349,7 @@ input[type=date]{cursor:pointer}
 .smpsub{margin-top:10px;padding:10px 12px;background:var(--sunk);border-radius:8px}
 .smpfx{display:flex;flex-wrap:wrap;gap:6px 16px}
 .smpfx label{display:flex;align-items:center;gap:4px;font-size:14px}
+.smptable .btn.armed{background:var(--bad);border-color:var(--bad);white-space:normal;max-width:190px;line-height:1.25}
 .smppics{display:flex;flex-wrap:wrap;gap:10px;margin:4px 0 8px}
 .smppic{position:relative;width:110px;height:110px;border-radius:8px;overflow:hidden;border:1px solid var(--line);background:var(--surface);display:grid;place-items:center}
 .smppic.loading{background:var(--sunk)}
@@ -3240,6 +3241,11 @@ function saveSample(s){ s.updatedAt = Date.now(); S.samples.set(s.id, s); const 
 function markSample(s, ready){
   const x = {...s, status: ready ? 'ready' : 'todo'};
   if (ready){ x.readyBy = S.myName || ROLES[S.role]?.n || 'Owner'; x.readyAt = today(); } else { delete x.readyBy; delete x.readyAt; }
+  // Raj: a sample's photos delete themselves once it is marked ready, to save space.
+  if (ready && (s.picIds || []).length){
+    for (const id of s.picIds){ picCache.delete(id); removeDoc('samplePics/' + id); }
+    x.picsDeleted = (s.picsDeleted || 0) + s.picIds.length; delete x.picIds;
+  }
   saveSample(x); renderSamples(); if (S.view === 'home') renderHome(); if (S.view === 'orders') renderOrders();
 }
 // The form follows Raj's order: client → date → basic / die made → mono carton / rigid box → that product's questions → notes.
@@ -3344,7 +3350,8 @@ function smpFacts(s){
   if (s.make || s.prod){
     add('Sample', SMP_MAKE[s.make]); add('Product', smpProd(s) === 'mono' ? 'Mono carton' : BOX[s.boxType]);
     add('Dimension', smpSize(s));
-    if ((s.picIds || []).length) rows.push(h('div',{class:'smpfact', style:'grid-column:1/-1'}, h('span',{class:'sub'}, 'Photo of the product (tap to see it big)'), picThumbs(s.picIds.map(id => ({id})))));
+    if ((s.picIds || []).length) rows.push(h('div',{class:'smpfact', style:'grid-column:1/-1'}, h('span',{class:'sub'}, 'Photo of the product (tap to see it big) · deleted automatically when the sample is marked ready'), picThumbs(s.picIds.map(id => ({id})))));
+    else if (s.picsDeleted) add('Photo of the product', (s.picsDeleted === 1 ? 'Photo' : s.picsDeleted + ' photos') + ' deleted when the sample was marked ready');
     if (smpProd(s) === 'rigid') add('Board thickness', s.board ? s.board + ' mm' : '');
     if (smpProd(s) === 'mono') add('Paper GSM', s.gsm ? fmtN(s.gsm) : '');
     if (smpProd(s) === 'rigid') add('Printing', yn(s.print));
@@ -3355,6 +3362,19 @@ function smpFacts(s){
     if (smpProd(s) === 'rigid') add('Inserts', s.insert || 'None');
   }
   return rows.length ? h('div',{class:'smpfacts'}, rows) : null;
+}
+// "Mark ready" — when the sample has photos, a second tap is needed, because marking it ready deletes them.
+function readyBtn(s){
+  const n = (s.picIds || []).length; let t;
+  const b = h('button',{type:'button', class:'btn small primary', onclick:e => {
+    e.stopPropagation();
+    if (n && !b.classList.contains('armed')){
+      b.classList.add('armed'); b.textContent = 'Ready? ' + (n === 1 ? 'Photo' : 'Photos') + ' will be deleted — tap again';
+      t = setTimeout(() => { b.classList.remove('armed'); b.textContent = 'Mark ready'; }, 5000); return;
+    }
+    clearTimeout(t); markSample(s, true);
+  }}, 'Mark ready');
+  return b;
 }
 function sampleRows(list, compact){
   const edit = canEditSamples(), own = isOwnerRole();
@@ -3381,7 +3401,7 @@ function sampleRows(list, compact){
         h('td',{}, s.status === 'ready'
           ? [h('span',{class:'pill Completed'}, 'Ready'), h('div',{class:'sub'}, (s.readyBy ? s.readyBy + ' · ' : '') + fmtDate(s.readyAt)),
              compact ? null : h('button',{type:'button', class:'linkbtn', style:'font-size:12px', onclick:e => { e.stopPropagation(); markSample(s, false); }}, 'Not ready yet')]
-          : h('button',{type:'button', class:'btn small primary', onclick:e => { e.stopPropagation(); markSample(s, true); }}, 'Mark ready')));
+          : readyBtn(s)));
     }))));
 }
 function renderSamples(){

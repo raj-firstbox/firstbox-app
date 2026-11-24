@@ -102,7 +102,7 @@ create policy docs_update on public.docs for update to authenticated
 create policy docs_delete on public.docs for delete to authenticated using (
   public.my_role() = 'owner'
   or (public.my_role() = 'inventory' and col = 'stock')
-  or (public.my_role() = 'jobcards'  and col = 'samplePics')   -- remove a photo from a sample
+  or (public.my_role() in ('jobcards','inventory') and col = 'samplePics')   -- photos go when a sample is marked ready (anyone can mark it)
 );
 
 grant select, insert, update, delete on public.docs to authenticated;
