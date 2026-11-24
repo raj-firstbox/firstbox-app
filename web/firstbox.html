@@ -4874,6 +4874,7 @@ function renderJob(){
     for (const l of j.lines){
       if (l.calc === 'printing'){ snapPrint(l); n++; continue; }
       if (l.calc === 'diecut'){ snapDie(l); n++; continue; }
+      if (l.uvSlab && l.fxKind === 'spotuv' && !(l.rateId && S.rates.get(l.rateId))){ snapUv(l, {name: l.uvCrystal ? 'crystal' : ''}); n++; continue; }
       const r = l.rateId && S.rates.get(l.rateId); if (r){ applyRate(l, r, false); n++; }
     }
     touch(); renderLines(); refreshBtn.textContent = n ? 'Updated ' + n + ' rates' : 'No linked rates';
@@ -5093,10 +5094,7 @@ function renderLinesInner(){
         f.push(...ownCount());
       }
       const pu = l.calc === 'perup';
-      if (l.uvSlab && l.fxKind === 'spotuv'){
-        const uv = (label, key) => fld(label, numIn(l[key], v => { upd(key, v); if (v != null){ S.settings[uvKey(l.uvCrystal)] = {...uvTable(l.uvCrystal), [{setup:'setup', uvR1:'r1', uvR2:'r2'}[key]]: v}; saveSettings(); } }));
-        f.push(uv('Fixed ₹', 'setup'), uv('₹ / sheet, first 1000', 'uvR1'), uv('₹ / sheet after 1000', 'uvR2'));
-      }
+      if (l.uvSlab && l.fxKind === 'spotuv'){ /* Raj: spot UV rates are set only in Settings › Rate list (uvRatesCard) */ }
       else if (isFx && l.fxKind && l.fxKind !== 'spotuv'){
         const tx = (label, key, ph, w) => fld(label, h('input',{value:l[key] || '', placeholder:ph, style:'width:' + w + 'px', oninput:e => upd(key, e.target.value)}));
         f.push(fld('No. of blocks', numIn(l.passes, v => upd('passes', v), {inputmode:'numeric', placeholder:'enter', class:'bigin'})),
@@ -6562,6 +6560,7 @@ function renderRates(){
         h('div',{class:'note', style:'max-width:420px'},'Overheads cover rent, electricity, salaries and other costs not in the lines. They are added on top of material and process cost.'))),
     printRatesCard(),
     dieRatesCard(),
+    uvRatesCard(),
     h('div',{class:'note', style:'margin-bottom:10px'},'Mill board: GSM is worked out as thickness (mm) × the board’s “GSM per mm” (grey back 660, white back 680, black back 700). Enter that factor in the GSM column of each mill board rate.')
   );
   const box = h('div',{class:'tablebox', id:'rates-box'});
@@ -6610,6 +6609,20 @@ function renderRates(){
   root.append(saveFoot());   // Save button at the bottom too
 }
 
+// Spot UV rates (Raj): set here only, not on the cost sheet. Normal and crystal each: fixed + per sheet for the first 1000 (charged as 1000) + per sheet after.
+function uvRatesCard(){
+  const row = (crystal, title) => { const U = uvTable(crystal);
+    const save = (k, v) => { S.settings[uvKey(crystal)] = {...uvTable(crystal), [k]: v}; saveSettings(); };
+    return h('div',{style:'display:grid;gap:6px'}, h('strong',{}, title),
+      h('div',{class:'defaults'},
+        fld('Fixed ₹ (positive)', numIn(U.setup, v => save('setup', v), {id:'uv-' + (crystal ? 'c' : 'n') + '-fix'})),
+        fld('₹ per sheet, first 1000', numIn(U.r1, v => save('r1', v), {id:'uv-' + (crystal ? 'c' : 'n') + '-r1'})),
+        fld('₹ per sheet after 1000', numIn(U.r2, v => save('r2', v), {id:'uv-' + (crystal ? 'c' : 'n') + '-r2'})))); };
+  return h('div',{class:'card', style:'margin-bottom:16px;display:grid;gap:12px'},
+    h('h3',{},'Spot UV rates'),
+    h('div',{class:'note'},'Spot UV = fixed charge + the first 1000 sheets (charged as 1000 even if fewer) + every sheet after that. New costings use these; open an older costing and press "Use latest rates" to bring it up to date.'),
+    row(false, 'Normal spot UV'), row(true, 'Crystal spot UV'));
+}
 function dieRatesCard(){
   const D = dieTable();
   const save = (k, v) => { S.settings.diecut = {...dieTable(), [k]: v, v:2}; saveSettings(); };
