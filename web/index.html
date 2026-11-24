@@ -4009,7 +4009,7 @@ const rajPhone = () => waNumber(billCfg().phone);
 // and Raj gives a price per piece for every quantity × printing option. Older quotes (one box, fields on the quote itself) are read by quoteItems.
 const QBOX_TYPES = ['rigid','shoulder','magnetic','slider','mono','corrugated','mdf','custom','printing'];
 // Mono cartons (Raj): carton style, paper as a choice + GSM, and the fabrication extras.
-const MONO_STYLES = [['rte','Reverse tuck end'], ['ste','Straight tuck end'], ['crash','Crash-lock bottom'], ['sleeve','Sleeve'], ['custom','Custom']];
+const MONO_STYLES = [['both','Both side flap'], ['self','Self lock'], ['bottom','Bottom lock'], ['custom','Custom shape']];
 const MONO_PAPERS = [['sbs','SBS'], ['artcard','Art card'], ['duplex','Duplex'], ['impaper','Imported paper'], ['imkraft','Imported kraft']];
 const MONO_FAB = [['window','Window pasting'], ['euro','Euro slot'], ['neck','Manual neck pasting']];
 const optName = (list, k) => (list.find(x => x[0] === k) || [, ''])[1];
@@ -4039,7 +4039,7 @@ function itemSpec(it){
   const lines = [], add = (k, v) => { if (v) lines.push(k + ': ' + v); };
   add('Type of box', qProdName(it.product));
   const mono = it.product === 'mono';
-  if (mono) add('Carton style', [optName(MONO_STYLES, it.style), it.styleNote].filter(Boolean).join(' – '));
+  if (mono) add('Carton style', [optName(MONO_STYLES, it.style), it.styleNote].filter(Boolean).join(' – ') + (it.style === 'custom' && ((it.picIds || []).length || (it.newPics || []).length) ? ' (picture shared)' : ''));
   add('Size', itemSize(it));
   if (RIGID.has(it.product)) add('Board thickness', it.board ? it.board + ' mm' : '');
   else if (mono && (it.paperType || it.gsm)) add('Paper', [optName(MONO_PAPERS, it.paperType), it.gsm ? fmtN(it.gsm) + ' GSM' : ''].filter(Boolean).join(' '));
@@ -4130,6 +4130,20 @@ function quoteForm(){
       it.prints.map((p, i) => h('td',{}, editable
         ? numIn(qPrice(it, p, r), v => { it.prices = it.prices || {}; it.prices[p.id + '|' + r.id] = v; refresh(); }, {placeholder:'₹ / pc', 'aria-label':'Price per piece, ' + (r.qty ? fmtN(r.qty) + ' pcs' : 'quantity') + (it.prints.length > 1 ? ', option ' + (i + 1) : '')})
         : qPrice(it, p, r) != null ? money2(qPrice(it, p, r)) : '—')))))));
+  // Custom-shape cartons (Raj): up to 3 pictures of the shape, shrunk like sample photos; saved in samplePics when the quote is saved.
+  const shapePics = it => {
+    it.newPics = it.newPics || [];
+    const items = [...(it.picIds || []).map(id => ({id})), ...it.newPics];
+    const add = h('label',{class:'btn small smpaddpic'}, '📷 ' + (items.length ? 'Add another picture' : 'Upload picture of the shape'),
+      h('input',{type:'file', accept:'image/*', multiple:true, class:'sr', onchange: async e => {
+        const files = [...e.target.files].slice(0, SMP_MAX_PICS - items.length); e.target.value = '';
+        for (const f of files){ try { it.newPics.push({id:'new' + Date.now() + Math.random().toString(36).slice(2, 6), data: await shrinkPhoto(f)}); } catch(err){ alert0(wrap, 'That file is not a picture.'); } }
+        refresh(); draw();
+      }}));
+    return h('div',{style:'margin-top:8px'},
+      items.length ? picThumbs(items, x => { if (x.data) it.newPics.splice(it.newPics.indexOf(x), 1); else it.picIds = it.picIds.filter(i => i !== x.id); refresh(); draw(); }) : null,
+      items.length < SMP_MAX_PICS ? add : h('div',{class:'sub'}, 'Up to ' + SMP_MAX_PICS + ' pictures.'));
+  };
   function boxQs(it, k){
     const isRigid = RIGID.has(it.product), u = it.unit === 'in' ? 'inch' : 'mm', many = q.items.length > 1;
     const qtys = h('div',{class:'qrows'}, it.rows.map((r, i) => h('div',{class:'qrow'},
@@ -4153,7 +4167,9 @@ function quoteForm(){
       h('div',{class:'smpqs'}, (() => { let n = 2; const Q = (label, ctl, wide) => qn(++n, label, ctl, wide), mono = it.product === 'mono'; return [
         Q('Type of box', choice(QBOX_TYPES.map(t => [t, BOX[t]]), it.product, v => it.product = v), true),
         mono ? Q('Carton style', h('div',{}, choice(MONO_STYLES, it.style, v => it.style = v),
-          it.style === 'custom' ? h('input',{value:it.styleNote || '', placeholder:'Describe the style', style:'margin-top:8px;width:100%', oninput:e => { it.styleNote = e.target.value; refresh(); }}) : null), true) : null,
+          it.style === 'custom' ? h('div',{class:'smpsub'},
+            h('input',{value:it.styleNote || '', placeholder:'Describe the shape (optional)', style:'width:100%', oninput:e => { it.styleNote = e.target.value; refresh(); }}),
+            shapePics(it)) : null), true) : null,
         Q('Quantity', qtys),
         Q('Dimensions of the box', h('div',{class:'grid'},
           fld('Size in', sel([['mm','mm'], ['in','inches']], it.unit, {onchange:e => { it.unit = e.target.value; try { localStorage.setItem('fb-smpUnit', it.unit); } catch(err){} refresh(); draw(); }})),
@@ -4185,6 +4201,7 @@ function quoteForm(){
         ...q.items.map((it, k) => h('div',{class:'qbox'},
           q.items.length > 1 ? h('div',{class:'qboxhead'}, h('b',{}, 'Box ' + (k + 1))) : null,
           h('div',{class:'smptext'}, itemSpec(it).join('\n') || '—'),
+          (it.picIds || []).length ? h('div',{style:'margin-top:8px'}, h('div',{class:'sub'}, 'Picture of the shape (tap to open)'), picThumbs(it.picIds.map(id => ({id})))) : null,
           h('div',{class:'fld', style:'margin-top:10px'}, h('span',{class:'fl'}, mode === 'price' ? 'Price per piece' : 'Price per piece (from Raj)'), priceGrid(it, mode === 'price')))),
         mode === 'price' ? h('div',{class:'grid'},
           fld('GST %', numIn(q.gst, x => { q.gst = x; refresh(); })),
@@ -4227,8 +4244,16 @@ function quoteForm(){
     let l = q.leadId && S.leads.get(q.leadId) ? clone(S.leads.get(q.leadId)) : {id: uid(), name: q.name, contact: q.contact, phone: q.phone, source:'other', stage:'new', product: first.product, by: myName(), createdAt: Date.now(), log: [], quotes: []};
     if (!q.leadId) logLead(l, 'note', 'Added with a quotation request');
     if (!l.contact && q.contact) l.contact = q.contact; if (!l.phone && q.phone) l.phone = q.phone;
+    const qid = uid();
+    q.items.forEach((it, k) => {
+      const mono = it.product === 'mono' && it.style === 'custom';
+      const added = mono ? (it.newPics || []).map((p, i) => { const id = 'Q-' + qid + '-' + k + '-' + i; picCache.set(id, Promise.resolve(p.data));
+        flush('samplePics/' + id, () => ({quote: qid, data: p.data, at: Date.now(), by: myName()})); return id; }) : [];
+      it.picIds = [...(mono ? it.picIds || [] : []), ...added]; if (!it.picIds.length) delete it.picIds;
+      delete it.newPics;
+    });
     const {leadId, msgEdited, mode: _m, msg, quoteId, ...rest} = q;
-    const quote = {...clone(rest), id: uid(), date: q.date || today(), by: myName(), askedBy: myName(), askedAt: Date.now(), status};
+    const quote = {...clone(rest), id: qid, date: q.date || today(), by: myName(), askedBy: myName(), askedAt: Date.now(), status};
     quote.items.forEach(it => { it.rows = it.rows.filter(r => r.qty); if (it.hasVars !== 'yes') it.vars = []; else it.vars = it.vars.filter(v => v.name || v.qty); });
     if (status === 'asked'){ quote.items.forEach(it => it.prices = {}); logLead(l, 'quote', 'Asked Raj for a rough quote: ' + quoteProducts(quote) + ' · ' + quoteQtyText(quote)); }
     (l.quotes = l.quotes || []).push(quote);
