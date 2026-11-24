@@ -1043,8 +1043,8 @@ function sheetsOf(src, qty){
 function calcLine(l, j, byId){
   const qty = n0(j.qty);
   if (l.uvSlab && l.fxKind === 'spotuv'){
-    // Spot UV, normal (Raj, Nov 2026): fixed ₹1,000 (positive) + ₹1.50 a sheet for the first 1000 sheets (charged as 1000 even if fewer)
-    // + ₹1 a sheet for every sheet after that.
+    // Spot UV (Raj, Nov 2026): fixed ₹1,000 (positive) + first 1000 sheets (charged as 1000 even if fewer) + a rate per sheet after that.
+    // Normal ₹1.50 then ₹1 a sheet; crystal ₹2 (= ₹2,000 for the first 1000) then ₹2.50 a sheet.
     const linked = l.link && byId.get(l.link);
     const src = linked && linked.calc === 'sheet' ? linked : l;
     const sh = sheetsOf(src, qty);
@@ -1316,10 +1316,13 @@ const printTable = () => S.settings.printing || S.printDefaults;
 const dieTable = () => ({...S.diecutDefaults, ...(S.settings.diecut || {})});
 function snapDie(l){ const D = dieTable(); l.setup = D.die ?? null; l.first = D.first ?? null; l.next = D.next ?? null; }
 // Spot UV normal (Raj): fixed charge + first 1000 sheets + each further 1000; crystal keeps its rate from the Rate list.
-const uvTable = () => { const t = S.settings.spotuv || {}; return {setup: t.setup ?? 1000, r1: t.r1 ?? 1.5, r2: t.r2 ?? 1}; };
+// Crystal (Raj): fixed ₹1,000 + ₹2,000 for the first 1000 sheets (₹2 a sheet) + ₹2.50 a sheet after.
+const uvKey = crystal => crystal ? 'spotuvCrystal' : 'spotuv';
+const uvTable = crystal => { const t = S.settings[uvKey(crystal)] || {}; return {setup: t.setup ?? 1000, r1: t.r1 ?? (crystal ? 2 : 1.5), r2: t.r2 ?? (crystal ? 2.5 : 1)}; };
 function snapUv(l, r){
-  if (l.fxKind !== 'spotuv' || /crystal/i.test((r && r.name) || '')){ l.uvSlab = false; return; }
-  const U = uvTable(); l.uvSlab = true; l.setup = U.setup; l.uvR1 = U.r1; l.uvR2 = U.r2;
+  if (l.fxKind !== 'spotuv'){ l.uvSlab = false; return; }
+  const crystal = /crystal/i.test((r && r.name) || ''), U = uvTable(crystal);
+  l.uvSlab = true; l.uvCrystal = crystal; l.setup = U.setup; l.uvR1 = U.r1; l.uvR2 = U.r2;
 }
 // Pantone (Raj): each Pantone is one more colour on the press (2 colours + 1 Pantone = priced as 3 colours),
 // plus Pantone ink at ₹1,500 per kg, 1 kg good for 3,000 sheets, charged for the part kg used (2,100 sheets = 0.7 kg).
@@ -5090,7 +5093,7 @@ function renderLinesInner(){
       }
       const pu = l.calc === 'perup';
       if (l.uvSlab && l.fxKind === 'spotuv'){
-        const uv = (label, key) => fld(label, numIn(l[key], v => { upd(key, v); if (v != null){ S.settings.spotuv = {...uvTable(), [{setup:'setup', uvR1:'r1', uvR2:'r2'}[key]]: v}; saveSettings(); } }));
+        const uv = (label, key) => fld(label, numIn(l[key], v => { upd(key, v); if (v != null){ S.settings[uvKey(l.uvCrystal)] = {...uvTable(l.uvCrystal), [{setup:'setup', uvR1:'r1', uvR2:'r2'}[key]]: v}; saveSettings(); } }));
         f.push(uv('Fixed ₹', 'setup'), uv('₹ / sheet, first 1000', 'uvR1'), uv('₹ / sheet after 1000', 'uvR2'));
       }
       else if (isFx && l.fxKind && l.fxKind !== 'spotuv'){
