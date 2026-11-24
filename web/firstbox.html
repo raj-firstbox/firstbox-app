@@ -4005,7 +4005,7 @@ function leadTable(list){
 
 // ---- Create a quotation (Raj): the salesperson asks Raj → Raj gives the price → the salesperson sends the ready message ----
 // Each quote sits on its lead (`quotes`) with status: 'asked' (waiting for Raj) → 'priced' (Raj gave the price) → 'sent' (sent to the client).
-const QSTAT = {asked:'Waiting for Raj', priced:'Price ready', sent:'Sent to client'};
+const QSTAT = {asked:'Waiting for price', priced:'Price ready', sent:'Sent to client'};
 const qStatus = q => q.status || 'sent';
 const allQuotes = () => [...S.leads.values()].flatMap(l => (l.quotes || []).map(q => ({q, l})));
 const rajPhone = () => waNumber(billCfg().phone);
@@ -4203,12 +4203,12 @@ function quoteForm(){
         h('div',{class:'quotesum'}, h('b',{}, q.name), q.contact ? ' · ' + q.contact : '',
           h('div',{class:'sub'}, 'Asked by ' + (q.askedBy || '—') + ' · ' + fmtDate(q.date || (q.askedAt ? ymd(new Date(q.askedAt)) : today()))),
           q.askNote ? h('div',{class:'sub', style:'margin-top:6px'}, 'Note: ' + q.askNote) : null,
-          q.rajNote && mode === 'send' ? h('div',{class:'banner', style:'margin-top:8px'}, 'Raj: ' + q.rajNote) : null),
+          q.rajNote && mode === 'send' ? h('div',{class:'banner', style:'margin-top:8px'}, 'Note: ' + q.rajNote) : null),
         ...q.items.map((it, k) => h('div',{class:'qbox'},
           q.items.length > 1 ? h('div',{class:'qboxhead'}, h('b',{}, 'Box ' + (k + 1))) : null,
           h('div',{class:'smptext'}, itemSpec(it).join('\n') || '—'),
           (it.picIds || []).length ? h('div',{style:'margin-top:8px'}, h('div',{class:'sub'}, 'Picture of the shape (tap to open)'), picThumbs(it.picIds.map(id => ({id})))) : null,
-          h('div',{class:'fld', style:'margin-top:10px'}, h('span',{class:'fl'}, mode === 'price' ? 'Price per piece' : 'Price per piece (from Raj)'), priceGrid(it, mode === 'price')))),
+          h('div',{class:'fld', style:'margin-top:10px'}, h('span',{class:'fl'}, 'Price per piece'), priceGrid(it, mode === 'price')))),
         mode === 'price' ? h('div',{class:'grid'},
           fld('GST %', numIn(q.gst, x => { q.gst = x; refresh(); })),
           fld('Valid for (days)', numIn(q.validity, x => { q.validity = x; refresh(); })),
@@ -4231,7 +4231,7 @@ function quoteForm(){
         fld('GST %', numIn(q.gst, x => { q.gst = x; refresh(); })),
         fld('Valid for (days)', numIn(q.validity, x => { q.validity = x; refresh(); })),
         fld('Extra line (optional)', h('input',{value:q.note, placeholder:'e.g. Samples will be charged extra', oninput:e => { q.note = e.target.value; refresh(); }})))
-        : fld('Note for Raj (optional)', h('input',{value:q.askNote, placeholder:'e.g. Client says competitor quoted ₹40; needs reply today', oninput:e => { q.askNote = e.target.value; refresh(); }}), 'wide'));
+        : fld('Note with the request (optional)', h('input',{value:q.askNote, placeholder:'e.g. Client says competitor quoted ₹40; needs reply today', oninput:e => { q.askNote = e.target.value; refresh(); }}), 'wide'));
   }
   // a new quote: a lead for the client (found by name, or made now) and the quote on it
   const saveNew = status => {
@@ -4259,7 +4259,7 @@ function quoteForm(){
     const {leadId, msgEdited, mode: _m, msg, quoteId, ...rest} = q;
     const quote = {...clone(rest), id: qid, date: q.date || today(), by: myName(), askedBy: myName(), askedAt: Date.now(), status};
     quote.items.forEach(it => { it.rows = it.rows.filter(r => r.qty); if (it.hasVars !== 'yes') it.vars = []; else it.vars = it.vars.filter(v => v.name || v.qty); });
-    if (status === 'asked'){ quote.items.forEach(it => it.prices = {}); logLead(l, 'quote', 'Asked Raj for a quote: ' + quoteProducts(quote) + ' · ' + quoteQtyText(quote)); }
+    if (status === 'asked'){ quote.items.forEach(it => it.prices = {}); logLead(l, 'quote', 'Quotation requested: ' + quoteProducts(quote) + ' · ' + quoteQtyText(quote)); }
     (l.quotes = l.quotes || []).push(quote);
     saveLead(l);
     if (status === 'sent'){ const r = markQuoteSent(l.id, quote.id, q.msg || quoteMessage(q)); return r; }
@@ -4268,9 +4268,9 @@ function quoteForm(){
   const done = l => { S.qdraft = null; S.crmTab = 'quote'; renderCrm(); };
   const title = mode === 'price' ? 'Give the price' : mode === 'send' ? 'Price ready – send to the client' : own ? 'Quote' : 'Create a quotation';
   const help = mode === 'price' ? 'Fill in the price per piece for each quantity' + (q.items.some(it => it.prints.length > 1) ? ' and printing option' : '') + ' and press “Send price”. ' + (q.askedBy || 'The salesperson') + ' then sends the ready message to the client.'
-    : mode === 'send' ? 'Raj has given the price. Check the message, then copy it or open WhatsApp to send it to the client.'
+    : mode === 'send' ? 'The price is ready. Check the message, then copy it or open WhatsApp to send it to the client.'
     : own ? 'Fill in the details and the price per piece. The message on the right is ready to send to the client.'
-    : 'Ask the client the questions in this order and fill them in as you go. Then press “Request for quotation”. Raj gives the price in the app; you then get the ready message for the client.';
+    : 'Ask the client the questions in this order and fill them in as you go. Then press “Request for quotation”. Once the price is given, you get the ready message for the client.';
   const btns = [];
   if (mode === 'new' && !own){
     btns.push(h('button',{type:'button', class:'btn primary', onclick:() => { const r = saveNew('asked'); if (!r) return; S.qsentText = quoteAskText({...r.q, name: r.l.name}); done(r.l); }}, 'Request for quotation'));
@@ -4282,7 +4282,7 @@ function quoteForm(){
     btns.push(h('button',{type:'button', class:'btn primary', onclick:() => {
       if (!quoteHasPrice(q)){ alert0(wrap, 'Enter the price per piece.'); return; }
       const r = updQuote(q.leadId, q.quoteId, (x, l) => { Object.assign(x, {items: clone(q.items), gst: q.gst, delivery: q.delivery, validity: q.validity, rajNote: q.rajNote || '', status:'priced', pricedAt: Date.now(), pricedBy: myName()});
-        logLead(l, 'quote', 'Raj gave the price: ' + quoteLine(x) + (q.rajNote ? ' (' + q.rajNote + ')' : '')); });
+        logLead(l, 'quote', 'Price given: ' + quoteLine(x) + (q.rajNote ? ' (' + q.rajNote + ')' : '')); });
       if (r) done(r.l);
     }}, 'Send price to ' + (q.askedBy || 'sales')));
   } else {
@@ -4292,7 +4292,7 @@ function quoteForm(){
   btns.push(h('button',{type:'button', class:'btn', onclick:() => { S.qdraft = null; renderCrm(); }}, 'Cancel'));
   wrap.append(h('h2',{}, title), h('div',{class:'note'}, help),
     h('div',{class:'quotecols'}, body,
-      h('div',{class:'quoteright'}, h('div',{class:'fl'}, showClientMsg ? 'Message for the client' : 'What Raj will see'), msgBox,
+      h('div',{class:'quoteright'}, h('div',{class:'fl'}, showClientMsg ? 'Message for the client' : 'Quotation request'), msgBox,
         showClientMsg ? h('button',{type:'button', class:'linkbtn', onclick:() => { q.msgEdited = false; refresh(); }}, 'Rebuild the message from the details') : null)),
     h('div',{class:'row', style:'margin-top:12px;gap:8px'}, btns));
   if (!showClientMsg) msgBox.readOnly = true;
@@ -4314,7 +4314,7 @@ function quoteTable(items, inLead){
       h('td',{}, fmtDate(q.date)),
       inLead ? null : h('td',{}, h('b',{}, l.name), l.contact ? h('div',{class:'sub'}, l.contact) : null),
       h('td',{style:'white-space:normal'}, quoteProducts(q) || '—', h('div',{class:'sub'}, quoteItems(q).length > 1 ? quoteItems(q).length + ' boxes' : itemSize(quoteItems(q)[0]))),
-      h('td',{style:'white-space:normal'}, st === 'asked' ? quoteQtyText(q) : quoteLine(q), q.rajNote ? h('div',{class:'sub'}, 'Raj: ' + q.rajNote) : null),
+      h('td',{style:'white-space:normal'}, st === 'asked' ? quoteQtyText(q) : quoteLine(q), q.rajNote ? h('div',{class:'sub'}, 'Note: ' + q.rajNote) : null),
       h('td',{}, q.askedBy || q.by || ''),
       h('td',{}, h('span',{class:'qst qst-' + st}, QSTAT[st])),
       h('td',{}, h('div',{class:'row', style:'gap:6px;flex-wrap:wrap'},
@@ -4328,17 +4328,17 @@ function quotePage(root){
   const own = isOwnerRole(), all = allQuotes().sort((a, b) => n0(b.q.askedAt || 0) - n0(a.q.askedAt || 0) || String(b.q.date).localeCompare(String(a.q.date)));
   if (S.qsentText){
     const t = S.qsentText, ph = rajPhone();   // stays until they open something else
-    root.append(h('div',{class:'card qsent'}, h('b',{}, '✓ Quotation requested.'), ' Raj will see it in the app and give the price. You’ll find it under “Price ready” when he does.',
-      ph ? h('div',{style:'margin-top:8px'}, h('a',{class:'btn small', href:'https://wa.me/' + ph + '?text=' + encodeURIComponent(t), target:'_blank', rel:'noopener'}, 'Also tell Raj on WhatsApp')) : null));
+    root.append(h('div',{class:'card qsent'}, h('b',{}, '✓ Quotation requested.'),
+      ph ? h('div',{style:'margin-top:8px'}, h('a',{class:'btn small', href:'https://wa.me/' + ph + '?text=' + encodeURIComponent(t), target:'_blank', rel:'noopener'}, 'Also send on WhatsApp')) : null));
   }
   if (S.qdraft){ root.append(quoteForm()); return; }
   root.append(h('div',{class:'row', style:'justify-content:space-between;align-items:center;margin-bottom:12px'},
-    h('div',{class:'note', style:'margin:0'}, own ? 'Quotation requests from the sales team, and quotes sent to clients.' : 'Ask Raj for the price, then send the ready message to the client.'),
+    h('div',{class:'note', style:'margin:0'}, own ? 'Quotation requests from the sales team, and quotes sent to clients.' : 'Request a quotation, then send the ready message to the client.'),
     h('button',{class:'btn primary', onclick:() => { S.qdraft = newQuote(null); S.qsentText = null; renderCrm(); }}, own ? '+ Quote' : '+ Create a quotation')));
   const sec = (title, list, empty) => { root.append(h('h3',{class:'crmh'}, title + ' (' + list.length + ')'), list.length ? quoteTable(list) : h('div',{class:'muted', style:'margin-bottom:10px'}, empty)); };
   const asked = all.filter(x => qStatus(x.q) === 'asked'), priced = all.filter(x => qStatus(x.q) === 'priced'), sent = all.filter(x => qStatus(x.q) === 'sent');
   if (own){ sec('Waiting for your price', asked, 'No requests waiting.'); sec('Price given – sales to send', priced, 'Nothing waiting to be sent.'); }
-  else { sec('Price ready – send to the client', priced, 'No prices waiting to be sent.'); sec('Waiting for Raj', asked, 'Nothing waiting for Raj.'); }
+  else { sec('Price ready – send to the client', priced, 'No prices waiting to be sent.'); sec('Waiting for price', asked, 'Nothing waiting.'); }
   root.append(h('details',{open: sent.length <= 5}, h('summary',{class:'crmh', style:'cursor:pointer'}, 'Sent to clients (' + sent.length + ')'), sent.length ? quoteTable(sent.slice(0, 100)) : h('div',{class:'muted'}, 'None yet.')));
 }
 
@@ -4361,7 +4361,7 @@ function renderCrm(){
       root.append(h('div',{class:'card qsent'}, h('b',{}, '✓ Sample ' + s.id + ' added.'), ' Everyone can see it in Samples and on the running orders list.', h('div',{style:'margin-top:8px'},
         h('button',{type:'button', class:'btn small', onclick:e => downloadSamplePdf(s, e.currentTarget)}, '⬇ A6 PDF for the sample maker'))));
     }
-    if (!canEditSamples()){ root.append(h('div',{class:'card empty'}, 'Only the sales team and Raj can add samples.')); return; }
+    if (!canEditSamples()){ root.append(h('div',{class:'card empty'}, 'Only the sales team and the owner can add samples.')); return; }
     root.append(sampleForm(null));
     const todo = S.loaded.samples ? smpTodo() : [];
     root.append(h('h3',{class:'crmh'}, 'Samples to make (' + todo.length + ')'), todo.length ? sampleRows(todo, true) : h('div',{class:'muted'}, 'None right now.'));
@@ -4615,7 +4615,7 @@ const ROLES = {
   inventory:{n:'Stock team', d:'Stock: add materials, record purchases when they arrive, correct counts, see what to buy; see running orders; see samples and mark them ready', views:['home','stock','orders','samples']}
 };
 // The roles the owner can give on Team & access (admin is not a page role: an admin signs in with full control).
-const TEAM_ROLES = {...ROLES, admin:{n:'Admin', d:'Full control, same as Raj: everything, including the cost calculator, rates, billing and team logins'}};
+const TEAM_ROLES = {...ROLES, admin:{n:'Admin', d:'Full control, same as the owner: everything, including the cost calculator, rates, billing and team logins'}};
 // Manager: view only. Nothing is ever written to the database from that login.
 const isRO = () => !!(ROLES[S.role] && ROLES[S.role].ro);
 const isOwnerRole = () => S.role === 'owner';   // owner or admin (both sign in with full control)
