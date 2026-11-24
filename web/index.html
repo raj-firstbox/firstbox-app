@@ -4007,7 +4007,9 @@ const rajPhone = () => waNumber(billCfg().phone);
 // ---- Quotation details (Raj, Nov 2026): asked in the order the sales rep asks the client, sitting with them ----
 // A quote holds one or more boxes (`items`); each box can have more than one printing option (the client wants a price for both),
 // and Raj gives a price per piece for every quantity × printing option. Older quotes (one box, fields on the quote itself) are read by quoteItems.
-const QBOX_TYPES = ['rigid','shoulder','magnetic','slider','mono','corrugated','mdf','custom','printing'];
+const QBOX_TYPES = ['rigid','shoulder','magnetic','slider','mono','corrugated','mdf'];   // Raj: no custom box or printing service here
+// MDF boxes (Raj): same questions as a rigid box, plus accessories typed by hand.
+const qRigidLike = k => RIGID.has(k) || k === 'mdf';
 // Mono cartons (Raj): carton style and paper as a choice + GSM (no pasting question — Raj).
 const MONO_STYLES = [['both','Both side flap'], ['self','Self lock'], ['bottom','Bottom lock'], ['custom','Custom shape']];
 const MONO_PAPERS = [['sbs','SBS'], ['artcard','Art card'], ['duplex','Duplex'], ['impaper','Imported paper'], ['imkraft','Imported kraft']];
@@ -4040,7 +4042,7 @@ function itemSpec(it){
   const mono = it.product === 'mono';
   if (mono) add('Carton style', [optName(MONO_STYLES, it.style), it.styleNote].filter(Boolean).join(' – ') + (it.style === 'custom' && ((it.picIds || []).length || (it.newPics || []).length) ? ' (picture shared)' : ''));
   add('Size', itemSize(it));
-  if (RIGID.has(it.product)) add('Board thickness', it.board ? it.board + ' mm' : '');
+  if (qRigidLike(it.product)) add('Board thickness', it.board ? it.board + ' mm' : '');
   else if (mono && (it.paperType || it.gsm)) add('Paper', [optName(MONO_PAPERS, it.paperType), it.gsm ? fmtN(it.gsm) + ' GSM' : ''].filter(Boolean).join(' '));
   else add('Paper', it.paper);
   const pr = (it.prints || []).filter(p => p.print);
@@ -4049,6 +4051,7 @@ function itemSpec(it){
   add('Coating', it.lam ? coatName(c.lam) : '');
   add('Special effects', [(c.fx || []).map(k => (SMP_FX.find(x => x[0] === k) || [k, k])[1]).join(', '), it.fxNote].filter(Boolean).join(' – '));
   add('Insert', it.insert);
+  if (it.product === 'mdf') add('Accessories', it.acc);
   if (it.hasVars === 'yes') add('Variants', (it.vars || []).filter(v => v.name || v.qty).map(v => (v.name || 'Variant') + (v.qty ? ' – ' + fmtN(v.qty) + ' pcs' : '')).join(', '));
   add('Other', it.extras);
   return lines;
@@ -4143,7 +4146,7 @@ function quoteForm(){
       items.length < SMP_MAX_PICS ? add : h('div',{class:'sub'}, 'Up to ' + SMP_MAX_PICS + ' pictures.'));
   };
   function boxQs(it, k){
-    const isRigid = RIGID.has(it.product), u = it.unit === 'in' ? 'inch' : 'mm', many = q.items.length > 1;
+    const isRigid = qRigidLike(it.product), u = it.unit === 'in' ? 'inch' : 'mm', many = q.items.length > 1;
     const qtys = h('div',{class:'qrows'}, it.rows.map((r, i) => h('div',{class:'qrow'},
         numIn(r.qty, x => { r.qty = x; refresh(); }, {placeholder:'Quantity', 'aria-label':'Quantity ' + (i + 1)}), h('span',{class:'sub'}, 'pcs'),
         it.rows.length > 1 ? h('button',{type:'button', class:'linkbtn', 'aria-label':'Remove this quantity', onclick:() => { it.rows.splice(i, 1); refresh(); draw(); }}, '×') : null)),
@@ -4184,6 +4187,7 @@ function quoteForm(){
           h('div',{class:'smpfx'}, SMP_FX.map(([key, lab]) => h('label',{}, h('input',{type:'checkbox', checked: (it.fx || []).includes(key), onchange:e => { it.fx = e.target.checked ? [...new Set([...(it.fx || []), key])] : it.fx.filter(x => x !== key); refresh(); }}), ' ' + lab))),
           h('input',{value:it.fxNote || '', placeholder:'e.g. gold foil on logo', style:'margin-top:8px;width:100%', oninput:e => { it.fxNote = e.target.value; refresh(); }})), true),
         Q('Inserts', txt(it.insert, 'e.g. EVA foam, 1 cavity (empty if none)', v => it.insert = v)),
+        it.product === 'mdf' ? Q('Accessories', txt(it.acc, 'e.g. handle (black rope), 2 magnets, ribbon', v => it.acc = v)) : null,
         Q('Any variants?', h('div',{}, choice([['no','No'], ['yes','Yes']], it.hasVars, v => it.hasVars = v), vars), true),
         Q('Other details (optional)', txt(it.extras, 'e.g. magnetic closure, ribbon pull, window', v => it.extras = v), true)]; })()),
       own ? h('div',{class:'fld', style:'margin-top:12px'}, h('span',{class:'fl'}, 'Price per piece'), priceGrid(it, true)) : null);
