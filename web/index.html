@@ -1284,12 +1284,14 @@ function makeLine(calc, o){
 // Rates per 1000 cartons come from the rate list when it has them (Side pasting / Window pasting / Euro slot are saved there per piece),
 // otherwise from the last rate typed (kept in settings).
 const per1000 = re => { const r = [...S.rates.values()].find(x => re.test(x.name || '') && x.rate != null); return r ? Math.round(n0(r.rate) * 1000 * 100) / 100 : null; };
+// Fabrication options (Raj): rates per 1000 cartons are set only in Settings › Rate list › Fabrication rates (settings keys), not on the cost sheet.
+const FAB_OPTS = [[null,'sideRate','Side pasting','sidePastePer1000',/side\s*pasting/i,300], ['euro','euroRate','Euro slot','euroSlotPer1000',/euro/i,null],
+  ['window','winRate','Window pasting','windowPastePer1000',/window\s*pasting/i,null], ['neck','neckRate','Manual neck pasting','neckPastePer1000',/neck\s*pasting/i,null]];
+const fabRate = o => (S.settings || {})[o[3]] ?? per1000(o[4]) ?? o[5];
+function snapFab(l){ for (const o of FAB_OPTS) l[o[1]] = fabRate(o); }
 function newFabLine(){
-  const st = S.settings || {};
-  return {id: uid(), name:'Fabrication', calc:'fab', part:'fab', pv:2, actual:null,
-    sideRate: per1000(/side\s*pasting/i) ?? st.sidePastePer1000 ?? 300, euro:false, euroRate: per1000(/euro/i) ?? st.euroSlotPer1000 ?? null,
-    window:false, winRate: per1000(/window\s*pasting/i) ?? st.windowPastePer1000 ?? null,
-    neck:false, neckRate: per1000(/neck\s*pasting/i) ?? st.neckPastePer1000 ?? null};
+  const l = {id: uid(), name:'Fabrication', calc:'fab', part:'fab', pv:2, actual:null, euro:false, window:false, neck:false};
+  snapFab(l); return l;
 }
 function newPackLine(){
   const st = S.settings || {};
@@ -1299,7 +1301,7 @@ function specialCard(l, title, body){
   return h('div',{class:'line', 'data-line':l.id},
     h('div',{class:'line-top'}, h('div',{class:'fld name'}, h('span',{class:'ctype'}, title), h('b',{}, l.name))),
     body,
-    h('div',{class:'note warnline', 'data-warn':l.id, hidden: !needsRate(l)}, l.calc === 'fab' ? 'Type the rate per 1000 for each ticked option.' : l.calc === 'mdf' ? 'Type this job’s MDF board cost from your vendor.' : 'Type the rate per carton.'),
+    h('div',{class:'note warnline', 'data-warn':l.id, hidden: !needsRate(l)}, l.calc === 'fab' ? 'A ticked option has no rate yet. Set it in Settings › Rate list › Fabrication rates.' : l.calc === 'mdf' ? 'Type this job’s MDF board cost from your vendor.' : 'Type the rate per carton.'),
     h('div',{class:'line-foot'},
       h('div',{class:'detail', 'data-detail':l.id}),
       h('div',{class:'row', style:'gap:16px;align-items:flex-end'},
@@ -1307,16 +1309,17 @@ function specialCard(l, title, body){
         fld('Actual ₹', numIn(l.actual, v => { l.actual = v; touch(); }, {placeholder:'after job'}), 'actual'))));
 }
 function fabEditor(l){
-  const remember = (k, v) => { if (v != null){ S.settings[k] = v; saveSettings(); } };
-  const opt = (key, rateKey, label, setKey) => h('div',{class:'fabopt' + (key && !l[key] ? ' off' : '')},
-    key ? h('label',{class:'row', style:'gap:8px'}, h('input',{type:'checkbox', checked: l[key] ? true : null, onchange:e => { l[key] = e.target.checked; if (l[key] && l[rateKey] == null) l[rateKey] = S.settings[setKey] ?? null; touch(); renderLines(); }}), h('b',{}, label))
-        : h('label',{class:'row', style:'gap:8px'}, h('input',{type:'checkbox', checked:true, disabled:true}), h('b',{}, label), h('span',{class:'note'}, '(always)')),
-    !key || l[key] ? h('div',{class: key ? '' : 'adv'}, fld('₹ per 1000 cartons', numIn(l[rateKey], v => { l[rateKey] = v; remember(setKey, v); touch(); }, {placeholder:'Rate'}))) : null);
-  return specialCard(l, 'Fabrication', h('div',{class:'fabopts'},
-    opt(null, 'sideRate', 'Side pasting', 'sidePastePer1000'),
-    opt('euro', 'euroRate', 'Euro slot', 'euroSlotPer1000'),
-    opt('window', 'winRate', 'Window pasting', 'windowPastePer1000'),
-    opt('neck', 'neckRate', 'Manual neck pasting', 'neckPastePer1000')));
+  // Tick boxes only; the rates come from Settings › Rate list (Raj: don't show rates on the cost sheet).
+  const opt = o => { const [key, rateKey, label] = o; return h('div',{class:'fabopt' + (key && !l[key] ? ' off' : '')},
+    key ? h('label',{class:'row', style:'gap:8px'}, h('input',{type:'checkbox', checked: l[key] ? true : null, onchange:e => { l[key] = e.target.checked; if (l[key]) l[rateKey] = fabRate(o); touch(); renderLines(); }}), h('b',{}, label))
+        : h('label',{class:'row', style:'gap:8px'}, h('input',{type:'checkbox', checked:true, disabled:true}), h('b',{}, label), h('span',{class:'note'}, '(always)'))); };
+  return specialCard(l, 'Fabrication', h('div',{class:'fabopts'}, FAB_OPTS.map(opt)));
+}
+function fabRatesCard(){
+  return h('div',{class:'card', style:'margin-bottom:16px;display:grid;gap:10px'},
+    h('h3',{},'Fabrication rates (mono cartons & corrugated)'),
+    h('div',{class:'note'},'Rate per 1000 cartons. Side pasting is always charged; the others only when ticked on the costing. New costings use these; open an older costing and press "Use latest rates" to bring it up to date.'),
+    h('div',{class:'defaults'}, FAB_OPTS.map(o => fld(o[2] + ' ₹ / 1000', numIn(fabRate(o), v => { S.settings[o[3]] = v; saveSettings(); }, {id:'fab-' + o[1]})))));
 }
 function mdfEditor(l){
   const mode = (m, label) => h('label',{class:'packopt' + (l.mode === m ? ' on' : '')},
@@ -4900,6 +4903,7 @@ function renderJob(){
     for (const l of j.lines){
       if (l.calc === 'printing'){ snapPrint(l); n++; continue; }
       if (l.calc === 'diecut'){ snapDie(l); n++; continue; }
+      if (l.calc === 'fab'){ snapFab(l); n++; continue; }
       if (l.uvSlab && l.fxKind === 'spotuv' && !(l.rateId && S.rates.get(l.rateId))){ snapUv(l, {name: l.uvCrystal ? 'crystal' : ''}); n++; continue; }
       const r = l.rateId && S.rates.get(l.rateId); if (r){ applyRate(l, r, false); n++; }
     }
@@ -6587,6 +6591,7 @@ function renderRates(){
     printRatesCard(),
     dieRatesCard(),
     uvRatesCard(),
+    fabRatesCard(),
     h('div',{class:'note', style:'margin-bottom:10px'},'Mill board: GSM is worked out as thickness (mm) × the board’s “GSM per mm” (grey back 660, white back 680, black back 700). Enter that factor in the GSM column of each mill board rate.')
   );
   const box = h('div',{class:'tablebox', id:'rates-box'});
