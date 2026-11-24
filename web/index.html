@@ -4075,12 +4075,12 @@ function quoteMessage(q, signer){
   const its = quoteItems(q), many = its.length > 1;
   const who = String(q.contact || '').trim() || String(q.name || '').trim();
   return [
-    'Dear ' + (who || 'Sir/Madam') + ',', '', 'Greetings from Firstbox!', 'As discussed, here is our quotation for your requirement:', '',
+    'Dear ' + (who || 'Sir/Madam') + ',', '', 'Greetings from FirstBox!', 'As discussed, here is our quotation for your requirement:', '',
     ...its.flatMap((it, k) => [many ? '*Box ' + (k + 1) + '*' : null, ...itemSpec(it), ...(it.rows.some(r => r.qty) ? ['Price:', ...priceLines(it)] : []), '']),
     'GST ' + fmtN(q.gst, 1) + '% extra.', 'Transport charges extra, as actual (paid by the client).',
-    q.delivery ? 'Delivery: ' + q.delivery + '.' : null, q.validity ? 'This quote is valid for ' + q.validity + ' days.' : null,
+    q.validity ? 'This quote is valid for ' + q.validity + ' days.' : null,   // Raj: no delivery line
     q.note ? q.note : null, '',
-    'The final price will be confirmed in our proforma invoice.', '', 'Regards,', signer || myName(), 'Firstbox'
+    'Regards,', signer || myName(), 'FirstBox'
   ].filter(x => x != null).join('\n').replace(/\n{3,}/g, '\n\n');
 }
 // The request as Raj reads it (in the app, and on WhatsApp if the salesperson also sends it there).
@@ -4206,7 +4206,6 @@ function quoteForm(){
           h('div',{class:'fld', style:'margin-top:10px'}, h('span',{class:'fl'}, mode === 'price' ? 'Price per piece' : 'Price per piece (from Raj)'), priceGrid(it, mode === 'price')))),
         mode === 'price' ? h('div',{class:'grid'},
           fld('GST %', numIn(q.gst, x => { q.gst = x; refresh(); })),
-          fld('Delivery time', h('input',{value:q.delivery, oninput:e => { q.delivery = e.target.value; refresh(); }})),
           fld('Valid for (days)', numIn(q.validity, x => { q.validity = x; refresh(); })),
           fld('Note for ' + (q.askedBy || 'the salesperson'), h('input',{value:q.rajNote || '', placeholder:'e.g. Can go to ₹46 for 5000+', oninput:e => q.rajNote = e.target.value}))) : null);
       return;
@@ -4225,7 +4224,6 @@ function quoteForm(){
       h('button',{type:'button', class:'btn', style:'margin:2px 0 14px', onclick:() => { q.items.push(newQItem('', null)); refresh(); draw(); }}, '+ Add another box'),
       own ? h('div',{class:'grid'},
         fld('GST %', numIn(q.gst, x => { q.gst = x; refresh(); })),
-        fld('Delivery time', h('input',{value:q.delivery, oninput:e => { q.delivery = e.target.value; refresh(); }})),
         fld('Valid for (days)', numIn(q.validity, x => { q.validity = x; refresh(); })),
         fld('Extra line (optional)', h('input',{value:q.note, placeholder:'e.g. Samples will be charged extra', oninput:e => { q.note = e.target.value; refresh(); }})))
         : fld('Note for Raj (optional)', h('input',{value:q.askNote, placeholder:'e.g. Client says competitor quoted ₹40; needs reply today', oninput:e => { q.askNote = e.target.value; refresh(); }}), 'wide'));
