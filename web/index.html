@@ -3274,8 +3274,17 @@ function homeSoon(){ if (S.view !== 'home') return; clearTimeout(homeT); homeT =
 //   laser ('yes'|'no', mono + basic only), insert (rigid, text), notes, status ('todo'|'ready'), readyBy, readyAt, by, createdAt, updatedAt}.
 // Older samples may also carry item / kind / details / needBy / urgent — still shown. Owner + job cards add/edit; every login can mark ready; owner deletes.
 const SMP_MAKE = {basic:'Basic', die:'Die made'};
-const SMP_LAM = [['none','No lamination'], ['gloss','Gloss'], ['matte','Matte'], ['soft','Soft touch'], ['anti','Anti-scratch']];
-const SMP_FX = [['foil','Foiling'], ['spotuv','Spot UV'], ['emboss','Embossing'], ['deboss','Debossing'], ['hybrid','Hybrid']];
+// Coating (Raj: lamination, varnish and hybrid are all coatings, so one choice) and special effects (foiling, spot UV, embossing, debossing).
+const SMP_LAM = [['none','No coating'], ['gloss','Gloss lamination'], ['matte','Matte lamination'], ['soft','Soft touch lamination'], ['anti','Anti-scratch lamination'], ['varnish','Varnish'], ['hybrid','Hybrid']];
+const SMP_FX = [['foil','Foiling'], ['spotuv','Spot UV'], ['emboss','Embossing'], ['deboss','Debossing']];
+// Older samples / quotes saved "Hybrid" as a special effect: read it as the coating instead.
+function fixCoat(o){
+  if (!o) return o;
+  const fx = Array.isArray(o.fx) ? o.fx : [];
+  if (fx.includes('hybrid')){ o.fx = fx.filter(k => k !== 'hybrid'); if (!o.lam || o.lam === 'none') o.lam = 'hybrid'; }
+  return o;
+}
+const coatName = k => k && k !== 'none' ? (SMP_LAM.find(x => x[0] === k) || [k, k])[1] : '';
 const SMP_KIND = {plain:'Plain dummy (no printing)', printed:'Printed sample'};   // older samples
 const canEditSamples = () => S.role === 'owner' || S.role === 'jobcards' || S.role === 'sales';
 const smpProd = s => s.prod || (s.boxType === 'mono' ? 'mono' : RIGID.has(s.boxType) ? 'rigid' : '');
@@ -3293,7 +3302,8 @@ function smpSpec(s){
   if (smpProd(s) === 'rigid' && s.board) out.push(s.board + ' mm board');
   if (smpProd(s) === 'mono' && s.gsm) out.push(fmtN(s.gsm) + ' GSM');
   out.push(smpPrinted(s) ? 'Printed' : 'Not printed');
-  const lam = SMP_LAM.find(x => x[0] === s.lam); if (lam && s.lam !== 'none') out.push(lam[1] + ' lamination');
+  s = fixCoat({...s});
+  if (coatName(s.lam)) out.push(coatName(s.lam));
   const fx = (s.fx || []).map(k => (SMP_FX.find(x => x[0] === k) || [k, k])[1]); if (fx.length) out.push(fx.join(', '));
   if (smpProd(s) === 'mono' && s.make === 'basic' && s.laser) out.push(s.laser === 'yes' ? 'Laser cut' : 'No laser cut');
   if (s.insert) out.push('Insert');
@@ -3367,7 +3377,7 @@ function sampleForm(ex){
     board:'', gsm:null, print:'', artGot:'', artNote:'', lam:'', fx:[], fxNote:'', laser:'', insert:'', notes:'', ...(S.smpPrefill || {})};
   S.smpPrefill = null;
   if (!st.prod) st.prod = smpProd(st);
-  if (!st.unit) st.unit = 'mm'; if (!st.sizeBy) st.sizeBy = 'input'; if (!Array.isArray(st.fx)) st.fx = [];
+  if (!st.unit) st.unit = 'mm'; if (!st.sizeBy) st.sizeBy = 'input'; if (!Array.isArray(st.fx)) st.fx = []; fixCoat(st);
   const wrap = h('div',{class:'newjob'}), listId = 'smp-clients', body = h('div',{});
   const keepPics = [...(st.picIds || [])], newPics = [];
   const choice = (opts, val, on) => h('div',{class:'smpchoice', role:'group'}, opts.map(([k, lab]) =>
@@ -3401,7 +3411,7 @@ function sampleForm(ex){
   const artQ = () => h('div',{class:'smpsub'},
     h('div',{class:'smpql'}, 'Artwork received?'), yesNo(st.artGot, v => st.artGot = v),
     h('input',{value:st.artNote || '', placeholder:'File name or where it is (e.g. WhatsApp from client, Drive folder)', style:'margin-top:8px;width:100%', oninput:e => st.artNote = e.target.value}));
-  const lamQ = n => q(n, 'Lamination', sel(SMP_LAM, st.lam || 'none', {onchange:e => st.lam = e.target.value}));
+  const lamQ = n => q(n, 'Coating', sel(SMP_LAM, st.lam || 'none', {onchange:e => st.lam = e.target.value}));
   const fxQ = n => q(n, 'Special effects (if any)', h('div',{},
     h('div',{class:'smpfx'}, SMP_FX.map(([k, lab]) => h('label',{}, h('input',{type:'checkbox', checked: st.fx.includes(k), onchange:e => { st.fx = e.target.checked ? [...new Set([...st.fx, k])] : st.fx.filter(x => x !== k); }}), ' ' + lab))),
     h('input',{value:st.fxNote || '', placeholder:'e.g. gold foil on logo, spot UV on name', style:'margin-top:8px;width:100%', oninput:e => st.fxNote = e.target.value})), true);
@@ -3470,7 +3480,8 @@ function smpFactList(s){
     if (smpProd(s) === 'mono') add('Paper GSM', s.gsm ? fmtN(s.gsm) : '');
     if (smpProd(s) === 'rigid') add('Printing', yn(s.print));
     if (smpPrinted(s)) add(smpProd(s) === 'mono' ? 'Printing file' : 'Artwork', [s.artGot === 'yes' ? 'Received' : s.artGot === 'no' ? 'Not received yet' : '', s.artNote].filter(Boolean).join(' · '));
-    add('Lamination', (SMP_LAM.find(x => x[0] === s.lam) || [, ''])[1]);
+    s = fixCoat({...s});
+    add('Coating', coatName(s.lam) || 'No coating');
     add('Special effects', [(s.fx || []).map(k => (SMP_FX.find(x => x[0] === k) || [k, k])[1]).join(', '), s.fxNote].filter(Boolean).join(' · '));
     if (smpProd(s) === 'mono') add('Laser cut', s.make === 'die' ? 'No (die made)' : yn(s.laser));
     if (smpProd(s) === 'rigid') add('Inserts', s.insert || 'None');
@@ -3818,7 +3829,7 @@ function quoteSpec(q){
   add('Product', BOX[q.product] || q.product); add('Size', size);
   if (RIGID.has(q.product)) add('Board', q.board ? q.board + ' mm' : ''); else add('Paper', q.paper);
   add('Printing', (QUOTE_PRINT.find(p => p[0] === q.print) || [, ''])[1]);
-  const lam = SMP_LAM.find(x => x[0] === q.lam); add('Lamination', lam && q.lam !== 'none' ? lam[1] : '');
+  q = fixCoat({...q}); add('Coating', coatName(q.lam));
   const fx = (q.fx || []).map(k => (SMP_FX.find(x => x[0] === k) || [k, k])[1]).join(', '); add('Special effects', [fx, q.fxNote].filter(Boolean).join(' – '));
   add('Insert', q.insert); add('Other', q.extras);
   return lines;
@@ -3860,7 +3871,7 @@ function markQuoteSent(leadId, quoteId, message){
 }
 
 function quoteForm(){
-  const q = S.qdraft, own = isOwnerRole(), mode = q.mode || 'new';
+  const q = S.qdraft, own = isOwnerRole(), mode = q.mode || 'new'; if (!Array.isArray(q.fx)) q.fx = []; fixCoat(q);
   const wrap = h('div',{class:'newjob quoteform'}), body = h('div',{});
   const msgBox = h('textarea',{rows:18, class:'quotemsg', oninput:e => { q.msg = e.target.value; q.msgEdited = true; }});
   const leads = [...S.leads.values()].sort((a, b) => String(a.name).localeCompare(String(b.name)));
@@ -3908,7 +3919,7 @@ function quoteForm(){
         isRigid ? fld('Board thickness', sel([['', '—'], ...THICK.map(t => [t, t + ' mm'])], q.board || '', {onchange:e => { q.board = e.target.value; refresh(); }}))
                 : fld('Paper', h('input',{value:q.paper, placeholder:'e.g. 350 GSM SBS', oninput:e => { q.paper = e.target.value; refresh(); }})),
         fld('Printing', sel(QUOTE_PRINT, q.print, {onchange:e => { q.print = e.target.value; refresh(); }})),
-        fld('Lamination', sel(SMP_LAM, q.lam || 'none', {onchange:e => { q.lam = e.target.value; refresh(); }})),
+        fld('Coating', sel(SMP_LAM, q.lam || 'none', {onchange:e => { q.lam = e.target.value; refresh(); }})),
         fld('Insert', h('input',{value:q.insert, placeholder:'e.g. EVA foam, 1 cavity (empty if none)', oninput:e => { q.insert = e.target.value; refresh(); }}))),
       h('div',{class:'fld'}, h('span',{class:'fl'}, 'Special effects'),
         h('div',{class:'smpfx'}, SMP_FX.map(([k, lab]) => h('label',{}, h('input',{type:'checkbox', checked: q.fx.includes(k), onchange:e => { q.fx = e.target.checked ? [...new Set([...q.fx, k])] : q.fx.filter(x => x !== k); refresh(); }}), ' ' + lab))),
