@@ -312,7 +312,9 @@ input[type=date]{cursor:pointer}
   .inv-cols .c-item{grid-column:1/-1}
   .inv-cols>[data-l]::before{content:attr(data-l);display:block;font-size:12px;color:var(--muted);margin-bottom:2px}
 }
-.fabopts{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+.fabopts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.fabopt label.row{flex-wrap:nowrap;align-items:flex-start;justify-content:flex-start;justify-self:stretch;width:auto;max-width:none}.fabopt label.row input{margin-top:3px;flex:0 0 auto}.fabopt label.row b{min-width:0}
+.fabopt .fld{min-width:0;max-width:100%}.fabopt .fld input{width:100%;max-width:100%;box-sizing:border-box}
 .fabopt{border:1px solid var(--line);border-radius:10px;padding:10px 12px;display:grid;gap:8px;align-content:start;background:var(--surface)}
 .fabopt.off{background:transparent;border-style:dashed}
 .packopts{display:grid;grid-template-columns:1fr 1fr;gap:10px}
@@ -812,7 +814,7 @@ const PARTS = {
     adds:[]},
   make:{n:'7', title:'Making charges', note:'Type the making charge per box for this job. It is multiplied by the quantity.',
     adds:[['piece','Add making charges',{name:'Making charges', making:true, jobRate:true, once:true}]]},
-  fab:{n:'8', title:'Fabrication', note:'Side pasting is always included. Tick Euro slot or Window pasting if the carton has them.',
+  fab:{n:'8', title:'Fabrication', note:'Side pasting is always included. Tick Euro slot, Window pasting or Manual neck pasting if the carton has them.',
     adds:[]},
   mdfboard:{n:'10', title:'MDF board', note:'Type the board cost from your vendor for this job. It changes every time, so it is entered fresh on each costing.',
     adds:[]},
@@ -1136,8 +1138,8 @@ function calcLine(l, j, byId){
     return {amount: qty * n0(l.rate), detail: fmtN(qty) + ' boxes × ₹' + fmtN(n0(l.rate), 2) + ' per box' + (l.vendor ? ' · ' + l.vendor : ''), qd: fmtN(qty) + ' boxes' + (l.vendor ? ' · ' + l.vendor : '')};
   }
   if (l.calc === 'fab'){
-    // Mono carton fabrication, per 1000 cartons: side pasting always, Euro slot and window pasting when ticked.
-    const k = qty / 1000, parts = [['Side pasting', true, l.sideRate], ['Euro slot', l.euro, l.euroRate], ['Window pasting', l.window, l.winRate]].filter(x => x[1]);
+    // Mono carton fabrication, per 1000 cartons: side pasting always; Euro slot, window pasting and manual neck pasting (Raj) when ticked.
+    const k = qty / 1000, parts = [['Side pasting', true, l.sideRate], ['Euro slot', l.euro, l.euroRate], ['Window pasting', l.window, l.winRate], ['Manual neck pasting', l.neck, l.neckRate]].filter(x => x[1]);
     const amt = parts.reduce((t, x) => t + k * n0(x[2]), 0);
     const d = qty ? parts.map(x => x[0] + ' ₹' + fmtN(n0(x[2])) + ' per 1000 × ' + fmtN(k, 3) + ' = ₹' + fmtN(k * n0(x[2]))).join('  ·  ') : 'Enter the quantity';
     return {amount: amt, detail: d, qd: qty ? parts.map(x => x[0]).join(' + ') + '  ·  ' + fmtN(qty) + ' cartons' : 'Enter the quantity'};
@@ -1267,7 +1269,8 @@ function newFabLine(){
   const st = S.settings || {};
   return {id: uid(), name:'Fabrication', calc:'fab', part:'fab', pv:2, actual:null,
     sideRate: per1000(/side\s*pasting/i) ?? st.sidePastePer1000 ?? 300, euro:false, euroRate: per1000(/euro/i) ?? st.euroSlotPer1000 ?? null,
-    window:false, winRate: per1000(/window\s*pasting/i) ?? st.windowPastePer1000 ?? null};
+    window:false, winRate: per1000(/window\s*pasting/i) ?? st.windowPastePer1000 ?? null,
+    neck:false, neckRate: per1000(/neck\s*pasting/i) ?? st.neckPastePer1000 ?? null};
 }
 function newPackLine(){
   const st = S.settings || {};
@@ -1287,13 +1290,14 @@ function specialCard(l, title, body){
 function fabEditor(l){
   const remember = (k, v) => { if (v != null){ S.settings[k] = v; saveSettings(); } };
   const opt = (key, rateKey, label, setKey) => h('div',{class:'fabopt' + (key && !l[key] ? ' off' : '')},
-    key ? h('label',{class:'row', style:'gap:8px'}, h('input',{type:'checkbox', checked: l[key] ? true : null, onchange:e => { l[key] = e.target.checked; touch(); renderLines(); }}), h('b',{}, label))
+    key ? h('label',{class:'row', style:'gap:8px'}, h('input',{type:'checkbox', checked: l[key] ? true : null, onchange:e => { l[key] = e.target.checked; if (l[key] && l[rateKey] == null) l[rateKey] = S.settings[setKey] ?? null; touch(); renderLines(); }}), h('b',{}, label))
         : h('label',{class:'row', style:'gap:8px'}, h('input',{type:'checkbox', checked:true, disabled:true}), h('b',{}, label), h('span',{class:'note'}, '(always)')),
     !key || l[key] ? h('div',{class: key ? '' : 'adv'}, fld('₹ per 1000 cartons', numIn(l[rateKey], v => { l[rateKey] = v; remember(setKey, v); touch(); }, {placeholder:'Rate'}))) : null);
   return specialCard(l, 'Fabrication', h('div',{class:'fabopts'},
     opt(null, 'sideRate', 'Side pasting', 'sidePastePer1000'),
     opt('euro', 'euroRate', 'Euro slot', 'euroSlotPer1000'),
-    opt('window', 'winRate', 'Window pasting', 'windowPastePer1000')));
+    opt('window', 'winRate', 'Window pasting', 'windowPastePer1000'),
+    opt('neck', 'neckRate', 'Manual neck pasting', 'neckPastePer1000')));
 }
 function mdfEditor(l){
   const mode = (m, label) => h('label',{class:'packopt' + (l.mode === m ? ' on' : '')},
@@ -4812,7 +4816,7 @@ function needsRate(l){
   if (['sheet','area','impression','perup','piece'].includes(l.calc)) return l.rate == null;
   if (l.calc === 'printing' || l.calc === 'diecut') return l.first == null;
   if (l.calc === 'mdf') return l.mode === 'total' ? l.total == null : l.rate == null;
-  if (l.calc === 'fab') return l.sideRate == null || (l.euro && l.euroRate == null) || (l.window && l.winRate == null);
+  if (l.calc === 'fab') return l.sideRate == null || (l.euro && l.euroRate == null) || (l.window && l.winRate == null) || (l.neck && l.neckRate == null);
   if (l.calc === 'pack') return l.mode === 'carton' && l.cartonRate == null;
   return false;
 }
