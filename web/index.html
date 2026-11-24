@@ -606,6 +606,10 @@ body.has-side main.wrap{margin-left:var(--sidew);margin-right:0;max-width:1260px
   .tab .tabshort{display:block;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .tico{display:block;width:22px;height:22px}
   body.typing .bar nav{display:none}
+  /* Raj: the phone bar keeps only Costing, Job cards, Sales and POs; everything else is in the ☰ menu */
+  .bar nav .tab:not([data-go=jobs]):not([data-go=cards]):not([data-go=crm]):not([data-go=pos]){display:none}
+  body.no-pbar .bar nav{display:none}
+  body.no-pbar main{padding-bottom:calc(24px + env(safe-area-inset-bottom,0px))}
   .bar .wrap{flex-wrap:nowrap}
   main{padding-bottom:calc(90px + env(safe-area-inset-bottom,0px))}
   input,select,textarea{font-size:16px}
@@ -3359,7 +3363,7 @@ $('#menubtn') && $('#menubtn').addEventListener('click', () => { document.body.c
 $('#sideshade') && $('#sideshade').addEventListener('click', () => document.body.classList.remove('side-open'));
 document.addEventListener('keydown', e => { if (e.key === 'Escape') document.body.classList.remove('side-open'); });
 // Phones: icons and short names on the section tabs (shown as a bottom bar on small screens).
-{ const SHORT = {jobs:'Costing', cards:'Cards', crm:'Sales', samples:'Samples', past:'Database', orders:'Orders', pos:'POs', bills:'Invoices', stock:'Stock'};
+{ const SHORT = {jobs:'Costing', cards:'Job cards', crm:'Sales', samples:'Samples', past:'Database', orders:'Orders', pos:'POs', bills:'Invoices', stock:'Stock'};
   document.querySelectorAll('.bar nav .tab').forEach(b => { const v = b.dataset.go, full = b.textContent.trim();
     b.innerHTML = '<svg class="tico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + (ICONS[v] || '') + '</svg>';
     b.append(h('span',{class:'tabfull'}, full), h('span',{class:'tabshort', 'aria-hidden':'true'}, SHORT[v] || full)); b.setAttribute('aria-label', full); }); }
@@ -4407,6 +4411,8 @@ function applyRoleChrome(){
   { const el = $('#tab-db'); if (el) el.hidden = !(r && !own && canView('past')); }   // the owner finds the Database under Settings
   if (S.role === 'sales'){ const el = $('#tab-samples'); if (el) el.hidden = true; }   // sales makes samples inside Sales & marketing
   const sw = $('.setwrap'); if (sw) sw.hidden = !own;
+  // Phones: if a login has fewer than two of the bar's sections, there is no bar; the ☰ menu has everything.
+  document.body.classList.toggle('no-pbar', ['jobs','cards','crm','pos'].filter(v => { const el = $('#tab-' + v); return el && !el.hidden; }).length < 2);
   const chip = $('#rolechip');
   if (chip){ chip.hidden = !r; chip.textContent = r ? r.n + ' access' : ''; }
 }
