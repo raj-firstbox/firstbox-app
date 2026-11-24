@@ -80,28 +80,29 @@ create policy docs_read on public.docs for select to authenticated using (
   public.my_role() = 'owner'
   or (public.my_role() in ('inventory','jobcards') and col in ('jobcards','stock','stockLog','shared'))
   or (public.my_role() = 'inventory' and col = 'orders')   -- the stock team sees the running orders list (read only)
-  or (public.my_role() in ('inventory','jobcards') and col = 'samples')   -- samples: the whole team sees them
+  or (public.my_role() in ('inventory','jobcards') and col in ('samples','samplePics'))   -- samples (and their photos): the whole team sees them
   or (public.my_role() = 'jobcards' and col in ('orders','invoices','clients','billItems','payments'))
 );
 create policy docs_insert on public.docs for insert to authenticated with check (
   public.my_role() = 'owner'
-  or (public.my_role() = 'jobcards'  and col in ('jobcards','stock','stockLog','orders','invoices','clients','billItems','payments','samples'))
+  or (public.my_role() = 'jobcards'  and col in ('jobcards','stock','stockLog','orders','invoices','clients','billItems','payments','samples','samplePics'))
   or (public.my_role() = 'inventory' and col in ('stock','stockLog','samples'))   -- (saving is insert-or-update)
 );
 create policy docs_update on public.docs for update to authenticated
   using (
     public.my_role() = 'owner'
-    or (public.my_role() = 'jobcards'  and col in ('jobcards','stock','stockLog','orders','invoices','clients','billItems','payments','samples'))
+    or (public.my_role() = 'jobcards'  and col in ('jobcards','stock','stockLog','orders','invoices','clients','billItems','payments','samples','samplePics'))
     or (public.my_role() = 'inventory' and col in ('stock','stockLog','samples'))   -- stock team can mark a sample ready
   )
   with check (
     public.my_role() = 'owner'
-    or (public.my_role() = 'jobcards'  and col in ('jobcards','stock','stockLog','orders','invoices','clients','billItems','payments','samples'))
+    or (public.my_role() = 'jobcards'  and col in ('jobcards','stock','stockLog','orders','invoices','clients','billItems','payments','samples','samplePics'))
     or (public.my_role() = 'inventory' and col in ('stock','stockLog','samples'))   -- stock team can mark a sample ready
   );
 create policy docs_delete on public.docs for delete to authenticated using (
   public.my_role() = 'owner'
   or (public.my_role() = 'inventory' and col = 'stock')
+  or (public.my_role() = 'jobcards'  and col = 'samplePics')   -- remove a photo from a sample
 );
 
 grant select, insert, update, delete on public.docs to authenticated;

@@ -363,6 +363,14 @@ input[type=date]{cursor:pointer}
 .smpsub{margin-top:10px;padding:10px 12px;background:var(--sunk);border-radius:8px}
 .smpfx{display:flex;flex-wrap:wrap;gap:6px 16px}
 .smpfx label{display:flex;align-items:center;gap:4px;font-size:14px}
+.smppics{display:flex;flex-wrap:wrap;gap:10px;margin:4px 0 8px}
+.smppic{position:relative;width:110px;height:110px;border-radius:8px;overflow:hidden;border:1px solid var(--line);background:var(--surface);display:grid;place-items:center}
+.smppic.loading{background:var(--sunk)}
+.smppic img{width:100%;height:100%;object-fit:cover;cursor:zoom-in;display:block}
+.smppicx{position:absolute;top:4px;right:4px;width:26px;height:26px;border-radius:13px;border:0;background:rgba(0,0,0,.6);color:#fff;font-size:17px;line-height:1;cursor:pointer}
+.smpaddpic{position:relative;cursor:pointer}
+.smplight{position:fixed;inset:0;z-index:1000;background:rgba(0,0,0,.85);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;padding:16px}
+.smplight img{max-width:100%;max-height:calc(100vh - 90px);border-radius:6px;background:#fff}
 .smpfacts{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:6px 16px;margin:4px 0}
 .smpfact{display:grid;gap:1px;font-size:13.5px}
 @media (max-width:640px){.smpqs{grid-template-columns:minmax(0,1fr)}}
@@ -3195,7 +3203,53 @@ function smpSpec(s){
   const fx = (s.fx || []).map(k => (SMP_FX.find(x => x[0] === k) || [k, k])[1]); if (fx.length) out.push(fx.join(', '));
   if (smpProd(s) === 'mono' && s.make === 'basic' && s.laser) out.push(s.laser === 'yes' ? 'Laser cut' : 'No laser cut');
   if (s.insert) out.push('Insert');
+  if ((s.picIds || []).length) out.push('📷 Photo');
   return out.join(' · ');
+}
+// Photos of the product the client gave (Raj), when the size is "according to product received".
+// Kept apart from the sample (samplePics/<id> = {sample, data (JPEG data URL), at, by}) so the list stays light;
+// a photo loads only when someone opens that sample. The sample lists its photo ids in `picIds`.
+const SMP_MAX_PICS = 3;
+const picCache = new Map();
+function loadPic(id){
+  if (!picCache.has(id)) picCache.set(id, (async () => { try { const d = await S.db.doc('samplePics/' + id).get(); return d.exists ? (d.data() || {}).data || null : null; } catch(e){ return null; } })());
+  return picCache.get(id);
+}
+// Phone photos are big: shrink to at most 1280 px and save as JPEG (about 100–250 KB).
+function shrinkPhoto(file){
+  return new Promise((res, rej) => {
+    const url = URL.createObjectURL(file), img = new Image();
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      let out = '';
+      for (const [max, qual] of [[1280, .72], [1000, .6], [800, .5]]){
+        const k = Math.min(1, max / Math.max(img.naturalWidth, img.naturalHeight)), c = document.createElement('canvas');
+        c.width = Math.round(img.naturalWidth * k); c.height = Math.round(img.naturalHeight * k);
+        const g = c.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, c.width, c.height); g.drawImage(img, 0, 0, c.width, c.height);
+        out = c.toDataURL('image/jpeg', qual); if (out.length < 330000) break;
+      }
+      res(out);
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); rej(new Error('not a picture')); };
+    img.src = url;
+  });
+}
+function showPhoto(src){
+  const close = () => { box.remove(); document.removeEventListener('keydown', esc); };
+  const esc = e => { if (e.key === 'Escape') close(); };
+  const box = h('div',{class:'smplight', role:'dialog', 'aria-label':'Photo', onclick:close},
+    h('img',{src, alt:'Photo of the product'}), h('button',{type:'button', class:'btn small', onclick:close}, 'Close'));
+  document.body.append(box); document.addEventListener('keydown', esc);
+}
+// A row of thumbnails; each loads on its own and opens big when tapped. `remove` (optional) adds a × to each.
+function picThumbs(items, remove){
+  return h('div',{class:'smppics'}, items.map(it => {
+    const img = h('img',{alt:'Photo of the product'}), cell = h('div',{class:'smppic'}, img);
+    const set = src => { if (src){ img.src = src; img.onclick = e => { e.stopPropagation(); showPhoto(src); }; } else cell.replaceChildren(h('span',{class:'sub'}, 'Photo not found')); };
+    if (it.data) set(it.data); else { cell.classList.add('loading'); loadPic(it.id).then(src => { cell.classList.remove('loading'); set(src); }); }
+    if (remove) cell.append(h('button',{type:'button', class:'smppicx', 'aria-label':'Remove this photo', onclick:e => { e.stopPropagation(); remove(it); }}, '×'));
+    return cell;
+  }));
 }
 function nextSampleNo(){
   let n = 0; for (const id of S.samples.keys()){ const m = /^SM-(\d+)$/.exec(id); if (m) n = Math.max(n, +m[1]); }
@@ -3215,6 +3269,7 @@ function sampleForm(ex){
   if (!st.prod) st.prod = smpProd(st);
   if (!st.unit) st.unit = 'mm'; if (!st.sizeBy) st.sizeBy = 'input'; if (!Array.isArray(st.fx)) st.fx = [];
   const wrap = h('div',{class:'newjob'}), listId = 'smp-clients', body = h('div',{});
+  const keepPics = [...(st.picIds || [])], newPics = [];
   const choice = (opts, val, on) => h('div',{class:'smpchoice', role:'group'}, opts.map(([k, lab]) =>
     h('button',{type:'button', class:'jctab', 'aria-pressed': String(val === k), onclick:() => { on(k); draw(); }}, lab)));
   const q = (n, label, ctl, wide) => h('div',{class:'smpq' + (wide ? ' wide' : '')}, h('div',{class:'smpql'}, h('span',{class:'smpqn'}, n), label), ctl);
@@ -3228,7 +3283,19 @@ function sampleForm(ex){
         fld('Length (' + u + ')', numIn(st.l, x => st.l = x, {placeholder:'L'})),
         fld('Width (' + u + ')', numIn(st.w, x => st.w = x, {placeholder:'W'})),
         fld('Height (' + u + ')', numIn(st.h, x => st.h = x, {placeholder:'H'}))));
-    } else parts.push(h('div',{class:'note', style:'margin-top:6px'}, 'The team takes the size from the product the client gave.'));
+    } else {
+      parts.push(h('div',{class:'note', style:'margin-top:6px'}, 'The team takes the size from the product the client gave.'));
+      const items = [...keepPics.map(id => ({id})), ...newPics];
+      const add = h('label',{class:'btn small smpaddpic'}, '📷 ' + (items.length ? 'Add another photo' : 'Add photo of the product'),
+        h('input',{type:'file', accept:'image/*', multiple:true, class:'sr', onchange: async e => {
+          const files = [...e.target.files].slice(0, SMP_MAX_PICS - items.length); e.target.value = '';
+          for (const f of files){ try { newPics.push({id:'new' + Date.now() + Math.random().toString(36).slice(2, 6), data: await shrinkPhoto(f)}); } catch(err){ alert0(wrap, 'That file is not a picture.'); } }
+          draw();
+        }}));
+      parts.push(h('div',{class:'smpsub'},
+        items.length ? picThumbs(items, it => { if (it.data) newPics.splice(newPics.indexOf(it), 1); else keepPics.splice(keepPics.indexOf(it.id), 1); draw(); }) : null,
+        items.length < SMP_MAX_PICS ? add : h('div',{class:'sub'}, 'Up to ' + SMP_MAX_PICS + ' photos.')));
+    }
     return q(n, 'Dimension', h('div',{}, ...parts), true);
   }
   const artQ = () => h('div',{class:'smpsub'},
@@ -3276,6 +3343,12 @@ function sampleForm(ex){
         else { delete st.gsm; delete st.laser; if (st.print !== 'yes'){ delete st.artGot; delete st.artNote; } }
         if (st.sizeBy === 'product'){ st.l = st.w = st.h = null; }
         const s = ex ? {...ex, ...st} : {...st, id: nextSampleNo(), status:'todo', by: S.myName || '', createdAt: Date.now()};
+        // Photos only go with "according to product received"; save new ones, remove the ones taken out.
+        const keep = s.sizeBy === 'product' ? keepPics : [];
+        for (const id of (ex && ex.picIds) || []) if (!keep.includes(id)){ picCache.delete(id); removeDoc('samplePics/' + id); }
+        const added = s.sizeBy === 'product' ? newPics.map((p, i) => { const id = s.id + '-' + Date.now().toString(36) + i; picCache.set(id, Promise.resolve(p.data));
+          flush('samplePics/' + id, () => ({sample: s.id, data: p.data, at: Date.now(), by: S.myName || ''})); return id; }) : [];
+        s.picIds = [...keep, ...added]; if (!s.picIds.length) delete s.picIds;
         saveSample(s); S.smpNew = false; S.smpEdit = null; S.smpOpen = s.id; S.smpTab = s.status === 'ready' ? S.smpTab : 'todo'; renderSamples();
       }}, ex ? 'Save changes' : 'Add sample'),
       h('button',{class:'btn', onclick:() => { S.smpNew = false; S.smpEdit = null; renderSamples(); }}, 'Cancel')));
@@ -3290,6 +3363,7 @@ function smpFacts(s){
   if (s.make || s.prod){
     add('Sample', SMP_MAKE[s.make]); add('Product', smpProd(s) === 'mono' ? 'Mono carton' : BOX[s.boxType]);
     add('Dimension', smpSize(s));
+    if ((s.picIds || []).length) rows.push(h('div',{class:'smpfact', style:'grid-column:1/-1'}, h('span',{class:'sub'}, 'Photo of the product (tap to see it big)'), picThumbs(s.picIds.map(id => ({id})))));
     if (smpProd(s) === 'rigid') add('Board thickness', s.board ? s.board + ' mm' : '');
     if (smpProd(s) === 'mono') add('Paper GSM', s.gsm ? fmtN(s.gsm) : '');
     if (smpProd(s) === 'rigid') add('Printing', yn(s.print));
@@ -3321,7 +3395,7 @@ function sampleRows(list, compact){
             h('div',{class:'sub'}, 'Added' + (s.by ? ' by ' + s.by : '') + ' on ' + fmtDate(s.date)),
             (edit || own) ? h('div',{class:'row', style:'gap:8px;margin-top:6px'},
               edit ? h('button',{type:'button', class:'btn small', onclick:e => { e.stopPropagation(); S.smpEdit = s.id; S.smpNew = false; renderSamples(); window.scrollTo(0, 0); }}, 'Edit') : null,
-              own ? rowDelete('sample ' + s.id, async () => { S.samples.delete(s.id); S.smpOpen = null; await removeDoc('samples/' + s.id); renderSamples(); }) : null) : null) : null),
+              own ? rowDelete('sample ' + s.id, async () => { S.samples.delete(s.id); S.smpOpen = null; for (const id of s.picIds || []) removeDoc('samplePics/' + id); await removeDoc('samples/' + s.id); renderSamples(); }) : null) : null) : null),
         h('td',{}, smpSize(s) || '—'),
         h('td',{}, s.status === 'ready'
           ? [h('span',{class:'pill Completed'}, 'Ready'), h('div',{class:'sub'}, (s.readyBy ? s.readyBy + ' · ' : '') + fmtDate(s.readyAt)),
