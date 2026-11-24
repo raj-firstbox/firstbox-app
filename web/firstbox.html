@@ -393,6 +393,18 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center}
 .quoteright{position:sticky;top:calc(var(--barh,64px) + 12px);display:grid;gap:6px}
 .quotemsg{width:100%;font:14px/1.5 var(--font-body);min-height:420px;background:var(--sunk)}
 .qrows{display:grid;gap:8px}
+.qbox{border:1px solid var(--line);border-radius:12px;padding:14px 16px;margin-bottom:14px;background:var(--surface)}
+.qboxhead{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:10px}
+.qboxhead b{font-size:15px}
+.qprint{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.qprint select{flex:1 1 170px;min-width:0;width:auto}.qprint input{flex:2 1 180px;min-width:0;width:0}
+.qoptn{font-size:12px;font-weight:700;color:var(--accent);flex:0 0 auto}
+.qgridbox{overflow-x:auto}
+.qgrid{width:100%;border-collapse:collapse;font-size:14px}
+.qgrid th,.qgrid td{padding:6px 8px;border-bottom:1px solid var(--line);text-align:left;white-space:nowrap}
+.qgrid th{font-size:12px;color:var(--muted);font-weight:600}
+.qgrid td input{width:110px;max-width:100%}
+.linkbtn.danger{color:var(--bad)}
 .qrow{display:flex;gap:8px;align-items:center}
 .qrow input{flex:1 1 120px;min-width:0;width:0}
 .quotecols > *{min-width:0}
@@ -3833,7 +3845,6 @@ function setStage(l, stage){
   else if (STAGE_FOLLOW[stage] && (!l.nextFollow || l.nextFollow < today())) l.nextFollow = addDays(today(), STAGE_FOLLOW[stage]);
 }
 const lastQuote = l => (l.quotes || [])[(l.quotes || []).length - 1];
-const quoteLine = q => !q ? '' : (q.rows || []).filter(r => r.qty || r.price).map(r => (r.qty ? fmtN(r.qty) + ' pcs @ ' : '') + (r.price ? money2(r.price) : '—')).join(' · ');
 const followDue = l => !LEAD_CLOSED.has(l.stage) && l.nextFollow ? daysTo(l.nextFollow) : null;
 function followLists(){
   const all = [...S.leads.values()].filter(l => followDue(l) != null).sort((a, b) => String(a.nextFollow).localeCompare(String(b.nextFollow)));
@@ -3968,37 +3979,72 @@ function leadTable(list){
     }).flat())));
 }
 
-// ---- Get a quotation (Raj): the salesperson asks Raj → Raj gives the price → the salesperson sends the ready message ----
+// ---- Create a quotation (Raj): the salesperson asks Raj → Raj gives the price → the salesperson sends the ready message ----
 // Each quote sits on its lead (`quotes`) with status: 'asked' (waiting for Raj) → 'priced' (Raj gave the price) → 'sent' (sent to the client).
 const QSTAT = {asked:'Waiting for Raj', priced:'Price ready', sent:'Sent to client'};
 const qStatus = q => q.status || 'sent';
 const allQuotes = () => [...S.leads.values()].flatMap(l => (l.quotes || []).map(q => ({q, l})));
 const rajPhone = () => waNumber(billCfg().phone);
-function newQuote(l){
+// ---- Quotation details (Raj, Nov 2026): asked in the order the sales rep asks the client, sitting with them ----
+// A quote holds one or more boxes (`items`); each box can have more than one printing option (the client wants a price for both),
+// and Raj gives a price per piece for every quantity × printing option. Older quotes (one box, fields on the quote itself) are read by quoteItems.
+const QBOX_TYPES = ['rigid','shoulder','magnetic','slider','mono','corrugated','mdf','custom','printing'];
+const qProdName = k => BOX[k] || k || '';
+function newQItem(product, qty){
   const unit = (() => { try { return localStorage.getItem('fb-smpUnit') || 'mm'; } catch(e){ return 'mm'; } })();
-  return {mode:'new', leadId: l ? l.id : '', name: l ? l.name : '', contact: l ? (l.contact || '') : '', phone: l ? (l.phone || '') : '', product: (l && l.product) || 'rigid',
-    l:null, w:null, h:null, unit, board:'', paper:'', print:'4c', lam:'matte', fx:[], fxNote:'', insert:'', extras:'', askNote:'',
-    rows:[{qty: l && l.qty ? l.qty : null, price:null}], gst: n0(billCfg().gst) || 5, delivery:'15–20 working days after artwork approval', validity:15, note:'', msg:'', msgEdited:false};
+  return {id: uid(), product: product || '', rows:[{id: uid(), qty: qty ?? null}], l:null, w:null, h:null, unit, board:'', paper:'',
+    prints:[{id: uid(), print:'4c', note:''}], lam:'', fx:[], fxNote:'', insert:'', hasVars:'', vars:[], extras:'', prices:{}};
 }
-// What the box is, one line each (used in the client message and in the request to Raj).
-function quoteSpec(q){
+function quoteItems(q){
+  if (Array.isArray(q.items) && q.items.length) return q.items;
+  const rows = (q.rows && q.rows.length ? q.rows : [{qty:null}]).map((r, i) => ({id:'r' + i, qty: r.qty ?? null}));
+  const prices = {}; (q.rows || []).forEach((r, i) => { if (r.price != null) prices['p1|r' + i] = r.price; });
+  return [{id:'i1', product: q.product || '', rows, l: q.l ?? null, w: q.w ?? null, h: q.h ?? null, unit: q.unit || 'mm', board: q.board || '', paper: q.paper || '',
+    prints:[{id:'p1', print: q.print || '', note:''}], lam: q.lam || '', fx: Array.isArray(q.fx) ? q.fx : [], fxNote: q.fxNote || '', insert: q.insert || '',
+    hasVars:'', vars:[], extras: q.extras || '', prices}];
+}
+const qPrice = (it, p, r) => { const v = (it.prices || {})[p.id + '|' + r.id]; return v === '' ? null : v ?? null; };
+const printName = p => ((QUOTE_PRINT.find(x => x[0] === p.print) || [, ''])[1] || '') + (p.note ? ' (' + p.note + ')' : '');
+const quoteHasPrice = q => quoteItems(q).some(it => Object.values(it.prices || {}).some(v => v != null && v !== ''));
+const quoteProducts = q => [...new Set(quoteItems(q).map(it => qProdName(it.product)).filter(Boolean))].join(' + ');
+const quoteQtyText = q => quoteItems(q).map(it => it.rows.map(r => r.qty ? fmtN(r.qty) : '').filter(Boolean).join(' / ')).filter(Boolean).map(x => x + ' pcs').join(' + ');
+const itemSize = it => [it.l, it.w, it.h].some(v => v != null && v !== '') ? [it.l, it.w, it.h].map(v => v == null || v === '' ? '?' : fmtN(v, 2)).join(' × ') + (it.unit === 'in' ? ' inch' : ' mm') : '';
+// What one box is, one line each (in the client message and in the request to Raj).
+function itemSpec(it){
   const lines = [], add = (k, v) => { if (v) lines.push(k + ': ' + v); };
-  const size = [q.l, q.w, q.h].some(v => v != null && v !== '') ? [q.l, q.w, q.h].map(v => v == null || v === '' ? '?' : fmtN(v, 2)).join(' × ') + (q.unit === 'in' ? ' inch' : ' mm') : '';
-  add('Product', BOX[q.product] || q.product); add('Size', size);
-  if (RIGID.has(q.product)) add('Board', q.board ? q.board + ' mm' : ''); else add('Paper', q.paper);
-  add('Printing', (QUOTE_PRINT.find(p => p[0] === q.print) || [, ''])[1]);
-  q = fixCoat({...q}); add('Coating', coatName(q.lam));
-  const fx = (q.fx || []).map(k => (SMP_FX.find(x => x[0] === k) || [k, k])[1]).join(', '); add('Special effects', [fx, q.fxNote].filter(Boolean).join(' – '));
-  add('Insert', q.insert); add('Other', q.extras);
+  add('Type of box', qProdName(it.product)); add('Size', itemSize(it));
+  if (RIGID.has(it.product)) add('Board thickness', it.board ? it.board + ' mm' : ''); else add('Paper', it.paper);
+  const pr = (it.prints || []).filter(p => p.print);
+  if (pr.length > 1) pr.forEach((p, i) => add('Printing option ' + (i + 1), printName(p))); else add('Printing', pr[0] ? printName(pr[0]) : '');
+  const c = fixCoat({lam: it.lam, fx: [...(it.fx || [])]});
+  add('Coating', it.lam ? coatName(c.lam) : '');
+  add('Special effects', [(c.fx || []).map(k => (SMP_FX.find(x => x[0] === k) || [k, k])[1]).join(', '), it.fxNote].filter(Boolean).join(' – '));
+  add('Insert', it.insert);
+  if (it.hasVars === 'yes') add('Variants', (it.vars || []).filter(v => v.name || v.qty).map(v => (v.name || 'Variant') + (v.qty ? ' – ' + fmtN(v.qty) + ' pcs' : '')).join(', '));
+  add('Other', it.extras);
   return lines;
 }
+function quoteSpec(q){
+  const its = quoteItems(q);
+  return its.length === 1 ? itemSpec(its[0]) : its.flatMap((it, k) => ['Box ' + (k + 1) + ':', ...itemSpec(it).map(x => '  ' + x)]);
+}
+const quoteLine = q => { if (!q) return ''; const its = quoteItems(q), many = its.length > 1;
+  return its.map((it, k) => (many ? 'Box ' + (k + 1) + ': ' : '') + it.rows.filter(r => r.qty).map(r => fmtN(r.qty) + ' pcs @ ' +
+    it.prints.map(p => qPrice(it, p, r) != null ? money2(qPrice(it, p, r)) : '—').join(' / ')).join(' · ')).join('  |  '); };
+const priceLines = it => it.rows.filter(r => r.qty).map(r => '• ' + fmtN(r.qty) + ' pcs – ' + (it.prints.length === 1
+  ? (qPrice(it, it.prints[0], r) != null ? money2(qPrice(it, it.prints[0], r)) + ' per piece' : 'price on request')
+  : it.prints.map((p, i) => 'option ' + (i + 1) + ': ' + (qPrice(it, p, r) != null ? money2(qPrice(it, p, r)) + ' / pc' : 'on request')).join(' · ')));
+function newQuote(l){
+  return {mode:'new', leadId: l ? l.id : '', name: l ? l.name : '', contact: l ? (l.contact || '') : '', phone: l ? (l.phone || '') : '', date: today(),
+    items:[newQItem(l && l.product || '', l && l.qty ? l.qty : null)], askNote:'',
+    gst: n0(billCfg().gst) || 5, delivery:'15–20 working days after artwork approval', validity:15, note:'', msg:'', msgEdited:false};
+}
 function quoteMessage(q, signer){
-  const rows = (q.rows || []).filter(r => r.qty || r.price);
+  const its = quoteItems(q), many = its.length > 1;
   const who = String(q.contact || '').trim() || String(q.name || '').trim();
   return [
     'Dear ' + (who || 'Sir/Madam') + ',', '', 'Greetings from Firstbox!', 'As discussed, here is our rough quotation for your requirement:', '',
-    ...quoteSpec(q), '',
-    rows.length ? 'Price:' : '', ...rows.map(r => '• ' + (r.qty ? fmtN(r.qty) + ' pcs – ' : '') + (r.price ? money2(r.price) + ' per piece' : 'price on request')), rows.length ? '' : null,
+    ...its.flatMap((it, k) => [many ? '*Box ' + (k + 1) + '*' : null, ...itemSpec(it), ...(it.rows.some(r => r.qty) ? ['Price:', ...priceLines(it)] : []), '']),
     'GST ' + fmtN(q.gst, 1) + '% extra.', 'Transport charges extra, as actual (paid by the client).',
     q.delivery ? 'Delivery: ' + q.delivery + '.' : null, q.validity ? 'This quote is valid for ' + q.validity + ' days.' : null,
     q.note ? q.note : null, '',
@@ -4007,10 +4053,11 @@ function quoteMessage(q, signer){
 }
 // The request as Raj reads it (in the app, and on WhatsApp if the salesperson also sends it there).
 function quoteAskText(q){
-  const qty = (q.rows || []).map(r => r.qty ? fmtN(r.qty) : '').filter(Boolean);
-  return ['Rough quote needed – ' + (q.name || 'client') + (q.contact ? ' (' + q.contact + ')' : ''), '', ...quoteSpec(q),
-    qty.length ? 'Quantity: ' + qty.join(' / ') + ' pcs' : null, q.askNote ? 'Note: ' + q.askNote : null, '', 'From ' + (q.askedBy || myName()) + ' · Firstbox app → Sales & marketing → Create a quotation']
-    .filter(x => x != null).join('\n');
+  const its = quoteItems(q), many = its.length > 1;
+  return ['Rough quote needed – ' + (q.name || 'client') + (q.contact ? ' (' + q.contact + ')' : ''), 'Date: ' + fmtDate(q.date || today()), '',
+    ...its.flatMap((it, k) => [many ? 'Box ' + (k + 1) + ':' : null, ...itemSpec(it), 'Quantity: ' + (it.rows.map(r => r.qty ? fmtN(r.qty) : '').filter(Boolean).join(' / ') || '—') + ' pcs', '']),
+    q.askNote ? 'Note: ' + q.askNote : null, q.askNote ? '' : null, 'From ' + (q.askedBy || myName()) + ' · Firstbox app → Sales & marketing → Create a quotation']
+    .filter(x => x != null).join('\n').replace(/\n{3,}/g, '\n\n');
 }
 function updQuote(leadId, quoteId, fn){
   const cur = S.leads.get(leadId); if (!cur) return null;
@@ -4022,14 +4069,16 @@ const copyText = async t => { try { await navigator.clipboard.writeText(t); } ca
 function markQuoteSent(leadId, quoteId, message){
   return updQuote(leadId, quoteId, (q, l) => {
     q.status = 'sent'; q.sentAt = Date.now(); q.sentBy = myName(); q.message = message;
-    logLead(l, 'quote', 'Rough quote sent to the client: ' + (BOX[q.product] || '') + ' · ' + quoteLine(q));
+    logLead(l, 'quote', 'Rough quote sent to the client: ' + quoteProducts(q) + ' · ' + quoteLine(q));
     if (['new', 'req'].includes(l.stage || 'new')) setStage(l, 'quote');
     l.nextFollow = addDays(today(), STAGE_FOLLOW.quote); l.followNote = 'Ask about the rough quote';
   });
 }
 
 function quoteForm(){
-  const q = S.qdraft, own = isOwnerRole(), mode = q.mode || 'new'; if (!Array.isArray(q.fx)) q.fx = []; fixCoat(q);
+  const q = S.qdraft, own = isOwnerRole(), mode = q.mode || 'new';
+  if (!Array.isArray(q.items) || !q.items.length) q.items = clone(quoteItems(q));
+  if (!q.date) q.date = today();
   const wrap = h('div',{class:'newjob quoteform'}), body = h('div',{});
   const msgBox = h('textarea',{rows:18, class:'quotemsg', oninput:e => { q.msg = e.target.value; q.msgEdited = true; }});
   const leads = [...S.leads.values()].sort((a, b) => String(a.name).localeCompare(String(b.name)));
@@ -4038,23 +4087,69 @@ function quoteForm(){
   const refresh = () => { if (!q.msgEdited){ q.msg = showClientMsg ? quoteMessage(q, mode === 'send' ? (q.askedBy || myName()) : myName()) : quoteAskText(q); msgBox.value = q.msg; } };
   const pickLead = name => { const l = leads.find(x => String(x.name).trim().toLowerCase() === String(name).trim().toLowerCase()); q.leadId = l ? l.id : ''; if (l){ q.contact = q.contact || l.contact || ''; q.phone = q.phone || l.phone || ''; } };
   const ro = mode !== 'new';   // pricing or sending: the details are fixed
-  const priceCol = own || mode === 'send';
   let contactIn, phoneIn;
-  const draw = () => {
-    const isRigid = RIGID.has(q.product), u = q.unit === 'in' ? 'inch' : 'mm';
-    const rowsBox = h('div',{class:'fld wide'}, h('span',{class:'fl'}, priceCol ? 'Quantity and price per piece' + (mode === 'price' ? '' : own ? '' : ' (from Raj)') : 'Quantity (Raj will add the price)'),
-      h('div',{class:'qrows'}, q.rows.map((r, i) => h('div',{class:'qrow'},
-        numIn(r.qty, x => { r.qty = x; refresh(); }, {placeholder:'Quantity', 'aria-label':'Quantity ' + (i + 1), ...(mode === 'send' ? {disabled:true} : {})}),
-        h('span',{class:'sub'}, priceCol ? 'pcs @ ₹' : 'pcs'),
-        priceCol ? numIn(r.price, x => { r.price = x; refresh(); }, {placeholder:'Price / pc', 'aria-label':'Price per piece ' + (i + 1), ...(mode === 'send' ? {disabled:true} : {})}) : null,
-        q.rows.length > 1 && mode !== 'send' ? h('button',{type:'button', class:'linkbtn', 'aria-label':'Remove this quantity', onclick:() => { q.rows.splice(i, 1); refresh(); draw(); }}, '×') : null)),
-        q.rows.length < 4 && mode !== 'send' ? h('button',{type:'button', class:'linkbtn', onclick:() => { q.rows.push({qty:null, price:null}); draw(); }}, '+ Another quantity') : null));
+  const choice = (opts, val, on) => h('div',{class:'smpchoice', role:'group'}, opts.map(([k, lab]) =>
+    h('button',{type:'button', class:'jctab', 'aria-pressed': String(val === k), onclick:() => { on(k); refresh(); draw(); }}, lab)));
+  const qn = (n, label, ctl, wide) => h('div',{class:'smpq' + (wide ? ' wide' : '')}, h('div',{class:'smpql'}, h('span',{class:'smpqn'}, n), label), ctl);
+  const txt = (val, ph, on) => h('input',{value: val || '', placeholder: ph || '', oninput:e => { on(e.target.value); refresh(); }});
+  // Price per piece for every quantity (rows) × printing option (columns).
+  const priceGrid = (it, editable) => h('div',{class:'qgridbox'}, h('table',{class:'qgrid'},
+    h('thead',{}, h('tr',{}, h('th',{}, 'Quantity'), it.prints.map((p, i) => h('th',{}, it.prints.length > 1 ? 'Option ' + (i + 1) + ': ' + (printName(p) || '—') : '₹ per piece')))),
+    h('tbody',{}, it.rows.filter(r => r.qty || editable).map(r => h('tr',{}, h('td',{}, r.qty ? fmtN(r.qty) + ' pcs' : '—'),
+      it.prints.map((p, i) => h('td',{}, editable
+        ? numIn(qPrice(it, p, r), v => { it.prices = it.prices || {}; it.prices[p.id + '|' + r.id] = v; refresh(); }, {placeholder:'₹ / pc', 'aria-label':'Price per piece, ' + (r.qty ? fmtN(r.qty) + ' pcs' : 'quantity') + (it.prints.length > 1 ? ', option ' + (i + 1) : '')})
+        : qPrice(it, p, r) != null ? money2(qPrice(it, p, r)) : '—')))))));
+  function boxQs(it, k){
+    const isRigid = RIGID.has(it.product), u = it.unit === 'in' ? 'inch' : 'mm', many = q.items.length > 1;
+    const qtys = h('div',{class:'qrows'}, it.rows.map((r, i) => h('div',{class:'qrow'},
+        numIn(r.qty, x => { r.qty = x; refresh(); }, {placeholder:'Quantity', 'aria-label':'Quantity ' + (i + 1)}), h('span',{class:'sub'}, 'pcs'),
+        it.rows.length > 1 ? h('button',{type:'button', class:'linkbtn', 'aria-label':'Remove this quantity', onclick:() => { it.rows.splice(i, 1); refresh(); draw(); }}, '×') : null)),
+      it.rows.length < 4 ? h('button',{type:'button', class:'linkbtn', style:'justify-self:start', onclick:() => { it.rows.push({id: uid(), qty:null}); draw(); }}, '+ Another quantity') : null);
+    const prints = h('div',{class:'qrows'}, it.prints.map((p, i) => h('div',{class:'qprint'},
+        it.prints.length > 1 ? h('span',{class:'qoptn'}, 'Option ' + (i + 1)) : null,
+        sel([['', 'Choose…'], ...QUOTE_PRINT], p.print || '', {'aria-label':'Printing' + (it.prints.length > 1 ? ' option ' + (i + 1) : ''), onchange:e => { p.print = e.target.value; refresh(); if (it.prints.length > 1 && own) draw(); }}),
+        h('input',{value:p.note || '', placeholder:'e.g. outside only, inside also printed', 'aria-label':'Printing note', oninput:e => { p.note = e.target.value; refresh(); }}),
+        it.prints.length > 1 ? h('button',{type:'button', class:'linkbtn', 'aria-label':'Remove this printing option', onclick:() => { it.prints.splice(i, 1); refresh(); draw(); }}, '×') : null)),
+      it.prints.length < 3 ? h('button',{type:'button', class:'linkbtn', style:'justify-self:start', onclick:() => { it.prints.push({id: uid(), print:'', note:''}); refresh(); draw(); }}, '+ Another printing option (client wants a price for both)') : null);
+    const vars = it.hasVars === 'yes' ? h('div',{class:'qrows', style:'margin-top:8px'}, (it.vars.length ? it.vars : (it.vars = [{name:'', qty:null}])).map((v, i) => h('div',{class:'qrow'},
+        h('input',{value:v.name || '', placeholder:'Variant, e.g. Red / Rose / 50 ml', 'aria-label':'Variant name ' + (i + 1), style:'flex:2 1 160px;min-width:0;width:0', oninput:e => { v.name = e.target.value; refresh(); }}),
+        numIn(v.qty, x => { v.qty = x; refresh(); }, {placeholder:'Qty', 'aria-label':'Variant quantity ' + (i + 1)}),
+        it.vars.length > 1 ? h('button',{type:'button', class:'linkbtn', 'aria-label':'Remove this variant', onclick:() => { it.vars.splice(i, 1); refresh(); draw(); }}, '×') : null)),
+      h('button',{type:'button', class:'linkbtn', style:'justify-self:start', onclick:() => { it.vars.push({name:'', qty:null}); draw(); }}, '+ Another variant')) : null;
+    return h('div',{class:'qbox'},
+      h('div',{class:'qboxhead'}, h('b',{}, many ? 'Box ' + (k + 1) : 'Box details'),
+        many ? h('button',{type:'button', class:'linkbtn danger', onclick:() => { q.items.splice(k, 1); refresh(); draw(); }}, 'Remove this box') : null),
+      h('div',{class:'smpqs'},
+        qn(3, 'Type of box', choice(QBOX_TYPES.map(t => [t, BOX[t]]), it.product, v => it.product = v), true),
+        qn(4, 'Quantity', qtys),
+        qn(5, 'Dimensions of the box', h('div',{class:'grid'},
+          fld('Size in', sel([['mm','mm'], ['in','inches']], it.unit, {onchange:e => { it.unit = e.target.value; try { localStorage.setItem('fb-smpUnit', it.unit); } catch(err){} refresh(); draw(); }})),
+          fld('Length (' + u + ')', numIn(it.l, x => { it.l = x; refresh(); }, {placeholder:'L'})),
+          fld('Width (' + u + ')', numIn(it.w, x => { it.w = x; refresh(); }, {placeholder:'W'})),
+          fld('Height (' + u + ')', numIn(it.h, x => { it.h = x; refresh(); }, {placeholder:'H'}))), true),
+        isRigid ? qn(6, 'Board thickness', sel([['', 'Choose…'], ...THICK.map(t => [t, t + ' mm'])], it.board || '', {onchange:e => { it.board = e.target.value; refresh(); }}))
+                : qn(6, 'Paper', txt(it.paper, 'e.g. 350 GSM SBS', v => it.paper = v)),
+        qn(7, 'Printing', prints, true),
+        qn(8, 'Coating', sel([['', 'Choose…'], ...SMP_LAM], it.lam || '', {onchange:e => { it.lam = e.target.value; refresh(); }})),
+        qn(9, 'Special effects (if any)', h('div',{},
+          h('div',{class:'smpfx'}, SMP_FX.map(([key, lab]) => h('label',{}, h('input',{type:'checkbox', checked: (it.fx || []).includes(key), onchange:e => { it.fx = e.target.checked ? [...new Set([...(it.fx || []), key])] : it.fx.filter(x => x !== key); refresh(); }}), ' ' + lab))),
+          h('input',{value:it.fxNote || '', placeholder:'e.g. gold foil on logo', style:'margin-top:8px;width:100%', oninput:e => { it.fxNote = e.target.value; refresh(); }})), true),
+        qn(10, 'Inserts', txt(it.insert, 'e.g. EVA foam, 1 cavity (empty if none)', v => it.insert = v)),
+        qn(11, 'Any variants?', h('div',{}, choice([['no','No'], ['yes','Yes']], it.hasVars, v => it.hasVars = v), vars), true),
+        qn(12, 'Other details (optional)', txt(it.extras, 'e.g. magnetic closure, ribbon pull, window', v => it.extras = v), true)),
+      own ? h('div',{class:'fld', style:'margin-top:12px'}, h('span',{class:'fl'}, 'Price per piece'), priceGrid(it, true)) : null);
+  }
+  function draw(){
     if (ro){
       body.replaceChildren(
-        h('div',{class:'quotesum'}, h('b',{}, q.name), q.contact ? ' · ' + q.contact : '', h('div',{class:'sub'}, 'Asked by ' + (q.askedBy || '—') + (q.askedAt ? ' · ' + fmtDate(ymd(new Date(q.askedAt))) : '')),
-          h('div',{class:'smptext', style:'margin-top:8px'}, quoteSpec(q).join('\n') || '—'), q.askNote ? h('div',{class:'sub', style:'margin-top:6px'}, 'Note: ' + q.askNote) : null,
+        h('div',{class:'quotesum'}, h('b',{}, q.name), q.contact ? ' · ' + q.contact : '',
+          h('div',{class:'sub'}, 'Asked by ' + (q.askedBy || '—') + ' · ' + fmtDate(q.date || (q.askedAt ? ymd(new Date(q.askedAt)) : today()))),
+          q.askNote ? h('div',{class:'sub', style:'margin-top:6px'}, 'Note: ' + q.askNote) : null,
           q.rajNote && mode === 'send' ? h('div',{class:'banner', style:'margin-top:8px'}, 'Raj: ' + q.rajNote) : null),
-        rowsBox,
+        ...q.items.map((it, k) => h('div',{class:'qbox'},
+          q.items.length > 1 ? h('div',{class:'qboxhead'}, h('b',{}, 'Box ' + (k + 1))) : null,
+          h('div',{class:'smptext'}, itemSpec(it).join('\n') || '—'),
+          h('div',{class:'fld', style:'margin-top:10px'}, h('span',{class:'fl'}, mode === 'price' ? 'Price per piece' : 'Price per piece (from Raj)'), priceGrid(it, mode === 'price')))),
         mode === 'price' ? h('div',{class:'grid'},
           fld('GST %', numIn(q.gst, x => { q.gst = x; refresh(); })),
           fld('Delivery time', h('input',{value:q.delivery, oninput:e => { q.delivery = e.target.value; refresh(); }})),
@@ -4064,46 +4159,42 @@ function quoteForm(){
     }
     body.replaceChildren(
       h('datalist',{id:'quote-leads'}, leads.map(l => h('option',{value:l.name}))),
-      h('div',{class:'grid'},
-        fld('Client', h('input',{value:q.name, list:'quote-leads', placeholder:'Pick a client or type a new one', oninput:e => { q.name = e.target.value; pickLead(q.name); refresh(); },
-          onchange:() => { if (!contactIn.value && q.contact){ contactIn.value = q.contact; } if (!phoneIn.value && q.phone){ phoneIn.value = q.phone; } refresh(); }})),
-        fld('Contact person', contactIn = h('input',{value:q.contact, oninput:e => { q.contact = e.target.value; refresh(); }})),
-        fld('Phone / WhatsApp', phoneIn = h('input',{type:'tel', value:q.phone, oninput:e => q.phone = e.target.value})),
-        fld('Product', sel(boxOptions(q.product), q.product, {onchange:e => { q.product = e.target.value; refresh(); draw(); }})),
-        fld('Size in', sel([['mm','mm'], ['in','inches']], q.unit, {onchange:e => { q.unit = e.target.value; refresh(); draw(); }})),
-        fld('Length (' + u + ')', numIn(q.l, x => { q.l = x; refresh(); }, {placeholder:'L'})),
-        fld('Width (' + u + ')', numIn(q.w, x => { q.w = x; refresh(); }, {placeholder:'W'})),
-        fld('Height (' + u + ')', numIn(q.h, x => { q.h = x; refresh(); }, {placeholder:'H'})),
-        isRigid ? fld('Board thickness', sel([['', '—'], ...THICK.map(t => [t, t + ' mm'])], q.board || '', {onchange:e => { q.board = e.target.value; refresh(); }}))
-                : fld('Paper', h('input',{value:q.paper, placeholder:'e.g. 350 GSM SBS', oninput:e => { q.paper = e.target.value; refresh(); }})),
-        fld('Printing', sel(QUOTE_PRINT, q.print, {onchange:e => { q.print = e.target.value; refresh(); }})),
-        fld('Coating', sel(SMP_LAM, q.lam || 'none', {onchange:e => { q.lam = e.target.value; refresh(); }})),
-        fld('Insert', h('input',{value:q.insert, placeholder:'e.g. EVA foam, 1 cavity (empty if none)', oninput:e => { q.insert = e.target.value; refresh(); }}))),
-      h('div',{class:'fld'}, h('span',{class:'fl'}, 'Special effects'),
-        h('div',{class:'smpfx'}, SMP_FX.map(([k, lab]) => h('label',{}, h('input',{type:'checkbox', checked: q.fx.includes(k), onchange:e => { q.fx = e.target.checked ? [...new Set([...q.fx, k])] : q.fx.filter(x => x !== k); refresh(); }}), ' ' + lab))),
-        h('input',{value:q.fxNote, placeholder:'e.g. gold foil on logo', style:'margin-top:6px;width:100%', oninput:e => { q.fxNote = e.target.value; refresh(); }})),
-      fld('Other details', h('input',{value:q.extras, placeholder:'e.g. magnetic closure, ribbon pull, window', oninput:e => { q.extras = e.target.value; refresh(); }}), 'wide'),
-      rowsBox,
+      h('div',{class:'smpqs'},
+        qn(1, 'Client name', h('div',{},
+          h('input',{value:q.name, list:'quote-leads', placeholder:'Pick a client or type a new one', oninput:e => { q.name = e.target.value; pickLead(q.name); refresh(); },
+            onchange:() => { if (!contactIn.value && q.contact) contactIn.value = q.contact; if (!phoneIn.value && q.phone) phoneIn.value = q.phone; refresh(); }}),
+          h('div',{class:'grid', style:'margin-top:8px'},
+            fld('Contact person', contactIn = h('input',{value:q.contact, oninput:e => { q.contact = e.target.value; refresh(); }})),
+            fld('Phone / WhatsApp', phoneIn = h('input',{type:'tel', value:q.phone, oninput:e => q.phone = e.target.value})))), true),
+        qn(2, 'Date', h('input',{type:'date', value:q.date, onchange:e => { q.date = e.target.value || today(); refresh(); }}))),
+      ...q.items.map(boxQs),
+      h('button',{type:'button', class:'btn', style:'margin:2px 0 14px', onclick:() => { q.items.push(newQItem('', null)); refresh(); draw(); }}, '+ Add another box'),
       own ? h('div',{class:'grid'},
         fld('GST %', numIn(q.gst, x => { q.gst = x; refresh(); })),
         fld('Delivery time', h('input',{value:q.delivery, oninput:e => { q.delivery = e.target.value; refresh(); }})),
         fld('Valid for (days)', numIn(q.validity, x => { q.validity = x; refresh(); })),
         fld('Extra line (optional)', h('input',{value:q.note, placeholder:'e.g. Samples will be charged extra', oninput:e => { q.note = e.target.value; refresh(); }})))
         : fld('Note for Raj (optional)', h('input',{value:q.askNote, placeholder:'e.g. Client says competitor quoted ₹40; needs reply today', oninput:e => { q.askNote = e.target.value; refresh(); }}), 'wide'));
-  };
+  }
   // a new quote: a lead for the client (found by name, or made now) and the quote on it
   const saveNew = status => {
     q.name = String(q.name || '').trim();
-    if (!q.name){ alert0(wrap, 'Enter the client.'); return null; }
-    if (!(q.rows || []).some(r => r.qty)){ alert0(wrap, 'Enter the quantity.'); return null; }
-    if (status === 'sent' && !(q.rows || []).some(r => r.price)){ alert0(wrap, 'Enter the price per piece.'); return null; }
+    if (!q.name){ alert0(wrap, 'Enter the client name.'); return null; }
+    for (const [k, it] of q.items.entries()){
+      const b = q.items.length > 1 ? ' for box ' + (k + 1) : '';
+      if (!it.product){ alert0(wrap, 'Choose the type of box' + b + '.'); return null; }
+      if (!it.rows.some(r => r.qty)){ alert0(wrap, 'Enter the quantity' + b + '.'); return null; }
+    }
+    if (status === 'sent' && !quoteHasPrice(q)){ alert0(wrap, 'Enter the price per piece.'); return null; }
     pickLead(q.name);
-    let l = q.leadId && S.leads.get(q.leadId) ? clone(S.leads.get(q.leadId)) : {id: uid(), name: q.name, contact: q.contact, phone: q.phone, source:'other', stage:'new', product: q.product, by: myName(), createdAt: Date.now(), log: [], quotes: []};
+    const first = q.items[0];
+    let l = q.leadId && S.leads.get(q.leadId) ? clone(S.leads.get(q.leadId)) : {id: uid(), name: q.name, contact: q.contact, phone: q.phone, source:'other', stage:'new', product: first.product, by: myName(), createdAt: Date.now(), log: [], quotes: []};
     if (!q.leadId) logLead(l, 'note', 'Added with a quotation request');
     if (!l.contact && q.contact) l.contact = q.contact; if (!l.phone && q.phone) l.phone = q.phone;
     const {leadId, msgEdited, mode: _m, msg, quoteId, ...rest} = q;
-    const quote = {...clone(rest), id: uid(), date: today(), by: myName(), askedBy: myName(), askedAt: Date.now(), status};
-    if (status === 'asked'){ quote.rows = quote.rows.map(r => ({qty: r.qty, price: null})); logLead(l, 'quote', 'Asked Raj for a rough quote: ' + (BOX[q.product] || '') + ' · ' + quote.rows.map(r => r.qty ? fmtN(r.qty) : '').filter(Boolean).join(' / ') + ' pcs'); }
+    const quote = {...clone(rest), id: uid(), date: q.date || today(), by: myName(), askedBy: myName(), askedAt: Date.now(), status};
+    quote.items.forEach(it => { it.rows = it.rows.filter(r => r.qty); if (it.hasVars !== 'yes') it.vars = []; else it.vars = it.vars.filter(v => v.name || v.qty); });
+    if (status === 'asked'){ quote.items.forEach(it => it.prices = {}); logLead(l, 'quote', 'Asked Raj for a rough quote: ' + quoteProducts(quote) + ' · ' + quoteQtyText(quote)); }
     (l.quotes = l.quotes || []).push(quote);
     saveLead(l);
     if (status === 'sent'){ const r = markQuoteSent(l.id, quote.id, q.msg || quoteMessage(q)); return r; }
@@ -4111,10 +4202,10 @@ function quoteForm(){
   };
   const done = l => { S.qdraft = null; S.crmTab = 'quote'; renderCrm(); };
   const title = mode === 'price' ? 'Give the price' : mode === 'send' ? 'Price ready – send to the client' : own ? 'Rough quote' : 'Create a quotation';
-  const help = mode === 'price' ? 'Fill in the price per piece for each quantity and press “Send price”. ' + (q.askedBy || 'The salesperson') + ' then sends the ready message to the client.'
+  const help = mode === 'price' ? 'Fill in the price per piece for each quantity' + (q.items.some(it => it.prints.length > 1) ? ' and printing option' : '') + ' and press “Send price”. ' + (q.askedBy || 'The salesperson') + ' then sends the ready message to the client.'
     : mode === 'send' ? 'Raj has given the price. Check the message, then copy it or open WhatsApp to send it to the client.'
     : own ? 'Fill in the details and the price per piece. The message on the right is ready to send to the client.'
-    : 'Fill in what the client needs and press “Send to Raj”. Raj gives the price in the app; you then get the ready message for the client.';
+    : 'Ask the client the questions in this order and fill them in as you go. Then press “Send to Raj”. Raj gives the price in the app; you then get the ready message for the client.';
   const btns = [];
   if (mode === 'new' && !own){
     btns.push(h('button',{type:'button', class:'btn primary', onclick:() => { const r = saveNew('asked'); if (!r) return; S.qsentText = quoteAskText({...r.q, name: r.l.name}); done(r.l); }}, 'Send to Raj'));
@@ -4124,8 +4215,8 @@ function quoteForm(){
       h('button',{type:'button', class:'btn', onclick:() => { const r = saveNew('sent'); if (r) done(r.l); }}, 'Save only'));
   } else if (mode === 'price'){
     btns.push(h('button',{type:'button', class:'btn primary', onclick:() => {
-      if (!(q.rows || []).some(r => r.price)){ alert0(wrap, 'Enter the price per piece.'); return; }
-      const r = updQuote(q.leadId, q.quoteId, (x, l) => { Object.assign(x, {rows: clone(q.rows), gst: q.gst, delivery: q.delivery, validity: q.validity, rajNote: q.rajNote || '', status:'priced', pricedAt: Date.now(), pricedBy: myName()});
+      if (!quoteHasPrice(q)){ alert0(wrap, 'Enter the price per piece.'); return; }
+      const r = updQuote(q.leadId, q.quoteId, (x, l) => { Object.assign(x, {items: clone(q.items), gst: q.gst, delivery: q.delivery, validity: q.validity, rajNote: q.rajNote || '', status:'priced', pricedAt: Date.now(), pricedBy: myName()});
         logLead(l, 'quote', 'Raj gave the price: ' + quoteLine(x) + (q.rajNote ? ' (' + q.rajNote + ')' : '')); });
       if (r) done(r.l);
     }}, 'Send price to ' + (q.askedBy || 'sales')));
@@ -4146,8 +4237,8 @@ function quoteForm(){
 // Open a quote in the right step: Raj gives the price, sales sends it.
 function openQuote(l, q, mode){
   const lead = S.leads.get(l.id) || l;
-  S.qdraft = {...clone(q), mode, leadId: lead.id, quoteId: q.id, name: lead.name, contact: q.contact || lead.contact || '', phone: q.phone || lead.phone || '', msg:'', msgEdited:false,
-    rows: (q.rows && q.rows.length ? clone(q.rows) : [{qty:null, price:null}])};
+  const {rows, ...rest} = clone(q);
+  S.qdraft = {...rest, items: clone(quoteItems(q)), mode, leadId: lead.id, quoteId: q.id, name: lead.name, contact: q.contact || lead.contact || '', phone: q.phone || lead.phone || '', msg:'', msgEdited:false};
   S.crmTab = 'quote'; if (S.view !== 'crm') go('crm'); else renderCrm(); window.scrollTo(0, 0);
 }
 function quoteTable(items, inLead){
@@ -4157,8 +4248,8 @@ function quoteTable(items, inLead){
     h('tbody',{}, items.map(({q, l}) => { const st = qStatus(q); return h('tr',{},
       h('td',{}, fmtDate(q.date)),
       inLead ? null : h('td',{}, h('b',{}, l.name), l.contact ? h('div',{class:'sub'}, l.contact) : null),
-      h('td',{style:'white-space:normal'}, BOX[q.product] || '—', h('div',{class:'sub'}, [q.l, q.w, q.h].some(v => v) ? [q.l, q.w, q.h].map(v => v == null || v === '' ? '?' : fmtN(v, 2)).join(' × ') + (q.unit === 'in' ? ' in' : ' mm') : '')),
-      h('td',{style:'white-space:normal'}, st === 'asked' ? (q.rows || []).map(r => r.qty ? fmtN(r.qty) : '').filter(Boolean).join(' / ') + ' pcs' : quoteLine(q), q.rajNote ? h('div',{class:'sub'}, 'Raj: ' + q.rajNote) : null),
+      h('td',{style:'white-space:normal'}, quoteProducts(q) || '—', h('div',{class:'sub'}, quoteItems(q).length > 1 ? quoteItems(q).length + ' boxes' : itemSize(quoteItems(q)[0]))),
+      h('td',{style:'white-space:normal'}, st === 'asked' ? quoteQtyText(q) : quoteLine(q), q.rajNote ? h('div',{class:'sub'}, 'Raj: ' + q.rajNote) : null),
       h('td',{}, q.askedBy || q.by || ''),
       h('td',{}, h('span',{class:'qst qst-' + st}, QSTAT[st])),
       h('td',{}, h('div',{class:'row', style:'gap:6px;flex-wrap:wrap'},
