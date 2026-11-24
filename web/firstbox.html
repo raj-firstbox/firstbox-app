@@ -338,6 +338,20 @@ input[type=date]{cursor:pointer}
 @media (min-width:641px){.rungroup table.runtable{table-layout:fixed;width:100%}.rungroup table.runtable td{white-space:normal!important;min-width:0!important}.rungroup .runtable th:nth-child(1){width:12%}.rungroup .runtable td:nth-child(1){white-space:nowrap!important}.rungroup .runtable th:nth-child(2){width:8%}.rungroup .runtable th:nth-child(3){width:14%}.rungroup .runtable th:nth-child(4){width:7%}.rungroup .runtable th:nth-child(5){width:21%}.rungroup .runtable th:nth-child(6){width:15%}.rungroup .runtable th:nth-child(7){width:14%}.rungroup .runtable th:nth-child(8){width:9%}}
 .rungroup h3{margin:0 0 8px;font-size:16px}
 .rungroup h3 .sub{font-weight:400;font-size:13px}
+.smpqs{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px 20px;margin-bottom:14px}
+.smpq.wide{grid-column:1/-1}
+.smpql{font-weight:600;font-size:14px;margin-bottom:6px;display:flex;align-items:center;gap:8px}
+.smpqn{display:inline-grid;place-items:center;min-width:22px;height:22px;border-radius:11px;background:var(--accent-soft);color:var(--accent);font-size:12px;font-weight:700;padding:0 5px}
+.smpq input:not([type=checkbox]),.smpq select{width:100%}
+.smpchoice{display:flex;flex-wrap:wrap;gap:6px}
+.smpchoice .jctab{border:1px solid var(--line);background:var(--surface);padding:8px 14px;border-radius:8px;font-size:14px}
+.smpchoice .jctab[aria-pressed=true]{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+.smpsub{margin-top:10px;padding:10px 12px;background:var(--sunk);border-radius:8px}
+.smpfx{display:flex;flex-wrap:wrap;gap:6px 16px}
+.smpfx label{display:flex;align-items:center;gap:4px;font-size:14px}
+.smpfacts{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:6px 16px;margin:4px 0}
+.smpfact{display:grid;gap:1px;font-size:13.5px}
+@media (max-width:640px){.smpqs{grid-template-columns:minmax(0,1fr)}}
 .smptable tr.open td{background:var(--accent-soft)}
 .smpdet{margin-top:8px;display:grid;gap:4px}
 .smptext{white-space:pre-wrap;background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:8px 10px;font-size:13px;line-height:1.45}
@@ -3127,19 +3141,43 @@ function labelListRows(){
 new MutationObserver(labelListRows).observe(document.body, {childList:true, subtree:true});
 // Phones: hide the bottom bar while typing, so it doesn't sit on top of the field above the keyboard.
 document.addEventListener('focusin', e => { if (e.target.matches('input:not([type=checkbox]):not([type=radio]),textarea,select')) document.body.classList.add('typing'); });
-document.addEventListener('focusout', () => document.body.classList.remove('typing'));
+// Bring it back a moment later, so it doesn't pop up under the finger that is tapping a button below the field.
+let typingOff = 0;
+document.addEventListener('focusout', () => { clearTimeout(typingOff); typingOff = setTimeout(() => { const a = document.activeElement; if (!a || !a.matches || !a.matches('input:not([type=checkbox]):not([type=radio]),textarea,select')) document.body.classList.remove('typing'); }, 400); });
 let homeT = null;
 function homeSoon(){ if (S.view !== 'home') return; clearTimeout(homeT); homeT = setTimeout(() => { if (S.view === 'home') renderHome(); }, 120); }
 // ---------- Samples (Raj): samples to be made, seen by the whole team; whoever makes one marks it ready ----------
-// samples/<SM-n>: {id, date, client, boxType, item, l, w, h, qty, kind ('plain'|'printed'), details, needBy, urgent, notes,
-//   status ('todo'|'ready'), readyBy, readyAt, by, createdAt, updatedAt}. Owner + job cards add/edit; every login can mark ready; owner deletes.
-const SMP_KIND = {plain:'Plain dummy (no printing)', printed:'Printed sample'};
+// samples/<SM-n>: {id, date, client, make ('basic'|'die'), prod ('mono'|'rigid'), boxType (rigid style, or 'mono'),
+//   sizeBy ('input'|'product'), l, w, h, unit ('mm'|'in'), board (rigid: board thickness mm), gsm (mono: paper GSM),
+//   print ('yes'|'no', rigid only; mono is always printed), artGot ('yes'|'no'), artNote, lam, fx [foil/spotuv/emboss/deboss/hybrid], fxNote,
+//   laser ('yes'|'no', mono + basic only), insert (rigid, text), notes, status ('todo'|'ready'), readyBy, readyAt, by, createdAt, updatedAt}.
+// Older samples may also carry item / kind / details / needBy / urgent — still shown. Owner + job cards add/edit; every login can mark ready; owner deletes.
+const SMP_MAKE = {basic:'Basic', die:'Die made'};
+const SMP_LAM = [['none','No lamination'], ['gloss','Gloss'], ['matte','Matte'], ['soft','Soft touch'], ['anti','Anti-scratch']];
+const SMP_FX = [['foil','Foiling'], ['spotuv','Spot UV'], ['emboss','Embossing'], ['deboss','Debossing'], ['hybrid','Hybrid']];
+const SMP_KIND = {plain:'Plain dummy (no printing)', printed:'Printed sample'};   // older samples
 const canEditSamples = () => S.role === 'owner' || S.role === 'jobcards';
-const smpLate = s => s.status !== 'ready' && s.needBy && daysTo(s.needBy) < 0;
-const smpOrder = (a, b) => (b.urgent ? 1 : 0) - (a.urgent ? 1 : 0) || String(a.needBy || '9999').localeCompare(String(b.needBy || '9999')) || String(a.date || '').localeCompare(String(b.date || '')) || n0(a.createdAt) - n0(b.createdAt);
+const smpProd = s => s.prod || (s.boxType === 'mono' ? 'mono' : RIGID.has(s.boxType) ? 'rigid' : '');
+const smpLate = s => s.status !== 'ready' && s.needBy && daysTo(s.needBy) < 0;   // older samples only
+const smpOrder = (a, b) => (b.urgent ? 1 : 0) - (a.urgent ? 1 : 0) || String(a.date || '').localeCompare(String(b.date || '')) || n0(a.createdAt) - n0(b.createdAt);
 const smpTodo = () => [...S.samples.values()].filter(s => s.status !== 'ready').sort(smpOrder);
-const smpSize = s => [s.l, s.w, s.h].some(v => v != null && v !== '') ? [s.l, s.w, s.h].map(v => v == null || v === '' ? '?' : fmtN(v, 1)).join(' × ') + (s.unit === 'in' ? ' inch' : ' mm') : '';
-const smpWhat = s => [BOX[s.boxType] || '', s.item || ''].filter(Boolean).join(' · ');
+const smpSize = s => s.sizeBy === 'product' ? 'As per product received'
+  : [s.l, s.w, s.h].some(v => v != null && v !== '') ? [s.l, s.w, s.h].map(v => v == null || v === '' ? '?' : fmtN(v, 1)).join(' × ') + (s.unit === 'in' ? ' inch' : ' mm') : '';
+const smpWhat = s => [BOX[s.boxType] || (s.prod === 'mono' ? BOX.mono : ''), s.make ? SMP_MAKE[s.make] : '', s.item || ''].filter(Boolean).join(' · ');
+const smpPrinted = s => smpProd(s) === 'mono' || s.print === 'yes';
+// One line of what the team has to do, for the list.
+function smpSpec(s){
+  if (!s.make && !s.prod) return SMP_KIND[s.kind] || '';
+  const out = [];
+  if (smpProd(s) === 'rigid' && s.board) out.push(s.board + ' mm board');
+  if (smpProd(s) === 'mono' && s.gsm) out.push(fmtN(s.gsm) + ' GSM');
+  out.push(smpPrinted(s) ? 'Printed' : 'Not printed');
+  const lam = SMP_LAM.find(x => x[0] === s.lam); if (lam && s.lam !== 'none') out.push(lam[1] + ' lamination');
+  const fx = (s.fx || []).map(k => (SMP_FX.find(x => x[0] === k) || [k, k])[1]); if (fx.length) out.push(fx.join(', '));
+  if (smpProd(s) === 'mono' && s.make === 'basic' && s.laser) out.push(s.laser === 'yes' ? 'Laser cut' : 'No laser cut');
+  if (s.insert) out.push('Insert');
+  return out.join(' · ');
+}
 function nextSampleNo(){
   let n = 0; for (const id of S.samples.keys()){ const m = /^SM-(\d+)$/.exec(id); if (m) n = Math.max(n, +m[1]); }
   return 'SM-' + (n + 1);
@@ -3150,61 +3188,122 @@ function markSample(s, ready){
   if (ready){ x.readyBy = S.myName || ROLES[S.role]?.n || 'Owner'; x.readyAt = today(); } else { delete x.readyBy; delete x.readyAt; }
   saveSample(x); renderSamples(); if (S.view === 'home') renderHome(); if (S.view === 'orders') renderOrders();
 }
+// The form follows Raj's order: client → date → basic / die made → mono carton / rigid box → that product's questions → notes.
 function sampleForm(ex){
-  const st = ex ? clone(ex) : {date: today(), client:'', boxType:'rigid', item:'', l:null, w:null, h:null, unit: (() => { try { return localStorage.getItem('fb-smpUnit') || 'mm'; } catch(e){ return 'mm'; } })(), kind:'printed', details:'', needBy:'', urgent:false, notes:''};
-  if (!st.unit) st.unit = 'mm';
-  const unitLab = () => st.unit === 'in' ? 'inch' : 'mm', labs = [];
-  const dimFld = (name, k, ph) => { const f = fld(name + ' (' + unitLab() + ')', numIn(st[k], x => st[k] = x, {placeholder:ph})); labs.push([f, name]); return f; };
-  const wrap = h('div',{class:'newjob'}), listId = 'smp-clients';
+  const lastUnit = (() => { try { return localStorage.getItem('fb-smpUnit') || 'mm'; } catch(e){ return 'mm'; } })();
+  const st = ex ? clone(ex) : {date: today(), client:'', make:'', prod:'', boxType:'', sizeBy:'input', l:null, w:null, h:null, unit:lastUnit,
+    board:'', gsm:null, print:'', artGot:'', artNote:'', lam:'', fx:[], fxNote:'', laser:'', insert:'', notes:''};
+  if (!st.prod) st.prod = smpProd(st);
+  if (!st.unit) st.unit = 'mm'; if (!st.sizeBy) st.sizeBy = 'input'; if (!Array.isArray(st.fx)) st.fx = [];
+  const wrap = h('div',{class:'newjob'}), listId = 'smp-clients', body = h('div',{});
+  const choice = (opts, val, on) => h('div',{class:'smpchoice', role:'group'}, opts.map(([k, lab]) =>
+    h('button',{type:'button', class:'jctab', 'aria-pressed': String(val === k), onclick:() => { on(k); draw(); }}, lab)));
+  const q = (n, label, ctl, wide) => h('div',{class:'smpq' + (wide ? ' wide' : '')}, h('div',{class:'smpql'}, h('span',{class:'smpqn'}, n), label), ctl);
+  const yesNo = (val, on) => choice([['yes','Yes'], ['no','No']], val, on);
+  function sizeQ(n){
+    const parts = [choice([['input','Enter size'], ['product','According to product received']], st.sizeBy, v => st.sizeBy = v)];
+    if (st.sizeBy !== 'product'){
+      const u = st.unit === 'in' ? 'inch' : 'mm';
+      parts.push(h('div',{class:'grid', style:'margin-top:8px'},
+        fld('Size in', sel([['mm','mm'], ['in','inches']], st.unit, {onchange:e => { st.unit = e.target.value; try { localStorage.setItem('fb-smpUnit', st.unit); } catch(err){} draw(); }})),
+        fld('Length (' + u + ')', numIn(st.l, x => st.l = x, {placeholder:'L'})),
+        fld('Width (' + u + ')', numIn(st.w, x => st.w = x, {placeholder:'W'})),
+        fld('Height (' + u + ')', numIn(st.h, x => st.h = x, {placeholder:'H'}))));
+    } else parts.push(h('div',{class:'note', style:'margin-top:6px'}, 'The team takes the size from the product the client gave.'));
+    return q(n, 'Dimension', h('div',{}, ...parts), true);
+  }
+  const artQ = () => h('div',{class:'smpsub'},
+    h('div',{class:'smpql'}, 'Artwork received?'), yesNo(st.artGot, v => st.artGot = v),
+    h('input',{value:st.artNote || '', placeholder:'File name or where it is (e.g. WhatsApp from client, Drive folder)', style:'margin-top:8px;width:100%', oninput:e => st.artNote = e.target.value}));
+  const lamQ = n => q(n, 'Lamination', sel(SMP_LAM, st.lam || 'none', {onchange:e => st.lam = e.target.value}));
+  const fxQ = n => q(n, 'Special effects (if any)', h('div',{},
+    h('div',{class:'smpfx'}, SMP_FX.map(([k, lab]) => h('label',{}, h('input',{type:'checkbox', checked: st.fx.includes(k), onchange:e => { st.fx = e.target.checked ? [...new Set([...st.fx, k])] : st.fx.filter(x => x !== k); }}), ' ' + lab))),
+    h('input',{value:st.fxNote || '', placeholder:'e.g. gold foil on logo, spot UV on name', style:'margin-top:8px;width:100%', oninput:e => st.fxNote = e.target.value})), true);
+  function draw(){
+    const parts = [];
+    parts.push(q('3', 'Sample', choice(Object.entries(SMP_MAKE), st.make, v => st.make = v)));
+    parts.push(q('4', 'Product', choice([['mono','Mono carton'], ['rigid','Rigid box']], st.prod, v => { st.prod = v; st.boxType = v === 'mono' ? 'mono' : (RIGID.has(st.boxType) ? st.boxType : ''); })));
+    if (st.prod === 'mono'){
+      parts.push(sizeQ('5'));
+      parts.push(q('6', 'Paper GSM', numIn(st.gsm, x => st.gsm = x, {placeholder:'e.g. 350'})));
+      parts.push(q('7', 'Printing file', artQ(), true));
+      parts.push(lamQ('8'), fxQ('9'));
+      if (st.make === 'basic') parts.push(q('10', 'Laser cut', yesNo(st.laser, v => st.laser = v)));
+      else if (st.make === 'die') parts.push(h('div',{class:'note'}, 'Die made: a cutting die will be made for this sample, so no laser cut.'));
+    } else if (st.prod === 'rigid'){
+      parts.push(q('5', 'Type of box', sel([['', 'Choose…'], ...[...RIGID].map(k => [k, BOX[k].replace('Rigid box – ', '')])], st.boxType || '', {onchange:e => st.boxType = e.target.value})));
+      parts.push(sizeQ('6'));
+      parts.push(q('7', 'Board thickness', sel([['', 'Choose…'], ...THICK.map(t => [t, t + ' mm'])], st.board ? String(st.board) : '', {onchange:e => st.board = e.target.value})));
+      parts.push(q('8', 'Printing', h('div',{}, yesNo(st.print, v => st.print = v), st.print === 'yes' ? artQ() : null), true));
+      parts.push(lamQ('9'), fxQ('10'));
+      parts.push(q('11', 'Inserts', h('input',{value:st.insert || '', placeholder:'e.g. EVA foam, 3 cavities, black velvet covering (leave empty if none)', style:'width:100%', oninput:e => st.insert = e.target.value}), true));
+    }
+    if (st.prod) parts.push(q('✎', 'Notes for the team', h('textarea',{rows:3, placeholder:'Anything else the team should know', style:'width:100%', oninput:e => st.notes = e.target.value}, st.notes || ''), true));
+    body.replaceChildren(h('div',{class:'smpqs'}, parts));
+  }
   wrap.append(h('h2',{}, ex ? 'Edit sample ' + ex.id : 'New sample'),
     h('datalist',{id:listId}, knownClients().map(c => h('option',{value:c}))),
-    h('div',{class:'grid'},
-      fld('Client', h('input',{value:st.client || '', list:listId, placeholder:'e.g. Bombay Musk', oninput:e => st.client = e.target.value})),
-      fld('Product', sel(boxOptions(st.boxType), st.boxType || 'rigid', {onchange:e => st.boxType = e.target.value})),
-      fld('What is it', h('input',{value:st.item || '', placeholder:'e.g. Perfume box with foam insert', oninput:e => st.item = e.target.value}), 'wide'),
-      fld('Size in', sel([['mm','mm'], ['in','inches']], st.unit, {onchange:e => { st.unit = e.target.value; try { localStorage.setItem('fb-smpUnit', st.unit); } catch(err){}
-        for (const [f, name] of labs){ const t = f.querySelector('.fl'); if (t) t.textContent = name + ' (' + unitLab() + ')'; } }})),
-      dimFld('Length', 'l', 'L'), dimFld('Width', 'w', 'W'), dimFld('Height', 'h', 'H'),
-      fld('Type of sample', sel(Object.entries(SMP_KIND), st.kind || 'printed', {onchange:e => st.kind = e.target.value})),
-      fld('Asked on', h('input',{type:'date', value:String(st.date || '').slice(0, 10), onchange:e => st.date = e.target.value})),
-      fld('Needed by', h('input',{type:'date', value:String(st.needBy || '').slice(0, 10), onchange:e => st.needBy = e.target.value})),
-      h('label',{class:'fld', style:'align-self:end;flex-direction:row;display:flex;gap:8px;align-items:center'}, h('input',{type:'checkbox', checked: !!st.urgent, onchange:e => st.urgent = e.target.checked}), h('span',{}, 'Urgent'))),
-    fld('Details for the team', h('textarea',{rows:5, placeholder:'Board, paper, printing, lamination, foiling, insert, magnets… everything the team needs to make it', oninput:e => st.details = e.target.value}, st.details || ''), 'wide'),
-    fld('Notes', h('input',{value:st.notes || '', placeholder:'Anything else (e.g. send with courier, show to client on Monday)', oninput:e => st.notes = e.target.value}), 'wide'),
-    h('div',{class:'row'},
+    h('div',{class:'smpqs'},
+      q('1', 'Client name', h('input',{value:st.client || '', list:listId, placeholder:'e.g. Bombay Musk', oninput:e => st.client = e.target.value})),
+      q('2', 'Date', h('input',{type:'date', value:String(st.date || '').slice(0, 10), onchange:e => st.date = e.target.value}))),
+    body,
+    h('div',{class:'row', style:'margin-top:14px'},
       h('button',{class:'btn primary', onclick:() => {
-        st.client = String(st.client || '').trim(); st.item = String(st.item || '').trim();
-        if (!st.client){ alert0(wrap, 'Enter the client name.'); return; }
-        if (!st.item && !String(st.details || '').trim()){ alert0(wrap, 'Write what the sample is, or the details for the team.'); return; }
+        st.client = String(st.client || '').trim();
+        const miss = !st.client ? 'Enter the client name.' : !st.make ? 'Choose Basic or Die made.' : !st.prod ? 'Choose Mono carton or Rigid box.'
+          : st.prod === 'rigid' && !st.boxType ? 'Choose the type of box.' : '';
+        if (miss){ alert0(wrap, miss); return; }
+        if (st.prod === 'mono'){ st.boxType = 'mono'; delete st.print; delete st.insert; delete st.board; if (st.make !== 'basic') delete st.laser; }
+        else { delete st.gsm; delete st.laser; if (st.print !== 'yes'){ delete st.artGot; delete st.artNote; } }
+        if (st.sizeBy === 'product'){ st.l = st.w = st.h = null; }
         const s = ex ? {...ex, ...st} : {...st, id: nextSampleNo(), status:'todo', by: S.myName || '', createdAt: Date.now()};
         saveSample(s); S.smpNew = false; S.smpEdit = null; S.smpOpen = s.id; S.smpTab = s.status === 'ready' ? S.smpTab : 'todo'; renderSamples();
       }}, ex ? 'Save changes' : 'Add sample'),
       h('button',{class:'btn', onclick:() => { S.smpNew = false; S.smpEdit = null; renderSamples(); }}, 'Cancel')));
+  draw();
   return wrap;
+}
+// Everything filled in, for the opened sample.
+function smpFacts(s){
+  const rows = [];
+  const add = (k, v) => { if (v != null && v !== '') rows.push(h('div',{class:'smpfact'}, h('span',{class:'sub'}, k), h('span',{}, v))); };
+  const yn = v => v === 'yes' ? 'Yes' : v === 'no' ? 'No' : '';
+  if (s.make || s.prod){
+    add('Sample', SMP_MAKE[s.make]); add('Product', smpProd(s) === 'mono' ? 'Mono carton' : BOX[s.boxType]);
+    add('Dimension', smpSize(s));
+    if (smpProd(s) === 'rigid') add('Board thickness', s.board ? s.board + ' mm' : '');
+    if (smpProd(s) === 'mono') add('Paper GSM', s.gsm ? fmtN(s.gsm) : '');
+    if (smpProd(s) === 'rigid') add('Printing', yn(s.print));
+    if (smpPrinted(s)) add(smpProd(s) === 'mono' ? 'Printing file' : 'Artwork', [s.artGot === 'yes' ? 'Received' : s.artGot === 'no' ? 'Not received yet' : '', s.artNote].filter(Boolean).join(' · '));
+    add('Lamination', (SMP_LAM.find(x => x[0] === s.lam) || [, ''])[1]);
+    add('Special effects', [(s.fx || []).map(k => (SMP_FX.find(x => x[0] === k) || [k, k])[1]).join(', '), s.fxNote].filter(Boolean).join(' · '));
+    if (smpProd(s) === 'mono') add('Laser cut', s.make === 'die' ? 'No (die made)' : yn(s.laser));
+    if (smpProd(s) === 'rigid') add('Inserts', s.insert || 'None');
+  }
+  return rows.length ? h('div',{class:'smpfacts'}, rows) : null;
 }
 function sampleRows(list, compact){
   const edit = canEditSamples(), own = isOwnerRole();
   return h('div',{class:'tablebox'}, h('table',{class:'jobs smptable'},
-    h('thead',{}, h('tr',{}, h('th',{},'Sample'), h('th',{},'Client'), h('th',{},'What to make'), h('th',{},'Size'), h('th',{},'Needed by'), h('th',{},'Status'))),
+    h('thead',{}, h('tr',{}, h('th',{},'Sample'), h('th',{},'Client'), h('th',{},'What to make'), h('th',{},'Size'), h('th',{},'Status'))),
     h('tbody',{}, list.map(s => {
-      const open = !compact && S.smpOpen === s.id, dd = daysTo(s.needBy);
+      const open = !compact && S.smpOpen === s.id;
       const toggle = () => { if (compact){ S.smpOpen = s.id; S.smpTab = s.status === 'ready' ? 'ready' : 'todo'; go('samples'); return; } S.smpOpen = open ? null : s.id; renderSamples(); };
       return h('tr',{tabindex:'0', class: open ? 'open' : '', 'aria-expanded': compact ? null : String(open), onclick:toggle, onkeydown:e => { if (e.key === 'Enter' && e.target === e.currentTarget) toggle(); }},
         h('td',{}, h('div',{class:'jobno'}, s.id), h('div',{class:'sub'}, fmtDate(s.date))),
         h('td',{}, h('b',{}, s.client || '—')),
-        h('td',{style:'white-space:normal;min-width:200px'},
+        h('td',{style:'white-space:normal;min-width:220px'},
           h('div',{}, s.urgent && s.status !== 'ready' ? h('span',{class:'urgtag'}, 'URGENT') : null, s.urgent && s.status !== 'ready' ? ' ' : null, smpWhat(s) || '—'),
-          h('div',{class:'sub'}, SMP_KIND[s.kind] || ''),
+          h('div',{class:'sub'}, smpSpec(s)),
           open ? h('div',{class:'smpdet'},
-            s.details ? h('div',{class:'smptext'}, s.details) : h('div',{class:'muted'}, 'No details written.'),
-            s.notes ? h('div',{class:'sub'}, 'Note: ' + s.notes) : null,
+            smpFacts(s),
+            s.details ? h('div',{class:'smptext'}, s.details) : null,
+            s.notes ? h('div',{class:'smptext'}, s.notes) : null,
             h('div',{class:'sub'}, 'Added' + (s.by ? ' by ' + s.by : '') + ' on ' + fmtDate(s.date)),
             (edit || own) ? h('div',{class:'row', style:'gap:8px;margin-top:6px'},
               edit ? h('button',{type:'button', class:'btn small', onclick:e => { e.stopPropagation(); S.smpEdit = s.id; S.smpNew = false; renderSamples(); window.scrollTo(0, 0); }}, 'Edit') : null,
               own ? rowDelete('sample ' + s.id, async () => { S.samples.delete(s.id); S.smpOpen = null; await removeDoc('samples/' + s.id); renderSamples(); }) : null) : null) : null),
         h('td',{}, smpSize(s) || '—'),
-        h('td',{}, s.needBy ? h('div',{class: smpLate(s) ? 'neg' : ''}, fmtDate(s.needBy)) : h('span',{class:'muted'}, '—'),
-          s.needBy && s.status !== 'ready' ? h('div',{class:'sub' + (smpLate(s) ? ' neg' : '')}, dd < 0 ? 'late by ' + (-dd) + ' day' + (dd === -1 ? '' : 's') : dd === 0 ? 'today' : 'in ' + dd + ' day' + (dd === 1 ? '' : 's')) : null),
         h('td',{}, s.status === 'ready'
           ? [h('span',{class:'pill Completed'}, 'Ready'), h('div',{class:'sub'}, (s.readyBy ? s.readyBy + ' · ' : '') + fmtDate(s.readyAt)),
              compact ? null : h('button',{type:'button', class:'linkbtn', style:'font-size:12px', onclick:e => { e.stopPropagation(); markSample(s, false); }}, 'Not ready yet')]
@@ -3225,18 +3324,18 @@ function renderSamples(){
   const month = today().slice(0, 7);
   root.append(h('div',{class:'kpis'},
     kpi('To make', String(todo.length), 'samples waiting'),
-    kpi('Urgent', String(todo.filter(s => s.urgent).length), 'marked urgent'),
-    kpi('Late', String(todo.filter(smpLate).length), 'needed-by date has passed', todo.some(smpLate) ? 'bad' : ''),
+    kpi('Mono cartons', String(todo.filter(s => smpProd(s) === 'mono').length), 'waiting'),
+    kpi('Rigid boxes', String(todo.filter(s => smpProd(s) === 'rigid').length), 'waiting'),
     kpi('Ready this month', String(ready.filter(s => String(s.readyAt || '').startsWith(month)).length), new Date().toLocaleDateString('en-IN',{month:'long'}))));
   const tab = S.smpTab || 'todo';
   const t = (k, n, c) => h('button',{type:'button', class:'jctab', 'aria-current': tab === k ? 'page' : 'false', onclick:() => { S.smpTab = k; renderSamples(); }}, n + ' (' + c + ')');
-  const search = h('input',{type:'search', placeholder:'Search sample no., client or item', value:S.smpQ || '', style:'flex:1 1 240px'});
+  const search = h('input',{type:'search', placeholder:'Search sample no. or client', value:S.smpQ || '', style:'flex:1 1 240px'});
   const tbox = h('div',{});
   root.append(h('div',{class:'row', style:'margin-bottom:10px'}, h('nav',{class:'jump', 'aria-label':'Show', style:'position:static;padding:4px'}, t('todo', 'To make', todo.length), t('ready', 'Ready', ready.length), t('all', 'All', all.length)), search), tbox);
   const draw = () => {
     const q = String(S.smpQ || '').trim().toLowerCase();
     const list = (tab === 'todo' ? todo.sort(smpOrder) : tab === 'ready' ? ready.sort((a, b) => String(b.readyAt || '').localeCompare(String(a.readyAt || ''))) : all.sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')) || n0(b.createdAt) - n0(a.createdAt)))
-      .filter(s => !q || [s.id, s.id.replace('-', ''), s.client, s.item, BOX[s.boxType], s.details].join(' ').toLowerCase().includes(q));
+      .filter(s => !q || [s.id, s.id.replace('-', ''), s.client, s.item, BOX[s.boxType], smpSpec(s), s.notes, s.details].join(' ').toLowerCase().includes(q));
     tbox.replaceChildren(list.length ? sampleRows(list) : h('div',{class:'card empty'}, q ? 'No samples match.' : tab === 'todo' ? 'No samples to make right now.' + (edit ? ' Press “+ New sample” to add one.' : '') : tab === 'ready' ? 'No samples marked ready yet.' : 'No samples yet.'));
   };
   search.addEventListener('input', e => { S.smpQ = e.target.value; draw(); });
