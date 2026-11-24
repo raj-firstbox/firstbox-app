@@ -565,6 +565,7 @@ body.has-side .side{display:flex}
 .schev{color:var(--muted)}
 .sidei.grp[aria-expanded="true"] .schev svg{transform:rotate(180deg)}
 .sidesubs{display:grid;gap:2px;margin:0 0 4px}
+.sidei.grp[aria-expanded="true"] .grpb{display:none}
 .sidei.sub{min-height:38px;padding:7px 12px 7px 46px;font-size:14.5px;color:var(--fg)}
 .sidefoot{margin-top:auto;display:grid;gap:6px;justify-items:start;padding:10px 12px 0;border-top:1px solid var(--line)}
 .sidefoot .savestate{font-size:12px}
@@ -572,6 +573,19 @@ body.has-side .side{display:flex}
 .on-home .bar{display:block}
 .hsignout{display:none}
 @media (min-width:641px){.bar nav{display:none!important}}
+/* Raj (like Refrens): with a mouse, a slim strip of icons stays on the left; resting the pointer on it opens the full menu over the page */
+@media (hover:hover) and (pointer:fine) and (min-width:641px){
+  body.has-side:not(.on-home) .menubtn{display:none}
+  body.has-side:not(.on-home) main.wrap{margin-left:max(86px,calc((100vw - 1240px + 72px)/2));margin-right:auto}
+  .side{top:calc(env(safe-area-inset-top,0px) + var(--barh,65px));width:72px;transform:none;transition:width .18s ease,box-shadow .18s ease;box-shadow:none;overflow-x:hidden;padding:12px 12px 12px}
+  body.side-open .side{width:300px;box-shadow:6px 0 24px rgba(31,26,22,.16)}
+  body.side-open .sideshade{display:none}
+  body:not(.side-open) .side .sidet,body:not(.side-open) .side .schev,body:not(.side-open) .side .sidesubs,body:not(.side-open) .side .sidefoot{display:none}
+  body:not(.side-open) .side .sidei{width:48px;justify-content:center;padding:9px 0;position:relative}
+  body:not(.side-open) .side .sidei.grp .grpb{display:inline-grid}
+  body:not(.side-open) .side .sidei .tabbadge{position:absolute;top:3px;right:1px;min-width:16px;height:16px;padding:0 4px;margin:0;font-size:10px}
+  .side .sidei .sidet{white-space:nowrap}
+}
 @media (max-width:640px){.bar .wrap{min-height:54px}.bar .brand img{height:32px}.menubtn{width:38px;height:38px}#fbc-signout{padding:6px 10px}}
 @media print{.side,.sideshade,.menubtn{display:none!important}body.has-side main.wrap{margin:0!important;padding:0!important}}
 /* Phones: the section tabs become a bar along the bottom, lists become cards, inputs use 16px text so iPhones don't zoom in. */
@@ -3320,13 +3334,13 @@ function renderSide(){
     const icon = typeof it.icon === 'function' ? it.icon() : it.icon;
     if (!subs.length || (subs.length === 1 && it.view)){
       const one = subs[0] || it;
-      list.append(h('button',{type:'button', class:'sidei', 'aria-current': isOn(one) ? 'page' : 'false', onclick:() => sideGo(one)}, sideSvg(icon), h('span',{class:'sidet'}, it.n)));
+      list.append(h('button',{type:'button', class:'sidei', title: it.n, 'aria-current': isOn(one) ? 'page' : 'false', onclick:() => sideGo(one)}, sideSvg(icon), h('span',{class:'sidet'}, it.n)));
       continue;
     }
     const anyOn = subs.some(isOn), open = S.sideOpen[it.key] ?? anyOn;
     const badge = subs.reduce((a, s) => a + (s.badge ? n0(s.badge()) : 0), 0);
-    list.append(h('button',{type:'button', class:'sidei grp' + (anyOn ? ' has-on' : ''), 'aria-expanded': String(!!open), onclick:() => { S.sideOpen[it.key] = !open; renderSide(); }},
-      sideSvg(icon), h('span',{class:'sidet'}, it.n), badge && !open ? h('span',{class:'tabbadge'}, String(badge)) : null, sideSvg(SIDE_ICONS.chev, 'schev')));
+    list.append(h('button',{type:'button', class:'sidei grp' + (anyOn ? ' has-on' : ''), title: it.n, 'aria-expanded': String(!!open), onclick:() => { S.sideOpen[it.key] = !open; renderSide(); }},
+      sideSvg(icon), h('span',{class:'sidet'}, it.n), badge ? h('span',{class:'tabbadge grpb'}, String(badge)) : null, sideSvg(SIDE_ICONS.chev, 'schev')));
     if (open) list.append(h('div',{class:'sidesubs'}, subs.map(sb => { const b = sb.badge ? n0(sb.badge()) : 0;
       return h('button',{type:'button', class:'sidei sub', 'aria-current': isOn(sb) ? 'page' : 'false', onclick:() => sideGo(sb)}, h('span',{class:'sidet'}, sb.n), b ? h('span',{class:'tabbadge'}, String(b)) : null); })));
   }
@@ -3344,6 +3358,9 @@ $('#sideshade') && $('#sideshade').addEventListener('click', () => document.body
   if (hov && $('#menubtn') && $('#side')){
     $('#menubtn').addEventListener('mouseenter', () => { clearTimeout(sideT); sideT = setTimeout(openSide, 120); });
     $('#menubtn').addEventListener('mouseleave', () => { if (!document.body.classList.contains('side-open')) clearTimeout(sideT); });
+    // the slim icon strip opens the full menu too
+    $('#side').addEventListener('mouseenter', () => { if (!document.body.classList.contains('side-open')){ clearTimeout(sideT); sideT = setTimeout(openSide, 150); } });
+    $('#side').addEventListener('mouseleave', () => { if (!document.body.classList.contains('side-open')) clearTimeout(sideT); });
     // Checked on every mouse move (not mouseleave), so it also closes when the pointer jumps straight out of the menu.
     let away = false;
     document.addEventListener('mousemove', e => {
