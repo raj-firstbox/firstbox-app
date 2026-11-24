@@ -19,12 +19,14 @@ permissions:
   contents: write
   pages: write
   id-token: write
+  actions: read     # deploy-pages reads the uploaded page from this run (failed with "No artifacts named github-pages" without it)
 
 jobs:
   web:
     if: github.ref == 'refs/heads/main' && github.event.repository.private == false
     runs-on: ubuntu-latest
-    environment: { name: github-pages, url: '${{ steps.deploy.outputs.page_url }}' }
+    environment: { name: github-pages, url: '${{ steps.deploy.outputs.page_url || steps.deploy2.outputs.page_url }}' }
+    concurrency: { group: pages, cancel-in-progress: false }   # two runs at once (push + manual build) used to clash
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -35,7 +37,14 @@ jobs:
         with: { enablement: true }
       - uses: actions/upload-pages-artifact@v3
         with: { path: web }
+      - run: sleep 15   # give GitHub a moment to list the uploaded page
       - id: deploy
+        continue-on-error: true
+        uses: actions/deploy-pages@v4
+      - if: steps.deploy.outcome == 'failure'
+        run: sleep 60
+      - id: deploy2
+        if: steps.deploy.outcome == 'failure'
         uses: actions/deploy-pages@v4
 
   app:
