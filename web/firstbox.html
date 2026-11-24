@@ -3345,14 +3345,14 @@ const SIDE_ICONS = {
   chev:'<path d="M6 9l6 6 6-6"/>'
 };
 const sideSvg = (d, cls) => { const s = h('span',{class: cls || 'sico', 'aria-hidden':'true'}); s.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">' + d + '</svg>'; return s; };
-const crmSub = k => ({view:'crm', set:() => { S.crmTab = k; S.qdraft = null; S.qsentText = null; S.crmSampleDone = null; }, on:() => S.view === 'crm' && (S.crmTab || 'leads') === k});
+const crmSub = k => ({view:'crm', set:() => { S.crmTab = k; S.qdraft = null; S.qsentText = null; S.piSent = false; S.crmSampleDone = null; }, on:() => S.view === 'crm' && (S.crmTab || 'leads') === k});
 const billSub = k => ({view:'bills', set:() => { S.billTab = k; S.billQ = ''; }, on:() => (S.view === 'bills' && (S.billTab || 'proforma') === k) || (k === 'payments' && S.view === 'pay') || (S.view === 'bill' && S.bdraft && S.bdraft.type === k)});
 const SIDE = [
   {key:'home', n:'Home', icon: SIDE_ICONS.home, view:'home'},
   {key:'jobs', n:'Cost calculator', icon: () => ICONS.jobs, view:'jobs', on:() => ['jobs', 'job'].includes(S.view)},
   {key:'cards', n:'Job cards', icon: () => ICONS.cards, view:'cards', on:() => ['cards', 'card'].includes(S.view)},
   {key:'crm', n:'Sales & marketing', icon: () => ICONS.crm, view:'crm', subs:[
-    {n:'Clients & leads', ...crmSub('leads')}, {n:'Create a quotation', ...crmSub('quote'), badge:() => { const qs = allQuotes(); return isOwnerRole() ? qs.filter(x => qStatus(x.q) === 'asked').length : qs.filter(x => qStatus(x.q) === 'priced').length; }}, {n:'Create sample', ...crmSub('sample'), hideFor:['manager']}]},
+    {n:'Clients & leads', ...crmSub('leads')}, {n:'Create a quotation', ...crmSub('quote'), badge:() => { const qs = allQuotes(); return isOwnerRole() ? qs.filter(x => qStatus(x.q) === 'asked').length + piRequests().length : qs.filter(x => qStatus(x.q) === 'priced').length; }}, {n:'Create sample', ...crmSub('sample'), hideFor:['manager']}]},
   {key:'samples', n:'Samples', icon: () => ICONS.samples, view:'samples', hideFor:['sales']},
   {key:'orders', n:'Orders', icon: () => ICONS.orders, view:'orders', subs:[
     {n:'Running orders', view:'orders', on:() => S.view === 'orders'}, {n:'Client POs & dispatches', view:'pos', on:() => ['pos', 'order'].includes(S.view)}]},
@@ -4131,8 +4131,11 @@ function quoteForm(){
   const msgBox = h('textarea',{rows:18, class:'quotemsg', oninput:e => { q.msg = e.target.value; q.msgEdited = true; }});
   const leads = [...S.leads.values()].sort((a, b) => String(a.name).localeCompare(String(b.name)));
   // the right-hand box: the request for Raj while asking, the client's message once there is a price
-  const showClientMsg = own || mode === 'send' || mode === 'quoted';
-  const refresh = () => { for (const it of q.items || []){ const c = wrap.querySelector('[data-conv="' + it.id + '"]'); if (c) c.textContent = [it.l, it.w, it.h].some(v => v != null && v !== '') ? '= ' + qSizeIn(it, it.unit === 'in' ? 'mm' : 'in') : ''; }
+  const showClientMsg = own && mode !== 'pi' || mode === 'send' || mode === 'quoted';
+  if (mode === 'pi') q.pi = q.pi || {gstin: (S.leads.get(q.leadId) || {}).gstin || '', noGst:false, reason:'', notes:''};
+  const piDone = mode === 'pi' && !!(q.pi && q.pi.status);   // already sent: show it, the owner makes the proforma
+  const refresh = () => { if (mode === 'pi'){ msgBox.value = piText(q, S.leads.get(q.leadId)); return; }
+    for (const it of q.items || []){ const c = wrap.querySelector('[data-conv="' + it.id + '"]'); if (c) c.textContent = [it.l, it.w, it.h].some(v => v != null && v !== '') ? '= ' + qSizeIn(it, it.unit === 'in' ? 'mm' : 'in') : ''; }
     if (!q.msgEdited){ q.msg = showClientMsg ? quoteMessage(q, mode === 'send' ? (q.askedBy || myName()) : myName()) : quoteAskText(q); msgBox.value = q.msg; } };
   const pickLead = name => { const l = leads.find(x => String(x.name).trim().toLowerCase() === String(name).trim().toLowerCase()); q.leadId = l ? l.id : ''; if (l){ q.contact = q.contact || l.contact || ''; q.phone = q.phone || l.phone || ''; } };
   const ro = mode !== 'new';   // pricing or sending: the details are fixed
@@ -4216,6 +4219,25 @@ function quoteForm(){
       own ? h('div',{class:'fld', style:'margin-top:12px'}, h('span',{class:'fl'}, 'Price per piece'), priceGrid(it, true)) : null);
   }
   function draw(){
+    if (mode === 'pi'){
+      const pi = q.pi, g = gstinInfo(pi.gstin), gMsg = h('div',{class:'sub', style:'margin-top:6px'});
+      const showG = () => { const x = gstinInfo(pi.gstin); gMsg.textContent = !pi.gstin ? '' : x && x.ok ? '✓ ' + x.state + ' · PAN ' + x.pan : 'This GST number does not look right. Check it again.'; gMsg.style.color = x && x.ok ? 'var(--good)' : 'var(--bad)'; };
+      body.replaceChildren(
+        h('div',{class:'qbox'},
+          h('div',{class:'smpq wide'}, h('div',{class:'smpql'}, 'Client GST number', h('span',{class:'sub'}, ' (needed for the proforma)')),
+            h('input',{value: pi.gstin || '', placeholder:'e.g. 07ABCDE1234F1Z5', maxlength:'15', autocapitalize:'characters', disabled: pi.noGst || piDone ? true : null, style:'text-transform:uppercase',
+              oninput:e => { pi.gstin = e.target.value.trim().toUpperCase(); showG(); refresh(); }}), gMsg,
+            h('label',{class:'row', style:'gap:8px;margin-top:10px'}, h('input',{type:'checkbox', checked: pi.noGst ? true : null, disabled: piDone ? true : null, onchange:e => { pi.noGst = e.target.checked; refresh(); draw(); }}), 'GST number not available'),
+            pi.noGst ? h('input',{value: pi.reason || '', placeholder:'Reason, e.g. client not registered for GST / will share later', disabled: piDone ? true : null, style:'margin-top:8px;width:100%', oninput:e => { pi.reason = e.target.value; refresh(); }}) : null)),
+        h('div',{class:'quotesum'}, h('b',{}, q.name), q.contact ? ' · ' + q.contact : '', h('div',{class:'sub'}, 'Quote of ' + fmtDate(q.date) + (q.askedBy ? ' · ' + q.askedBy : ''))),
+        ...q.items.map((it, k) => h('div',{class:'qbox'},
+          q.items.length > 1 ? h('div',{class:'qboxhead'}, h('b',{}, 'Box ' + (k + 1))) : null,
+          h('div',{class:'smptext'}, itemSpec(it).join('\n') || '—'),
+          (it.picIds || []).length ? picThumbs(it.picIds.map(id => ({id}))) : null,
+          h('div',{class:'fld', style:'margin-top:10px'}, h('span',{class:'fl'}, 'Price quoted to the client'), priceGrid(it, false)))),
+        fld('Notes for the proforma (optional)', h('textarea',{rows:3, disabled: piDone ? true : null, placeholder:'e.g. final quantity 2,000 pcs, delivery address, advance agreed', oninput:e => { pi.notes = e.target.value; refresh(); }}, pi.notes || ''), 'wide'));
+      showG(); return;
+    }
     if (ro){
       body.replaceChildren(
         h('div',{class:'quotesum'}, h('b',{}, q.name), q.contact ? ' · ' + q.contact : '',
@@ -4284,8 +4306,9 @@ function quoteForm(){
     return {l, q: quote};
   };
   const done = l => { S.qdraft = null; S.crmTab = 'quote'; renderCrm(); };
-  const title = mode === 'price' ? 'Give the price' : mode === 'send' ? 'Price ready – send to the client' : mode === 'quoted' ? 'Quoted price' : own ? 'Quote' : 'Create a quotation';
-  const help = mode === 'price' ? 'Fill in the price per piece for each quantity' + (q.items.some(it => it.prints.length > 1) ? ' and printing option' : '') + ' and press “Send price”. ' + (q.askedBy || 'The salesperson') + ' then sends the ready message to the client.'
+  const title = mode === 'pi' ? (piDone ? 'Proforma invoice request' : 'Send for proforma invoice') : mode === 'price' ? 'Give the price' : mode === 'send' ? 'Price ready – send to the client' : mode === 'quoted' ? 'Quoted price' : own ? 'Quote' : 'Create a quotation';
+  const help = mode === 'pi' ? (piDone ? (q.pi.status === 'made' ? 'Proforma invoice ' + (q.pi.billNo || '') + ' has been made.' : 'Requested by ' + (q.pi.by || '—') + ' on ' + fmtDate(ymd(new Date(q.pi.at || Date.now()))) + '.') : 'The client has agreed. Enter the client’s GST number (or tick “not available” and give the reason), add any notes, and press “Send for proforma invoice”.')
+    : mode === 'price' ? 'Fill in the price per piece for each quantity' + (q.items.some(it => it.prints.length > 1) ? ' and printing option' : '') + ' and press “Send price”. ' + (q.askedBy || 'The salesperson') + ' then sends the ready message to the client.'
     : mode === 'send' ? 'The price is ready. If you are quoting the client a different price, type it under “quoted to client” (leave it empty to use the price given). Check the message, then copy it or open WhatsApp to send it.'
     : mode === 'quoted' ? 'Type the price you quoted or agreed with the client for each quantity. Leave it empty to use the price given.'
     : own ? 'Fill in the details and the price per piece. The message on the right is ready to send to the client.'
@@ -4304,6 +4327,19 @@ function quoteForm(){
         logLead(l, 'quote', 'Price given: ' + quoteLine(x) + (q.rajNote ? ' (' + q.rajNote + ')' : '')); });
       if (r) done(r.l);
     }}, 'Send price to ' + (q.askedBy || 'sales')));
+  } else if (mode === 'pi'){
+    if (!piDone) btns.push(h('button',{type:'button', class:'btn primary', onclick:() => {
+      const pi = q.pi, g = gstinInfo(pi.gstin);
+      if (!pi.noGst && !(g && g.ok)){ alert0(wrap, pi.gstin ? 'The GST number does not look right. Check it, or tick “GST number not available” and give the reason.' : 'Enter the client’s GST number, or tick “GST number not available” and give the reason.'); return; }
+      if (pi.noGst && !String(pi.reason || '').trim()){ alert0(wrap, 'Give the reason the GST number is not available.'); return; }
+      const r = updQuote(q.leadId, q.quoteId, (x, l) => { x.items = clone(q.items);
+        x.pi = {status:'requested', gstin: pi.noGst ? '' : pi.gstin, noGst: !!pi.noGst, reason: pi.noGst ? String(pi.reason).trim() : '', notes: String(pi.notes || '').trim(), at: Date.now(), by: myName()};
+        if (!pi.noGst && !l.gstin) l.gstin = pi.gstin;
+        logLead(l, 'quote', 'Sent for proforma invoice' + (pi.noGst ? ' (no GST number: ' + String(pi.reason).trim() + ')' : ' · GST ' + pi.gstin)); });
+      if (r){ S.qdraft = null; S.piSent = true; S.crmTab = 'quote'; renderCrm(); }
+    }}, 'Send for proforma invoice'));
+    else if (own && q.pi.status === 'requested') btns.push(h('button',{type:'button', class:'btn primary', onclick:() => { const l = S.leads.get(q.leadId), x = l && (l.quotes || []).find(z => z.id === q.quoteId); if (l && x){ S.qdraft = null; proformaFromQuote(l, x); } }}, 'Make proforma invoice'));
+    else if (q.pi.status === 'made' && q.pi.billId && canView('bill')) btns.push(h('button',{type:'button', class:'btn primary', onclick:() => { S.qdraft = null; go('bill', q.pi.billId); }}, 'Open proforma ' + (q.pi.billNo || '')));
   } else if (mode === 'quoted'){
     btns.push(h('button',{type:'button', class:'btn primary', onclick:() => {
       const r = updQuote(q.leadId, q.quoteId, (x, l) => { x.items = clone(q.items); logLead(l, 'quote', 'Quoted price updated: ' + quoteLine(x)); });
@@ -4317,7 +4353,7 @@ function quoteForm(){
   btns.push(h('button',{type:'button', class:'btn', onclick:() => { S.qdraft = null; renderCrm(); }}, 'Cancel'));
   wrap.append(h('h2',{}, title), h('div',{class:'note'}, help),
     h('div',{class:'quotecols'}, body,
-      h('div',{class:'quoteright'}, h('div',{class:'fl'}, showClientMsg ? 'Message for the client' : 'Quotation request'), msgBox,
+      h('div',{class:'quoteright'}, h('div',{class:'fl'}, showClientMsg ? 'Message for the client' : mode === 'pi' ? 'Proforma invoice request' : 'Quotation request'), msgBox,
         showClientMsg ? h('button',{type:'button', class:'linkbtn', onclick:() => { q.msgEdited = false; refresh(); }}, 'Rebuild the message from the details') : null)),
     h('div',{class:'row', style:'margin-top:12px;gap:8px'}, btns));
   if (!showClientMsg) msgBox.readOnly = true;
@@ -4331,6 +4367,38 @@ function requoteQty(l, q){
   d.items = clone(quoteItems(q)).map(it => ({...it, id: uid(), rows:[{id: uid(), qty:null}], prices:{}}));
   d.askNote = 'New quantity for the quote of ' + fmtDate(q.date);
   S.qdraft = d; S.qsentText = null; S.crmTab = 'quote'; if (S.view !== 'crm') go('crm'); else renderCrm(); window.scrollTo(0, 0);
+}
+// Proforma invoice request (Raj): once the client agrees, sales sends the quote for a proforma with the client's GSTIN
+// (or the reason there is none) and notes. q.pi = {status 'requested' | 'made', gstin, noGst, reason, notes, at, by, billId, billNo}.
+const piOf = q => q.pi || null;
+const piRequests = () => allQuotes().filter(x => (piOf(x.q) || {}).status === 'requested').sort((a, b) => n0(a.q.pi.at) - n0(b.q.pi.at));
+function piText(q, l){
+  const pi = q.pi || {};
+  return ['Proforma invoice needed – ' + ((l && l.name) || q.name || 'client') + (q.contact ? ' (' + q.contact + ')' : ''),
+    pi.noGst ? 'GST number: not available – ' + (pi.reason || '') : 'GST number: ' + (pi.gstin || '—'), '',
+    ...quoteItems(q).flatMap((it, k) => [quoteItems(q).length > 1 ? 'Box ' + (k + 1) + ':' : null, ...itemSpec(it),
+      ...it.rows.filter(r => r.qty).map(r => fmtN(r.qty) + ' pcs @ ' + it.prints.map(p => priceTxt(it, p, r)).join(' / ')), '']),
+    pi.notes ? 'Notes: ' + pi.notes : null, pi.notes ? '' : null, 'From ' + (pi.by || myName())].filter(x => x != null).join('\n').replace(/\n{3,}/g, '\n\n');
+}
+// Owner/admin: a proforma made from the request — client (with GSTIN, state, PAN), one line per quantity × printing option at the quoted price.
+function proformaFromQuote(l, q){
+  const c = billCfg(), pi = q.pi || {}, cl = clientFor(l.name);
+  if (!pi.noGst && pi.gstin){ const g = gstinInfo(pi.gstin); cl.gstin = pi.gstin; if (g){ cl.state = cl.state || g.code; cl.pan = cl.pan || g.pan; } }
+  if (!cl.phone && l.phone) cl.phone = l.phone;
+  const items = [];
+  for (const it of quoteItems(q)){
+    const base = [it.product === 'mono' ? optName(MONO_STYLES, it.style) : '', qRigidLike(it.product) && it.board ? it.board + ' mm board' : '', it.product === 'mono' && (it.paperType || it.gsm) ? [optName(MONO_PAPERS, it.paperType), it.gsm ? it.gsm + ' GSM' : ''].filter(Boolean).join(' ') : it.paper,
+      it.lam ? coatName(fixCoat({lam: it.lam, fx: []}).lam) : '', (it.fx || []).map(k => (SMP_FX.find(x => x[0] === k) || [k, k])[1]).join(', ')].filter(Boolean);
+    for (const r of it.rows.filter(r => r.qty)) for (const p of it.prints)
+      items.push({id: uid(), name: qProdName(it.product), hsn: c.hsn, size: [it.l, it.w, it.h].some(v => v != null && v !== '') ? qSizeIn(it, it.unit === 'in' ? 'in' : 'mm') : '',
+        desc: [printName(p), ...base].filter(Boolean).join(' · '), qty: n0(r.qty), unit: c.unit, rate: qClient(it, p, r), gst: n0(c.gst)});
+  }
+  const b = newBill('proforma', {client: cl, items, leadId: l.id, quoteId: q.id});
+  if (pi.notes) b.payTerms = (b.payTerms ? b.payTerms + '\n' : '') + pi.notes;
+  saveBill(b);
+  updQuote(l.id, q.id, (x, ld) => { x.pi = {...(x.pi || {}), status:'made', billId: b.id, billNo: b.no, madeAt: Date.now(), madeBy: myName()};
+    logLead(ld, 'quote', 'Proforma invoice ' + b.no + ' made'); if (!['won', 'lost'].includes(ld.stage)) setStage(ld, 'pf'); if (pi.gstin && !ld.gstin) ld.gstin = pi.gstin; });
+  go('bill', b.id);
 }
 // Open a quote in the right step: Raj gives the price, sales sends it.
 function openQuote(l, q, mode){
@@ -4349,11 +4417,13 @@ function quoteTable(items, inLead){
       h('td',{style:'white-space:normal'}, quoteProducts(q) || '—', h('div',{class:'sub'}, quoteItems(q).length > 1 ? quoteItems(q).length + ' boxes' : itemSize(quoteItems(q)[0]))),
       h('td',{style:'white-space:normal'}, st === 'asked' ? quoteQtyText(q) : quoteLine(q), q.rajNote ? h('div',{class:'sub'}, 'Note: ' + q.rajNote) : null),
       h('td',{}, q.askedBy || q.by || ''),
-      h('td',{}, h('span',{class:'qst qst-' + st}, QSTAT[st])),
+      h('td',{}, h('span',{class:'qst qst-' + st}, QSTAT[st]), piOf(q) ? h('div',{class:'sub'}, q.pi.status === 'made' ? 'Proforma ' + (q.pi.billNo || 'made') : 'Proforma requested') : null),
       h('td',{}, h('div',{class:'row', style:'gap:6px;flex-wrap:wrap'},
         st === 'asked' && own ? h('button',{type:'button', class:'btn small primary', onclick:e => { e.stopPropagation(); openQuote(l, q, 'price'); }}, 'Give price') : null,
         st === 'priced' ? h('button',{type:'button', class:'btn small primary', onclick:e => { e.stopPropagation(); openQuote(l, q, 'send'); }}, 'Send to client') : null,
         st === 'sent' ? h('button',{type:'button', class:'btn small', onclick: async e => { e.stopPropagation(); const b = e.currentTarget; await copyText(q.message || ''); b.textContent = 'Copied'; setTimeout(() => b.textContent = 'Copy message', 1500); }}, 'Copy message') : null,
+        st === 'sent' && !piOf(q) && (own || S.role === 'sales') ? h('button',{type:'button', class:'btn small primary', onclick:e => { e.stopPropagation(); openQuote(l, q, 'pi'); }}, 'Send for proforma invoice') : null,
+        piOf(q) ? h('button',{type:'button', class:'btn small' + (own && q.pi.status === 'requested' ? ' primary' : ''), onclick:e => { e.stopPropagation(); openQuote(l, q, 'pi'); }}, own && q.pi.status === 'requested' ? 'Make proforma' : 'Proforma request') : null,
         st === 'sent' && (own || S.role === 'sales') ? h('button',{type:'button', class:'btn small', title:'The price you quoted or agreed with the client', onclick:e => { e.stopPropagation(); openQuote(l, q, 'quoted'); }}, 'Quoted price') : null,
         st !== 'asked' && (own || S.role === 'sales') ? h('button',{type:'button', class:'btn small', title:'Same boxes, new quantities', onclick:e => { e.stopPropagation(); requoteQty(l, q); }}, 'Request another quantity') : null,
         st === 'sent' && waNumber(l.phone) ? h('a',{class:'btn small', href:'https://wa.me/' + waNumber(l.phone) + '?text=' + encodeURIComponent(q.message || ''), target:'_blank', rel:'noopener', onclick:e => e.stopPropagation()}, 'WhatsApp') : null,
@@ -4366,12 +4436,15 @@ function quotePage(root){
     root.append(h('div',{class:'card qsent'}, h('b',{}, '✓ Quotation requested.'),
       ph ? h('div',{style:'margin-top:8px'}, h('a',{class:'btn small', href:'https://wa.me/' + ph + '?text=' + encodeURIComponent(t), target:'_blank', rel:'noopener'}, 'Also send on WhatsApp')) : null));
   }
-  if (S.qdraft){ root.append(quoteForm()); return; }
+  if (S.piSent && !S.qdraft) root.append(h('div',{class:'card qsent'}, h('b',{}, '✓ Sent for proforma invoice.')));
+  if (S.qdraft){ S.piSent = false; root.append(quoteForm()); return; }
   root.append(h('div',{class:'row', style:'justify-content:space-between;align-items:center;margin-bottom:12px'},
     h('div',{class:'note', style:'margin:0'}, own ? 'Quotation requests from the sales team, and quotes sent to clients.' : 'Request a quotation, then send the ready message to the client.'),
     h('button',{class:'btn primary', onclick:() => { S.qdraft = newQuote(null); S.qsentText = null; renderCrm(); }}, own ? '+ Quote' : '+ Create a quotation')));
   const sec = (title, list, empty) => { root.append(h('h3',{class:'crmh'}, title + ' (' + list.length + ')'), list.length ? quoteTable(list) : h('div',{class:'muted', style:'margin-bottom:10px'}, empty)); };
   const asked = all.filter(x => qStatus(x.q) === 'asked'), priced = all.filter(x => qStatus(x.q) === 'priced'), sent = all.filter(x => qStatus(x.q) === 'sent');
+  const piReq = piRequests();
+  if (own && piReq.length) sec('Proforma invoice requests', piReq, '');
   if (own){ sec('Waiting for your price', asked, 'No requests waiting.'); sec('Price given – sales to send', priced, 'Nothing waiting to be sent.'); }
   else { sec('Price ready – send to the client', priced, 'No prices waiting to be sent.'); sec('Waiting for price', asked, 'Nothing waiting.'); }
   root.append(h('details',{open: sent.length <= 5}, h('summary',{class:'crmh', style:'cursor:pointer'}, 'Sent to clients (' + sent.length + ')'), sent.length ? quoteTable(sent.slice(0, 100)) : h('div',{class:'muted'}, 'None yet.')));
@@ -4386,8 +4459,8 @@ function renderCrm(){
   if (!S.db){ root.append(h('div',{class:'card empty'},'Saved data is not available here.')); return; }
   if (!S.loaded.leads){ root.append(h('div',{class:'card empty'},'Loading…')); return; }
   const all = [...S.leads.values()], qs = allQuotes();
-  const waiting = own ? qs.filter(x => qStatus(x.q) === 'asked').length : qs.filter(x => qStatus(x.q) === 'priced').length;
-  const t = (k, n, badge) => h('button',{type:'button', class:'jctab', 'aria-current': tab === k ? 'page' : 'false', onclick:() => { S.crmTab = k; S.qdraft = null; S.qsentText = null; S.crmSampleDone = null; renderCrm(); }}, n, badge ? h('span',{class:'tabbadge'}, String(badge)) : null);
+  const waiting = own ? qs.filter(x => qStatus(x.q) === 'asked').length + piRequests().length : qs.filter(x => qStatus(x.q) === 'priced').length;
+  const t = (k, n, badge) => h('button',{type:'button', class:'jctab', 'aria-current': tab === k ? 'page' : 'false', onclick:() => { S.crmTab = k; S.qdraft = null; S.qsentText = null; S.piSent = false; S.crmSampleDone = null; renderCrm(); }}, n, badge ? h('span',{class:'tabbadge'}, String(badge)) : null);
   root.append(h('nav',{class:'jump crmtabs', 'aria-label':'Sales & marketing sections', style:'position:static;margin-bottom:14px'},
     t('leads', 'Clients & leads'), t('quote', isRO() ? 'Quotations' : 'Create a quotation', waiting), isRO() ? null : t('sample', 'Create sample')));
   if (tab === 'sample'){
@@ -4511,6 +4584,14 @@ function renderHome(){
         h('h3',{}, 'Samples to make', h('span',{class:'sub'}, ' · ' + todo.length + ' sample' + (todo.length === 1 ? '' : 's') + (todo.some(smpLate) ? ' · ' + todo.filter(smpLate).length + ' late' : ''))),
         h('button',{class:'linkbtn', onclick:() => { if (S.role === 'sales'){ S.crmTab = 'sample'; go('crm'); } else { S.smpTab = 'todo'; go('samples'); } }}, todo.length > 5 ? 'See all ' + todo.length + ' →' : 'Open samples →')),
       sampleRows(todo.slice(0, 5), true)));
+  }
+  // Proforma invoice requests from the sales team (Raj): client agreed, make the proforma.
+  if (S.db && own && S.loaded.leads){
+    const pr = piRequests();
+    if (pr.length) root.append(h('div',{class:'row', style:'justify-content:space-between;align-items:baseline;margin-top:26px'},
+        h('h2',{class:'hsub', style:'margin:0'}, 'Proforma invoice requests (' + pr.length + ')'),
+        h('button',{class:'linkbtn', onclick:() => { S.crmTab = 'quote'; S.qdraft = null; go('crm'); }}, 'Quotations →')),
+      quoteTable(pr.slice(0, 8)));
   }
   // Quotation requests from the sales team, waiting for Raj's price.
   if (S.db && own && S.loaded.leads){
