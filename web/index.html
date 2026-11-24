@@ -364,6 +364,46 @@ input[type=date]{cursor:pointer}
 .smpfx{display:flex;flex-wrap:wrap;gap:6px 16px}
 .smpfx label{display:flex;align-items:center;gap:4px;font-size:14px}
 .smptable .btn.armed{background:var(--bad);border-color:var(--bad);white-space:normal;max-width:190px;line-height:1.25}
+.crmh{font-size:15px;margin:16px 0 8px}
+a.btn{text-decoration:none;display:inline-flex;align-items:center}
+.crmtable td{vertical-align:top}
+.crmtable tr.leadrow td{background:var(--sunk);padding:14px 16px 18px;cursor:default;white-space:normal}
+.leaddet .smpfact span{overflow-wrap:anywhere}
+.crmtable tr.open td{background:var(--accent-soft)}
+.crmtable input[type=date]{width:150px}
+.crmtable input[type=date].late{border-color:var(--bad);color:var(--bad)}
+.stagesel{min-width:150px}
+.clamp2{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.leaddet{display:grid;gap:4px;max-width:980px}
+.lognew{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px}
+.lognew select{flex:0 0 130px}
+.lognew input{flex:1 1 260px}
+.loglist{display:grid;border:1px solid var(--line);border-radius:8px;background:var(--surface);overflow:hidden}
+.logrow{display:grid;grid-template-columns:90px 1fr auto;gap:10px;align-items:baseline;padding:8px 12px;border-top:1px solid var(--line);font-size:14px}
+.logrow:first-child{border-top:0}
+.logrow.stage{color:var(--muted);font-size:13px}
+.logk{font-size:12px;font-weight:600;color:var(--accent);text-transform:uppercase;letter-spacing:.03em}
+.logrow .sub{white-space:nowrap}
+.fupcard{margin:14px 0}
+.fuphead{font-weight:600;margin:10px 0 6px;font-size:14px;cursor:pointer}
+.fuplist{display:grid;gap:8px}
+.fup{display:grid;grid-template-columns:minmax(160px,1.1fr) minmax(160px,1.4fr) auto;gap:10px 16px;align-items:center;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--surface)}
+.fup.late{border-color:var(--bad);background:var(--bad-soft)}
+.fup.today{border-color:var(--brand)}
+.fupacts{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end;align-items:center}
+.fupdone{grid-column:1/-1;display:grid;gap:8px}
+.quotecols{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(0,1fr);gap:20px;align-items:start;margin-top:10px}
+.quoteright{position:sticky;top:calc(var(--barh,64px) + 12px);display:grid;gap:6px}
+.quotemsg{width:100%;font:14px/1.5 var(--font-body);min-height:420px;background:var(--sunk)}
+.qrows{display:grid;gap:8px}
+.qrow{display:flex;gap:8px;align-items:center}
+.qrow input{flex:1 1 120px;min-width:0;width:0}
+.quotecols > *{min-width:0}
+.quoteform .fld{min-width:0}
+.quotetable td{vertical-align:top}
+@media (max-width:900px){.quotecols{grid-template-columns:minmax(0,1fr)}.quoteright{position:static}.quotemsg{min-height:340px}}
+@media (max-width:640px){.fup{grid-template-columns:minmax(0,1fr)}.fupacts{justify-content:flex-start}.logrow{grid-template-columns:minmax(0,1fr)}.logrow .sub{white-space:normal}
+  table.crmtable tr.leadrow td{grid-column:1/-1}.crmtable input[type=date]{width:100%}.stagesel{min-width:0;width:100%}}
 .savefolder{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 14px;font-size:13px;color:var(--muted);background:var(--sunk);border-radius:8px;padding:8px 12px;margin:-4px 0 14px}
 .savefolder .sfpath{overflow-wrap:anywhere;min-width:0}
 .savefolder b{color:var(--fg);font-weight:600}
@@ -546,6 +586,7 @@ body:not(.show-rates) .adv{display:none}
 }
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
 @media (max-width:420px){.bar nav{gap:0!important}.bar nav .tab{padding:6px 0 5px;font-size:10.5px;letter-spacing:-.01em}}
+@media (max-width:380px){.bar nav .tab{font-size:9.5px;letter-spacing:-.02em}}
 </style>
 </head>
 <body>
@@ -555,11 +596,13 @@ body:not(.show-rates) .adv{display:none}
     <nav>
       <button class="tab" id="tab-jobs" data-go="jobs">Cost calculator</button>
       <button class="tab" id="tab-cards" data-go="cards">Job cards</button>
+      <button class="tab" id="tab-crm" data-go="crm">Clients</button>
       <button class="tab" id="tab-samples" data-go="samples">Samples</button>
       <button class="tab" id="tab-orders" data-go="orders">Orders</button>
       <button class="tab" id="tab-pos" data-go="pos">POs &amp; dispatches</button>
       <button class="tab" id="tab-bills" data-go="bills">Sales &amp; invoices</button>
       <button class="tab" id="tab-stock" data-go="stock">Stock</button>
+      <button class="tab" id="tab-db" data-go="past" hidden>Database</button>
     </nav>
     <div class="spacer"></div>
     <span class="savestate" id="savestate"></span>
@@ -596,6 +639,7 @@ body:not(.show-rates) .adv{display:none}
   <section id="view-order" hidden></section>
   <section id="view-pos" hidden></section>
   <section id="view-samples" hidden></section>
+  <section id="view-crm" hidden></section>
   <section id="view-stock" hidden></section>
   <section id="view-team" hidden></section>
   <section id="view-access" hidden></section>
@@ -755,7 +799,7 @@ const partOf = l => l.calc === 'diecut' && (l.part === 'print' || l.part === 'di
 
 // ---------- state ----------
 const S = {db:null, rates:new Map(), jobs:new Map(), settings:{overheadPct:12, marginPct:25, wastagePct:5},
-  loaded:{rates:false, jobs:false, hist:false, cards:false, stock:false, shared:false, past:false, orders:false, bills:false, payments:false, samples:false}, samples:new Map(), smpTab:'todo', smpQ:'', smpNew:false, smpEdit:null, smpOpen:null, bills:new Map(), clients:new Map(), billItems:new Map(), payments:new Map(), paydraft:null, payId:null, billTab:'proforma', clientEdit:false, billing:null, bdraft:null, billQ:'', billFilter:'all', orders:new Map(), poRates:new Map(), orderId:null, ordQ:'', ordFilter:'open', ordNew:false, ordEdit:false, dispEdit:null, dispOpen:false, hist:new Map(), cards:new Map(), cardId:null, cdraft:null, newCardOpen:false, cardQ:'', past:new Map(), pq:null, pastNew:false, pastEdit:null, role:null, myId:null, myRequest:null, user:null, team:new Map(), requests:new Map(), shared:{}, cardTab:'master', printAll:false, stock:new Map(), slog:new Map(), stockCat:'all', stockQ:'', stockOpen:null, stockNew:false, issue:null,
+  loaded:{rates:false, jobs:false, hist:false, cards:false, stock:false, shared:false, past:false, orders:false, bills:false, payments:false, samples:false, leads:false, priceBook:false}, samples:new Map(), leads:new Map(), priceBook:new Map(), crmTab:'leads', smpTab:'todo', smpQ:'', smpNew:false, smpEdit:null, smpOpen:null, bills:new Map(), clients:new Map(), billItems:new Map(), payments:new Map(), paydraft:null, payId:null, billTab:'proforma', clientEdit:false, billing:null, bdraft:null, billQ:'', billFilter:'all', orders:new Map(), poRates:new Map(), orderId:null, ordQ:'', ordFilter:'open', ordNew:false, ordEdit:false, dispEdit:null, dispOpen:false, hist:new Map(), cards:new Map(), cardId:null, cdraft:null, newCardOpen:false, cardQ:'', past:new Map(), pq:null, pastNew:false, pastEdit:null, role:null, myId:null, myRequest:null, user:null, team:new Map(), requests:new Map(), shared:{}, cardTab:'master', printAll:false, stock:new Map(), slog:new Map(), stockCat:'all', stockQ:'', stockOpen:null, stockNew:false, issue:null,
   hs:{cat:null, sel:null, slots:{}, mode:'rs', range:'all', focus:null}, slow:false, view:'jobs', jobId:null, draft:null,
   filters:{q:'', status:'all', month:'all'},
   diecutDefaults:{die:1500, first:1200, next:800},
@@ -772,7 +816,9 @@ const rs = v => (v == null || !isFinite(v)) ? '—' : (v < 0 ? '−₹' : '₹')
 const rs2 = v => (v == null || !isFinite(v)) ? '—' : (v < 0 ? '−₹' : '₹') + inr2.format(Math.abs(v));
 const fmtN = (v,d=0) => new Intl.NumberFormat('en-IN',{maximumFractionDigits:d}).format(v||0);
 const pct = v => (v == null || !isFinite(v)) ? '—' : (Math.round(v*10)/10) + '%';
-const today = () => new Date().toISOString().slice(0,10);
+// The date where the person is (India), not UTC: between midnight and 5:30 am UTC would still say yesterday.
+const ymd = d => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+const today = () => ymd(new Date());
 const clone = o => JSON.parse(JSON.stringify(o));
 function stable(o){
   if (Array.isArray(o)) return '[' + o.map(stable).join(',') + ']';
@@ -1274,7 +1320,7 @@ function fromHash(){
   else if (hsh.startsWith('order-')) go('order', hsh.slice(6));
   else if (hsh.startsWith('bill-')) go('bill', hsh.slice(5));
   else if (hsh.startsWith('pay-')) go('pay', hsh.slice(4));
-  else go(['home','jobs','rates','history','cards','stock','team','past','orders','pos','samples','bills','billing'].includes(hsh) ? hsh : homeView());
+  else go(['home','jobs','rates','history','cards','stock','team','past','orders','pos','samples','crm','bills','billing'].includes(hsh) ? hsh : homeView());
 }
 document.querySelectorAll('[data-go]').forEach(b => b.addEventListener('click', () => { closeSettings(); go(b.dataset.go); }));
 // Settings menu (top-left gear): Rate list and Price history.
@@ -1294,7 +1340,7 @@ function render(){
   applyRoleChrome();
   const ready = S.role === 'owner' || !!ROLES[S.role];
   $('#view-access').hidden = ready;
-  if (!ready){ ['home','past','jobs','job','rates','history','cards','stock','card','team','orders','order','pos','samples','bills','bill','billing','pay'].forEach(v => $('#view-' + v).hidden = true); renderAccess(); return; }
+  if (!ready){ ['home','past','jobs','job','rates','history','cards','stock','card','team','orders','order','pos','samples','crm','bills','bill','billing','pay'].forEach(v => $('#view-' + v).hidden = true); renderAccess(); return; }
   $('#view-team').hidden = S.view !== 'team';
   $('#tab-team').setAttribute('aria-current', S.view === 'team' ? 'page' : 'false');
   $('#view-home').hidden = S.view !== 'home';
@@ -1311,6 +1357,9 @@ function render(){
   $('#view-pos').hidden = S.view !== 'pos';
   $('#view-samples').hidden = S.view !== 'samples';
   $('#tab-samples').setAttribute('aria-current', S.view === 'samples' ? 'page' : 'false');
+  $('#view-crm').hidden = S.view !== 'crm';
+  $('#tab-crm').setAttribute('aria-current', S.view === 'crm' ? 'page' : 'false');
+  $('#tab-db').setAttribute('aria-current', S.view === 'past' ? 'page' : 'false');
   $('#view-bills').hidden = S.view !== 'bills';
   $('#view-bill').hidden = S.view !== 'bill';
   $('#view-pay').hidden = S.view !== 'pay';
@@ -1339,6 +1388,7 @@ function render(){
   else if (S.view === 'orders') renderOrders();
   else if (S.view === 'pos') renderPos();
   else if (S.view === 'samples') renderSamples();
+  else if (S.view === 'crm') renderCrm();
   else if (S.view === 'order') renderOrder();
   else if (S.view === 'bills') renderBills();
   else if (S.view === 'bill') renderBill();
@@ -1357,6 +1407,10 @@ const catOf = e => e.cat || (RIGID.has(e.boxType) ? 'rigid' : ['mono','mdf','cor
 function pastEntries(){
   const out = [];
   for (const p of S.past.values()) out.push({...p, source: p.source || 'saved'});
+  if (S.role !== 'owner'){
+    for (const [id, e] of S.priceBook) out.push({...e, id:'pb:' + id, source:'costing'});
+    return out;
+  }
   for (const j of S.jobs.values()){
     const price = j.quotePrice ?? null;
     if (price == null || price === '') continue;
@@ -1398,7 +1452,7 @@ function renderPast(){
   const dim = (label, k) => fld(label + ' (' + (inch ? 'in' : 'mm') + ')', numIn(shown(q[k]), v => { q[k] = v == null ? null : inch ? v * MM_PER_IN : v; draw(); }));
   root.append(h('div',{class:'head'},
     h('div',{}, h('h1',{},'Database'), h('div',{class:'note'},'Every box made before, with its selling price. Search by size before you quote or make a job card. Costings with a quoted price are added automatically.')),
-    h('button',{class:'btn primary', onclick:() => { S.pastNew = !S.pastNew; S.pastEdit = null; renderPast(); }}, S.pastNew ? 'Close' : '+ Add past job')));
+    isOwnerRole() ? h('button',{class:'btn primary', onclick:() => { S.pastNew = !S.pastNew; S.pastEdit = null; renderPast(); }}, S.pastNew ? 'Close' : '+ Add past job') : null));
   root.append(h('nav',{class:'jump', 'aria-label':'Databases', style:'margin-bottom:14px;position:static'}, Object.entries(PCATS).map(([k, n]) =>
     h('button',{type:'button', class:'jctab', 'aria-current': q.cat === k ? 'page' : 'false', onclick:() => { q.cat = k; q.box = ''; S.pastNew = false; S.pastEdit = null; renderPast(); }}, n))));
   if (S.pastNew || S.pastEdit) root.append(pastForm(S.pastEdit ? S.past.get(S.pastEdit) : null, q.cat));
@@ -1415,7 +1469,7 @@ function renderPast(){
   const box = h('div',{}); root.append(box);
   function draw(){
     box.replaceChildren();
-    if (!S.loaded.past || !S.loaded.jobs){ box.append(h('div',{class:'card empty'},'Loading…')); return; }
+    if (!S.loaded.past || !(isOwnerRole() ? S.loaded.jobs : S.loaded.priceBook)){ box.append(h('div',{class:'card empty'},'Loading…')); return; }
     const all = pastEntries().filter(e => catOf(e) === q.cat);
     if (!all.length){ box.append(h('div',{class:'card empty'},'No ' + PCATS[q.cat].toLowerCase() + ' here yet. Costings for ' + PCATS[q.cat].toLowerCase() + ' with a quoted price appear here automatically; older jobs can be added with “+ Add past job”.')); return; }
     const searching = [q.l, q.w, q.h].some(v => v != null);
@@ -1445,7 +1499,7 @@ function renderPast(){
         h('td',{class:'n'}, e.qty ? fmtN(e.qty) : '—'),
         h('td',{class:'n'}, e.pricePc != null && e.pricePc !== '' ? rs2(n0(e.pricePc)) : '—'),
         h('td',{}, h('div',{}, e.date ? fmtDate(String(e.date).slice(0, 10)) : '—'), h('div',{class:'sub'}, e.source === 'costing' ? 'From costing' : e.source === 'import' ? 'Old records' : 'Added by hand')),
-        h('td',{class:'act'}, e.source === 'costing' ? '' : h('div',{class:'row', style:'gap:4px;flex-wrap:nowrap;justify-content:flex-end'},
+        h('td',{class:'act'}, e.source === 'costing' || !isOwnerRole() ? '' : h('div',{class:'row', style:'gap:4px;flex-wrap:nowrap;justify-content:flex-end'},
           h('button',{class:'btn small', onclick:ev => { ev.stopPropagation(); S.pastEdit = e.id; S.pastNew = false; renderPast(); window.scrollTo(0, 0); }}, 'Edit'),
           rowDelete('entry for ' + (e.client || 'this job'), async () => { S.past.delete(e.id); await removeDoc('pastwork/' + e.id); renderPast(); })))))))),
       rows.length > 300 ? h('div',{class:'note', style:'margin-top:8px'}, 'Showing the closest 300. Narrow the search to see others.') : '');
@@ -2163,7 +2217,6 @@ const UNITS = ['NOS','PCS','SET','BOX','SHEETS','KG','PKT','ROLL','JOB'];
 
 // ----- Period filter for the Sales lists (Indian financial year: 1 April to 31 March) -----
 const PERIODS = [['month','This month'],['lastmonth','Last month'],['3m','Last 3 months'],['fy','This financial year'],['lastfy','Last financial year'],['all','All time'],['custom','Custom']];
-const ymd = d => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
 function periodRange(k){
   const t = new Date(), y = t.getFullYear(), m = t.getMonth(), fy = m >= 3 ? y : y - 1;
   if (k === 'month') return [ymd(new Date(y, m, 1)), ymd(new Date(y, m + 1, 0))];
@@ -3179,12 +3232,14 @@ const ICONS = {
   bills:'<path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h6M9 16h3"/>',
   billing:'<path d="M3 7h18v12H3z"/><path d="M3 11h18"/><path d="M7 15h4"/>',
   orders:'<path d="M9 4h6v3H9z"/><path d="M15 5h3v16H6V5h3"/><path d="M9 11h6M9 15h4"/>',
+  crm:'<circle cx="9" cy="8" r="3.2"/><path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6"/><path d="M16 4.5h5M16 8.5h5M17.5 12.5h3.5"/>',
+  past:'<ellipse cx="12" cy="5.5" rx="7.5" ry="2.8"/><path d="M4.5 5.5v13c0 1.6 3.4 2.8 7.5 2.8s7.5-1.2 7.5-2.8v-13"/><path d="M4.5 12c0 1.6 3.4 2.8 7.5 2.8s7.5-1.2 7.5-2.8"/>',
   samples:'<path d="M9 3h6M10 3v6l-5 9a2 2 0 0 0 1.7 3h10.6a2 2 0 0 0 1.7-3l-5-9V3"/><path d="M7.5 15h9"/>',
   pos:'<path d="M2 6h12v10H2z"/><path d="M14 9h4l3 3v4h-7"/><circle cx="6.5" cy="17.5" r="2"/><circle cx="17.5" cy="17.5" r="2"/>',
   team:'<circle cx="9" cy="8" r="3"/><path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6"/><circle cx="17" cy="9" r="2.5"/><path d="M15.5 14.2c2.8.3 5 2.6 5 5.8"/>'
 };
 // Phones: icons and short names on the section tabs (shown as a bottom bar on small screens).
-{ const SHORT = {jobs:'Costing', cards:'Job cards', samples:'Samples', orders:'Orders', pos:'POs', bills:'Sales', stock:'Stock'};
+{ const SHORT = {jobs:'Costing', cards:'Job cards', crm:'Clients', samples:'Samples', past:'Database', orders:'Orders', pos:'POs', bills:'Sales', stock:'Stock'};
   document.querySelectorAll('.bar nav .tab').forEach(b => { const v = b.dataset.go, full = b.textContent.trim();
     b.innerHTML = '<svg class="tico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + (ICONS[v] || '') + '</svg>';
     b.append(h('span',{class:'tabfull'}, full), h('span',{class:'tabshort', 'aria-hidden':'true'}, SHORT[v] || full)); b.setAttribute('aria-label', full); }); }
@@ -3213,7 +3268,7 @@ const SMP_MAKE = {basic:'Basic', die:'Die made'};
 const SMP_LAM = [['none','No lamination'], ['gloss','Gloss'], ['matte','Matte'], ['soft','Soft touch'], ['anti','Anti-scratch']];
 const SMP_FX = [['foil','Foiling'], ['spotuv','Spot UV'], ['emboss','Embossing'], ['deboss','Debossing'], ['hybrid','Hybrid']];
 const SMP_KIND = {plain:'Plain dummy (no printing)', printed:'Printed sample'};   // older samples
-const canEditSamples = () => S.role === 'owner' || S.role === 'jobcards';
+const canEditSamples = () => S.role === 'owner' || S.role === 'jobcards' || S.role === 'sales';
 const smpProd = s => s.prod || (s.boxType === 'mono' ? 'mono' : RIGID.has(s.boxType) ? 'rigid' : '');
 const smpLate = s => s.status !== 'ready' && s.needBy && daysTo(s.needBy) < 0;   // older samples only
 const smpOrder = (a, b) => (b.urgent ? 1 : 0) - (a.urgent ? 1 : 0) || String(a.date || '').localeCompare(String(b.date || '')) || n0(a.createdAt) - n0(b.createdAt);
@@ -3300,7 +3355,8 @@ function markSample(s, ready){
 function sampleForm(ex){
   const lastUnit = (() => { try { return localStorage.getItem('fb-smpUnit') || 'mm'; } catch(e){ return 'mm'; } })();
   const st = ex ? clone(ex) : {date: today(), client:'', make:'', prod:'', boxType:'', sizeBy:'input', l:null, w:null, h:null, unit:lastUnit,
-    board:'', gsm:null, print:'', artGot:'', artNote:'', lam:'', fx:[], fxNote:'', laser:'', insert:'', notes:''};
+    board:'', gsm:null, print:'', artGot:'', artNote:'', lam:'', fx:[], fxNote:'', laser:'', insert:'', notes:'', ...(S.smpPrefill || {})};
+  S.smpPrefill = null;
   if (!st.prod) st.prod = smpProd(st);
   if (!st.unit) st.unit = 'mm'; if (!st.sizeBy) st.sizeBy = 'input'; if (!Array.isArray(st.fx)) st.fx = [];
   const wrap = h('div',{class:'newjob'}), listId = 'smp-clients', body = h('div',{});
@@ -3571,6 +3627,355 @@ function renderSamples(){
   draw();
 }
 
+// ---------- Clients & leads (Raj): the sales team's sheet of clients, talks, follow-ups and rough quotes ----------
+// leads/<id>: {id, name, contact, phone, email, city, source, sourceNote, product (boxType), qty, requirement, stage,
+//   nextFollow (date), followNote, log:[{id, at, date, by, kind, text}], quotes:[{id, date, by, ...details, rows:[{qty, price}], message}],
+//   by, createdAt, updatedAt}. Owner + sales read and write; only the owner deletes. Everyone in sales sees every lead (Raj).
+const LEAD_STAGES = [['new','New enquiry'], ['req','Requirement taken'], ['quote','Rough quote sent'], ['nego','Negotiating'], ['pf','Proforma sent'], ['won','Won – order received'], ['hold','On hold'], ['lost','Lost']];
+const LEAD_CLOSED = new Set(['won', 'lost']);
+const STAGE_FOLLOW = {new:1, req:2, quote:3, nego:2, pf:3, hold:15};   // automatic next follow-up, in days, when the stage changes
+const LEAD_SOURCES = [['online','Online enquiry'], ['indiamart','IndiaMART'], ['reference','Reference'], ['other','Other']];
+const LOG_KINDS = [['call','Call'], ['whatsapp','WhatsApp'], ['meeting','Meeting'], ['visit','Visit'], ['email','Email'], ['note','Note']];
+const QUOTE_PRINT = [['none','No printing'], ['1c','1 colour'], ['2c','2 colour'], ['4c','4 colour (CMYK)'], ['4c+p','4 colour + Pantone'], ['pantone','Pantone only']];
+const stageName = k => (LEAD_STAGES.find(s => s[0] === k) || [k, k || '—'])[1];
+const sourceName = k => (LEAD_SOURCES.find(s => s[0] === k) || [k, k || '—'])[1];
+const canCrm = () => S.role === 'owner' || S.role === 'sales';
+const addDays = (d, n) => { const x = new Date((d || today()) + 'T00:00:00'); x.setDate(x.getDate() + n); return ymd(x); };
+const myName = () => S.myName || ROLES[S.role]?.n || 'Owner';
+const waNumber = p => { let d = String(p || '').replace(/\D/g, ''); if (d.length === 10) d = '91' + d; return d.length >= 11 ? d : ''; };
+const money2 = v => '₹' + new Intl.NumberFormat('en-IN',{minimumFractionDigits:2, maximumFractionDigits:2}).format(n0(v));
+function saveLead(l){ l.updatedAt = Date.now(); S.leads.set(l.id, l); const snap = clone(l); flush('leads/' + l.id, () => snap); }
+function logLead(l, kind, text){ (l.log = l.log || []).push({id: uid(), at: Date.now(), date: today(), by: myName(), kind, text}); }
+function setStage(l, stage){
+  if (l.stage === stage) return;
+  logLead(l, 'stage', 'Stage: ' + stageName(l.stage) + ' → ' + stageName(stage));
+  l.stage = stage;
+  if (LEAD_CLOSED.has(stage)){ l.nextFollow = ''; l.followNote = ''; }
+  else if (STAGE_FOLLOW[stage] && (!l.nextFollow || l.nextFollow < today())) l.nextFollow = addDays(today(), STAGE_FOLLOW[stage]);
+}
+const lastQuote = l => (l.quotes || [])[(l.quotes || []).length - 1];
+const quoteLine = q => !q ? '' : (q.rows || []).filter(r => r.qty || r.price).map(r => (r.qty ? fmtN(r.qty) + ' pcs @ ' : '') + (r.price ? money2(r.price) : '—')).join(' · ');
+const followDue = l => !LEAD_CLOSED.has(l.stage) && l.nextFollow ? daysTo(l.nextFollow) : null;
+function followLists(){
+  const all = [...S.leads.values()].filter(l => followDue(l) != null).sort((a, b) => String(a.nextFollow).localeCompare(String(b.nextFollow)));
+  return {over: all.filter(l => followDue(l) < 0), today: all.filter(l => followDue(l) === 0), soon: all.filter(l => followDue(l) > 0 && followDue(l) <= 7)};
+}
+const rerenderCrm = () => { if (S.view === 'crm') renderCrm(); if (S.view === 'home') renderHome(); };
+
+// Follow-up rows: call / WhatsApp, and "Done" which asks what happened and when to follow up next.
+function followRows(list, compact){
+  return h('div',{class:'fuplist'}, list.map(l => {
+    const dd = followDue(l), ph = waNumber(l.phone);
+    const row = h('div',{class:'fup' + (dd < 0 ? ' late' : dd === 0 ? ' today' : '')});
+    const showDone = () => {
+      const st = {text:'', kind:'call', next: STAGE_FOLLOW[l.stage] ? addDays(today(), STAGE_FOLLOW[l.stage]) : addDays(today(), 3), stage: l.stage};
+      row.replaceChildren(h('div',{class:'fupdone'},
+        h('b',{}, l.name), h('div',{class:'sub'}, 'What happened? Next follow-up?'),
+        h('div',{class:'grid'},
+          fld('How', sel(LOG_KINDS, st.kind, {onchange:e => st.kind = e.target.value})),
+          fld('Stage now', sel(LEAD_STAGES, st.stage, {onchange:e => { st.stage = e.target.value; if (LEAD_CLOSED.has(st.stage)) nextIn.value = ''; }})),
+          fld('Next follow-up', nextIn = h('input',{type:'date', value: st.next, onchange:e => st.next = e.target.value}))),
+        h('textarea',{rows:2, placeholder:'e.g. Spoke to Mr. Mehta, wants price for 5000 pcs too', style:'width:100%', oninput:e => st.text = e.target.value}),
+        h('div',{class:'row', style:'gap:8px'},
+          h('button',{type:'button', class:'btn small primary', onclick:() => {
+            const x = clone(l); logLead(x, st.kind, st.text.trim() || (LOG_KINDS.find(k => k[0] === st.kind) || [, 'Follow-up'])[1] + ' done');
+            setStage(x, st.stage); x.nextFollow = LEAD_CLOSED.has(x.stage) ? '' : (nextIn.value || ''); x.followNote = '';
+            saveLead(x); rerenderCrm();
+          }}, 'Save'),
+          h('button',{type:'button', class:'btn small', onclick:() => rerenderCrm()}, 'Cancel'))));
+    };
+    let nextIn;
+    row.append(
+      h('div',{class:'fupwho'}, h('b',{}, l.name || '—'), h('div',{class:'sub'}, [l.contact, l.phone].filter(Boolean).join(' · ') || sourceName(l.source))),
+      h('div',{class:'fupwhat'}, h('div',{}, l.followNote || stageName(l.stage)), h('div',{class:'sub' + (dd < 0 ? ' neg' : '')}, dd < 0 ? 'Overdue by ' + (-dd) + ' day' + (dd === -1 ? '' : 's') : dd === 0 ? 'Today' : fmtDate(l.nextFollow) + ' · in ' + dd + ' day' + (dd === 1 ? '' : 's'))),
+      h('div',{class:'fupacts'},
+        l.phone ? h('a',{class:'btn small', href:'tel:' + String(l.phone).replace(/[^\d+]/g, '')}, 'Call') : null,
+        ph ? h('a',{class:'btn small', href:'https://wa.me/' + ph, target:'_blank', rel:'noopener'}, 'WhatsApp') : null,
+        h('button',{type:'button', class:'btn small primary', onclick:showDone}, '✓ Done'),
+        compact ? h('button',{type:'button', class:'linkbtn', onclick:() => { S.crmOpen = l.id; S.crmTab = 'leads'; go('crm'); }}, 'Open') : null));
+    return row;
+  }));
+}
+
+function leadForm(ex){
+  const st = ex ? clone(ex) : {name:'', contact:'', phone:'', email:'', city:'', source:'online', sourceNote:'', product:'', qty:null, requirement:'', stage:'new', nextFollow: addDays(today(), 1), followNote:'', note:''};
+  const wrap = h('div',{class:'newjob'}), listId = 'crm-names';
+  const followIn = h('input',{type:'date', value: st.nextFollow || '', onchange:e => st.nextFollow = e.target.value});
+  wrap.append(h('h2',{}, ex ? 'Edit ' + (ex.name || 'client') : 'New client / lead'),
+    h('datalist',{id:listId}, knownClients().map(c => h('option',{value:c}))),
+    h('div',{class:'grid'},
+      fld('Client / company', h('input',{value: st.name, list:listId, placeholder:'e.g. Bombay Musk', oninput:e => st.name = e.target.value})),
+      fld('Contact person', h('input',{value: st.contact || '', placeholder:'e.g. Mr. Mehta', oninput:e => st.contact = e.target.value})),
+      fld('Phone / WhatsApp', h('input',{type:'tel', value: st.phone || '', placeholder:'e.g. 98110 12345', oninput:e => st.phone = e.target.value})),
+      fld('Email', h('input',{type:'email', value: st.email || '', oninput:e => st.email = e.target.value})),
+      fld('City', h('input',{value: st.city || '', oninput:e => st.city = e.target.value})),
+      fld('Source', sel(LEAD_SOURCES, st.source || 'online', {onchange:e => st.source = e.target.value})),
+      fld('Source details', h('input',{value: st.sourceNote || '', placeholder:'e.g. referred by Kaya / IndiaMART lead no.', oninput:e => st.sourceNote = e.target.value})),
+      fld('Product', sel([['', '—'], ...boxOptions(st.product)], st.product || '', {onchange:e => st.product = e.target.value})),
+      fld('Approx. quantity', numIn(st.qty, x => st.qty = x, {placeholder:'e.g. 5000'})),
+      fld('Stage', sel(LEAD_STAGES, st.stage || 'new', {onchange:e => { const was = st.stage; st.stage = e.target.value;
+        if (LEAD_CLOSED.has(st.stage)){ st.nextFollow = ''; } else if (STAGE_FOLLOW[st.stage] && was !== st.stage) st.nextFollow = addDays(today(), STAGE_FOLLOW[st.stage]);
+        followIn.value = st.nextFollow || ''; }})),
+      fld('Next follow-up', followIn),
+      fld('Follow-up about', h('input',{value: st.followNote || '', placeholder:'e.g. Ask if price is OK', oninput:e => st.followNote = e.target.value}))),
+    fld('Requirement', h('textarea',{rows:3, placeholder:'What the client needs: box type, size, quantity, finish, deadline…', oninput:e => st.requirement = e.target.value}, st.requirement || ''), 'wide'),
+    ex ? null : fld('First note (optional)', h('input',{value:'', placeholder:'e.g. Called from IndiaMART, wants samples first', oninput:e => st.note = e.target.value}), 'wide'),
+    h('div',{class:'row', style:'margin-top:10px'},
+      h('button',{class:'btn primary', onclick:() => {
+        st.name = String(st.name || '').trim();
+        if (!st.name){ alert0(wrap, 'Enter the client or company name.'); return; }
+        const note = String(st.note || '').trim(); delete st.note;
+        let l;
+        if (ex){ l = {...ex, ...st}; if (ex.stage !== st.stage){ l.stage = ex.stage; const nf = st.nextFollow; setStage(l, st.stage); l.nextFollow = nf; } }
+        else { l = {...st, id: uid(), by: myName(), createdAt: Date.now(), log: [], quotes: []}; logLead(l, 'note', note || 'Added (' + sourceName(l.source) + (l.sourceNote ? ': ' + l.sourceNote : '') + ')'); }
+        saveLead(l); S.crmNew = false; S.crmEdit = null; S.crmOpen = l.id; renderCrm();
+      }}, ex ? 'Save changes' : 'Add client / lead'),
+      h('button',{class:'btn', onclick:() => { S.crmNew = false; S.crmEdit = null; renderCrm(); }}, 'Cancel')));
+  return wrap;
+}
+
+// The opened client: everything said and sent, its samples and running orders.
+function leadDetail(l){
+  const own = isOwnerRole(), lc = String(l.name || '').trim().toLowerCase();
+  const st = {kind:'call', text:''};
+  const samples = [...S.samples.values()].filter(s => String(s.client || '').trim().toLowerCase() === lc);
+  const orders = [...S.orders.values()].filter(o => String(o.client || '').trim().toLowerCase() === lc);
+  const ph = waNumber(l.phone);
+  return h('div',{class:'leaddet', onclick:e => e.stopPropagation()},
+    h('div',{class:'smpfacts'},
+      [['Contact', l.contact], ['Phone', l.phone], ['Email', l.email], ['City', l.city], ['Source', sourceName(l.source) + (l.sourceNote ? ' · ' + l.sourceNote : '')],
+       ['Product', BOX[l.product] || ''], ['Approx. quantity', l.qty ? fmtN(l.qty) + ' pcs' : ''], ['Added', (l.by ? l.by + ' · ' : '') + (l.createdAt ? fmtDate(ymd(new Date(l.createdAt))) : '')]]
+        .filter(([, v]) => v).map(([k, v]) => h('div',{class:'smpfact'}, h('span',{class:'sub'}, k), h('span',{}, v)))),
+    l.requirement ? h('div',{class:'smptext'}, l.requirement) : null,
+    h('div',{class:'row', style:'gap:8px;margin:8px 0'},
+      h('button',{type:'button', class:'btn small primary', onclick:() => { S.qdraft = newQuote(l); S.crmTab = 'quote'; renderCrm(); window.scrollTo(0, 0); }}, '+ Rough quote'),
+      h('button',{type:'button', class:'btn small', onclick:() => { S.smpNew = true; S.smpPrefill = {client: l.name}; go('samples'); }}, '+ Sample'),
+      l.phone ? h('a',{class:'btn small', href:'tel:' + String(l.phone).replace(/[^\d+]/g, '')}, 'Call') : null,
+      ph ? h('a',{class:'btn small', href:'https://wa.me/' + ph, target:'_blank', rel:'noopener'}, 'WhatsApp') : null,
+      h('button',{type:'button', class:'btn small', onclick:() => { S.crmEdit = l.id; S.crmNew = false; renderCrm(); window.scrollTo(0, 0); }}, 'Edit'),
+      own ? rowDelete(l.name || 'this client', async () => { S.leads.delete(l.id); S.crmOpen = null; await removeDoc('leads/' + l.id); renderCrm(); }) : null),
+    h('h3',{class:'crmh'}, 'Talks & notes'),
+    h('div',{class:'lognew'},
+      sel(LOG_KINDS, st.kind, {'aria-label':'How', onchange:e => st.kind = e.target.value}),
+      h('input',{placeholder:'What was said? e.g. Wants 3000 pcs, sample by Monday', oninput:e => st.text = e.target.value, onkeydown:e => { if (e.key === 'Enter') e.target.nextSibling.click(); }}),
+      h('button',{type:'button', class:'btn small primary', onclick:() => { if (!st.text.trim()) return; const x = clone(l); logLead(x, st.kind, st.text.trim()); saveLead(x); renderCrm(); }}, 'Add')),
+    (l.log || []).length ? h('div',{class:'loglist'}, [...l.log].reverse().map(e => h('div',{class:'logrow' + (e.kind === 'stage' ? ' stage' : '')},
+      h('span',{class:'logk'}, e.kind === 'stage' ? '•' : e.kind === 'quote' ? '₹' : (LOG_KINDS.find(k => k[0] === e.kind) || [, 'Note'])[1]),
+      h('span',{class:'logt'}, e.text), h('span',{class:'sub'}, (e.by ? e.by + ' · ' : '') + fmtDate(e.date))))) : h('div',{class:'muted'}, 'Nothing written yet.'),
+    (l.quotes || []).length ? [h('h3',{class:'crmh'}, 'Rough quotes sent'), quoteTable([...l.quotes].reverse().map(q => ({q, l})), true)] : null,
+    samples.length ? [h('h3',{class:'crmh'}, 'Samples'), h('div',{}, samples.map(s => h('div',{class:'sub'}, s.id + ' · ' + (smpWhat(s) || 'Sample') + ' · ' + (s.status === 'ready' ? 'Ready' : 'To make'))))] : null,
+    orders.length ? [h('h3',{class:'crmh'}, 'Orders'), h('div',{}, orders.map(o => { const st2 = poStats(o); return h('div',{class:'sub'}, (o.poNo ? 'PO ' + o.poNo : 'Order') + ' · ' + fmtDate(o.poDate) + ' · ' + Math.round(st2.pct) + '% delivered'); }))] : null);
+}
+
+function leadTable(list){
+  return h('div',{class:'tablebox'}, h('table',{class:'jobs crmtable'},
+    h('thead',{}, h('tr',{}, h('th',{},'Client'), h('th',{},'Source'), h('th',{},'Requirement'), h('th',{},'Stage'), h('th',{},'Rough quote'), h('th',{},'Next follow-up'), h('th',{},'Last update'))),
+    h('tbody',{}, list.map(l => {
+      const open = S.crmOpen === l.id, q = lastQuote(l), last = (l.log || [])[(l.log || []).length - 1], dd = followDue(l);
+      const toggle = () => { S.crmOpen = open ? null : l.id; renderCrm(); };
+      const stop = e => e.stopPropagation();
+      const row = h('tr',{tabindex:'0', class: open ? 'open' : '', 'aria-expanded': String(open), onclick:toggle, onkeydown:e => { if (e.key === 'Enter' && e.target === e.currentTarget) toggle(); }},
+        h('td',{style:'white-space:normal;min-width:150px'}, h('b',{}, l.name || '—'), h('div',{class:'sub'}, [l.contact, l.phone].filter(Boolean).join(' · '))),
+        h('td',{}, sourceName(l.source), l.sourceNote ? h('div',{class:'sub'}, l.sourceNote) : null),
+        h('td',{style:'white-space:normal;min-width:160px'}, [BOX[l.product], l.qty ? fmtN(l.qty) + ' pcs' : ''].filter(Boolean).join(' · ') || '', l.requirement ? h('div',{class:'sub clamp2'}, l.requirement) : null),
+        h('td',{onclick:stop}, sel(LEAD_STAGES, l.stage || 'new', {'aria-label':'Stage', class:'stagesel st-' + (l.stage || 'new'), onchange:e => { const x = clone(l); setStage(x, e.target.value); saveLead(x); renderCrm(); }})),
+        h('td',{}, q ? [h('div',{}, quoteLine(q)), h('div',{class:'sub'}, fmtDate(q.date) + (q.by ? ' · ' + q.by : ''))] : h('span',{class:'muted'}, '—')),
+        h('td',{onclick:stop}, LEAD_CLOSED.has(l.stage) ? h('span',{class:'muted'}, '—') : [
+          h('input',{type:'date', value: l.nextFollow || '', 'aria-label':'Next follow-up', class: dd != null && dd < 0 ? 'late' : '', onchange:e => { const x = clone(l); x.nextFollow = e.target.value; saveLead(x); renderCrm(); }}),
+          l.followNote ? h('div',{class:'sub'}, l.followNote) : null]),
+        h('td',{style:'white-space:normal;min-width:140px'}, last ? [h('div',{class:'clamp2'}, last.text), h('div',{class:'sub'}, (last.by ? last.by + ' · ' : '') + fmtDate(last.date))] : '—'));
+      // the opened client gets its own full-width row underneath
+      return open ? [row, h('tr',{class:'leadrow', 'data-lab':'1'}, h('td',{colspan:'7'}, leadDetail(l)))] : row;
+    }).flat())));
+}
+
+// ---- Rough quote → ready message (Raj gives the price; sales fills the details and sends the message) ----
+function newQuote(l){
+  const unit = (() => { try { return localStorage.getItem('fb-smpUnit') || 'mm'; } catch(e){ return 'mm'; } })();
+  return {leadId: l ? l.id : '', name: l ? l.name : '', contact: l ? (l.contact || '') : '', phone: l ? (l.phone || '') : '', product: (l && l.product) || 'rigid',
+    l:null, w:null, h:null, unit, board:'', paper:'', print:'4c', lam:'matte', fx:[], fxNote:'', insert:'', extras:'',
+    rows:[{qty: l && l.qty ? l.qty : null, price:null}], gst: n0(billCfg().gst) || 5, delivery:'15–20 working days after artwork approval', validity:15, note:'', msg:'', msgEdited:false};
+}
+function quoteMessage(q){
+  const isRigid = RIGID.has(q.product), lines = [];
+  const size = [q.l, q.w, q.h].some(v => v != null && v !== '') ? [q.l, q.w, q.h].map(v => v == null || v === '' ? '?' : fmtN(v, 2)).join(' × ') + (q.unit === 'in' ? ' inch' : ' mm') : '';
+  const add = (k, v) => { if (v) lines.push(k + ': ' + v); };
+  add('Product', BOX[q.product] || q.product); add('Size', size);
+  if (isRigid) add('Board', q.board ? q.board + ' mm' : ''); else add('Paper', q.paper);
+  add('Printing', (QUOTE_PRINT.find(p => p[0] === q.print) || [, ''])[1]);
+  const lam = SMP_LAM.find(x => x[0] === q.lam); add('Lamination', lam && q.lam !== 'none' ? lam[1] : '');
+  const fx = (q.fx || []).map(k => (SMP_FX.find(x => x[0] === k) || [k, k])[1]).join(', '); add('Special effects', [fx, q.fxNote].filter(Boolean).join(' – '));
+  add('Insert', q.insert); add('Other', q.extras);
+  const rows = (q.rows || []).filter(r => r.qty || r.price);
+  const who = String(q.contact || '').trim() || String(q.name || '').trim();
+  return [
+    'Dear ' + (who || 'Sir/Madam') + ',', '', 'Greetings from Firstbox!', 'As discussed, here is our rough quotation for your requirement:', '',
+    ...lines, '',
+    rows.length ? 'Price:' : '', ...rows.map(r => '• ' + (r.qty ? fmtN(r.qty) + ' pcs – ' : '') + (r.price ? money2(r.price) + ' per piece' : 'price on request')), rows.length ? '' : null,
+    'GST ' + fmtN(q.gst, 1) + '% extra.', 'Transport charges extra, as actual (paid by the client).',
+    q.delivery ? 'Delivery: ' + q.delivery + '.' : null, q.validity ? 'This quote is valid for ' + q.validity + ' days.' : null,
+    q.note ? q.note : null, '',
+    'This is a rough estimate; the final price will be confirmed in our proforma invoice.', '', 'Regards,', myName(), 'Firstbox'
+  ].filter(x => x != null).join('\n').replace(/\n{3,}/g, '\n\n');
+}
+function quoteForm(){
+  const q = S.qdraft = S.qdraft || newQuote(null);
+  const wrap = h('div',{class:'newjob quoteform'}), body = h('div',{}), msgBox = h('textarea',{rows:18, class:'quotemsg', oninput:e => { q.msg = e.target.value; q.msgEdited = true; }});
+  const leads = [...S.leads.values()].sort((a, b) => String(a.name).localeCompare(String(b.name)));
+  const refresh = () => { if (!q.msgEdited){ q.msg = quoteMessage(q); msgBox.value = q.msg; } };
+  const pickLead = name => { const l = leads.find(x => String(x.name).trim().toLowerCase() === String(name).trim().toLowerCase()); q.leadId = l ? l.id : ''; if (l){ q.contact = q.contact || l.contact || ''; q.phone = q.phone || l.phone || ''; } };
+  const draw = () => {
+    const isRigid = RIGID.has(q.product), u = q.unit === 'in' ? 'inch' : 'mm';
+    body.replaceChildren(
+      h('datalist',{id:'quote-leads'}, leads.map(l => h('option',{value:l.name}))),
+      h('div',{class:'grid'},
+        fld('Client', h('input',{value:q.name, list:'quote-leads', placeholder:'Pick a client or type a new one', oninput:e => { q.name = e.target.value; pickLead(q.name); refresh(); }, onchange:() => draw()})),
+        fld('Contact person', h('input',{value:q.contact, oninput:e => { q.contact = e.target.value; refresh(); }})),
+        fld('Phone / WhatsApp', h('input',{type:'tel', value:q.phone, oninput:e => q.phone = e.target.value})),
+        fld('Product', sel(boxOptions(q.product), q.product, {onchange:e => { q.product = e.target.value; refresh(); draw(); }})),
+        fld('Size in', sel([['mm','mm'], ['in','inches']], q.unit, {onchange:e => { q.unit = e.target.value; refresh(); draw(); }})),
+        fld('Length (' + u + ')', numIn(q.l, x => { q.l = x; refresh(); }, {placeholder:'L'})),
+        fld('Width (' + u + ')', numIn(q.w, x => { q.w = x; refresh(); }, {placeholder:'W'})),
+        fld('Height (' + u + ')', numIn(q.h, x => { q.h = x; refresh(); }, {placeholder:'H'})),
+        isRigid ? fld('Board thickness', sel([['', '—'], ...THICK.map(t => [t, t + ' mm'])], q.board || '', {onchange:e => { q.board = e.target.value; refresh(); }}))
+                : fld('Paper', h('input',{value:q.paper, placeholder:'e.g. 350 GSM SBS', oninput:e => { q.paper = e.target.value; refresh(); }})),
+        fld('Printing', sel(QUOTE_PRINT, q.print, {onchange:e => { q.print = e.target.value; refresh(); }})),
+        fld('Lamination', sel(SMP_LAM, q.lam || 'none', {onchange:e => { q.lam = e.target.value; refresh(); }})),
+        fld('Insert', h('input',{value:q.insert, placeholder:'e.g. EVA foam, 1 cavity (empty if none)', oninput:e => { q.insert = e.target.value; refresh(); }}))),
+      h('div',{class:'fld'}, h('span',{class:'fl'}, 'Special effects'),
+        h('div',{class:'smpfx'}, SMP_FX.map(([k, lab]) => h('label',{}, h('input',{type:'checkbox', checked: q.fx.includes(k), onchange:e => { q.fx = e.target.checked ? [...new Set([...q.fx, k])] : q.fx.filter(x => x !== k); refresh(); }}), ' ' + lab))),
+        h('input',{value:q.fxNote, placeholder:'e.g. gold foil on logo', style:'margin-top:6px;width:100%', oninput:e => { q.fxNote = e.target.value; refresh(); }})),
+      fld('Other details', h('input',{value:q.extras, placeholder:'e.g. magnetic closure, ribbon pull, window', oninput:e => { q.extras = e.target.value; refresh(); }}), 'wide'),
+      h('div',{class:'fld wide'}, h('span',{class:'fl'}, 'Quantity and price per piece (price as given by Raj)'),
+        h('div',{class:'qrows'}, q.rows.map((r, i) => h('div',{class:'qrow'},
+          numIn(r.qty, x => { r.qty = x; refresh(); }, {placeholder:'Quantity', 'aria-label':'Quantity ' + (i + 1)}),
+          h('span',{class:'sub'}, 'pcs @ ₹'),
+          numIn(r.price, x => { r.price = x; refresh(); }, {placeholder:'Price / pc', 'aria-label':'Price per piece ' + (i + 1)}),
+          q.rows.length > 1 ? h('button',{type:'button', class:'linkbtn', 'aria-label':'Remove this quantity', onclick:() => { q.rows.splice(i, 1); refresh(); draw(); }}, '×') : null)),
+          q.rows.length < 4 ? h('button',{type:'button', class:'linkbtn', onclick:() => { q.rows.push({qty:null, price:null}); draw(); }}, '+ Another quantity') : null)),
+      h('div',{class:'grid'},
+        fld('GST %', numIn(q.gst, x => { q.gst = x; refresh(); })),
+        fld('Delivery time', h('input',{value:q.delivery, oninput:e => { q.delivery = e.target.value; refresh(); }})),
+        fld('Valid for (days)', numIn(q.validity, x => { q.validity = x; refresh(); })),
+        fld('Extra line (optional)', h('input',{value:q.note, placeholder:'e.g. Samples will be charged extra', oninput:e => { q.note = e.target.value; refresh(); }}))));
+  };
+  const save = () => {
+    q.name = String(q.name || '').trim();
+    if (!q.name){ alert0(wrap, 'Enter the client.'); return null; }
+    if (!(q.rows || []).some(r => r.price)){ alert0(wrap, 'Enter the price per piece Raj gave.'); return null; }
+    pickLead(q.name);
+    let l = q.leadId && S.leads.get(q.leadId) ? clone(S.leads.get(q.leadId)) : {id: uid(), name: q.name, contact: q.contact, phone: q.phone, source:'other', stage:'new', product: q.product, by: myName(), createdAt: Date.now(), log: [], quotes: []};
+    if (!q.leadId) logLead(l, 'note', 'Added with a rough quote');
+    if (!l.contact && q.contact) l.contact = q.contact; if (!l.phone && q.phone) l.phone = q.phone;
+    const {leadId, msgEdited, ...rest} = q;
+    const quote = {...clone(rest), id: uid(), date: today(), by: myName(), message: q.msg || quoteMessage(q)};
+    (l.quotes = l.quotes || []).push(quote);
+    logLead(l, 'quote', 'Rough quote: ' + (BOX[q.product] || '') + ' · ' + quoteLine(quote));
+    if (['new', 'req'].includes(l.stage || 'new')) setStage(l, 'quote');
+    l.nextFollow = addDays(today(), STAGE_FOLLOW.quote); l.followNote = 'Ask about the rough quote';
+    saveLead(l); return {l, quote};
+  };
+  const done = l => { S.qdraft = null; S.crmTab = 'leads'; S.crmOpen = l.id; renderCrm(); };
+  const copy = async t => { try { await navigator.clipboard.writeText(t); return true; } catch(e){ const ta = h('textarea',{style:'position:fixed;opacity:0'}, t); document.body.append(ta); ta.select(); try { document.execCommand('copy'); } catch(_){} ta.remove(); return true; } };
+  wrap.append(h('h2',{}, 'Rough quote'), h('div',{class:'note'}, 'Fill in the details and the price per piece Raj gave. The message on the right is ready to send to the client; you can still change it before sending.'),
+    h('div',{class:'quotecols'}, body,
+      h('div',{class:'quoteright'}, h('div',{class:'fl'}, 'Message for the client'), msgBox,
+        h('button',{type:'button', class:'linkbtn', onclick:() => { q.msgEdited = false; refresh(); }}, 'Rebuild the message from the details'))),
+    h('div',{class:'row', style:'margin-top:12px;gap:8px'},
+      h('button',{type:'button', class:'btn primary', onclick: async e => { const r = save(); if (!r) return; await copy(r.quote.message); e.target.textContent = 'Saved · message copied'; setTimeout(() => done(r.l), 900); }}, 'Save & copy message'),
+      h('button',{type:'button', class:'btn', onclick:() => { const ph = waNumber(q.phone); const r = save(); if (!r) return; window.open('https://wa.me/' + ph + '?text=' + encodeURIComponent(r.quote.message), '_blank', 'noopener'); done(r.l); }}, 'Save & open WhatsApp'),
+      h('button',{type:'button', class:'btn', onclick:() => { const r = save(); if (r) done(r.l); }}, 'Save only'),
+      h('button',{type:'button', class:'btn', onclick:() => { S.qdraft = null; S.crmTab = 'leads'; renderCrm(); }}, 'Cancel')));
+  draw(); refresh();
+  return wrap;
+}
+function quoteTable(items, inLead){
+  return h('div',{class:'tablebox'}, h('table',{class:'jobs quotetable'},
+    h('thead',{}, h('tr',{}, h('th',{},'Date'), inLead ? null : h('th',{},'Client'), h('th',{},'Product'), h('th',{},'Quantity & price'), h('th',{},'By'), h('th',{}, h('span',{class:'sr'}, 'Message')))),
+    h('tbody',{}, items.map(({q, l}) => h('tr',{},
+      h('td',{}, fmtDate(q.date)),
+      inLead ? null : h('td',{}, h('b',{}, l.name)),
+      h('td',{style:'white-space:normal'}, BOX[q.product] || '—', h('div',{class:'sub'}, [q.l, q.w, q.h].some(v => v) ? [q.l, q.w, q.h].map(v => v == null || v === '' ? '?' : fmtN(v, 2)).join(' × ') + (q.unit === 'in' ? ' in' : ' mm') : '')),
+      h('td',{style:'white-space:normal'}, quoteLine(q)),
+      h('td',{}, q.by || ''),
+      h('td',{}, h('div',{class:'row', style:'gap:6px;flex-wrap:nowrap'},
+        h('button',{type:'button', class:'btn small', onclick: async e => { e.stopPropagation(); const b = e.currentTarget; try { await navigator.clipboard.writeText(q.message || ''); b.textContent = 'Copied'; } catch(_){ b.textContent = 'Couldn’t copy'; } setTimeout(() => b.textContent = 'Copy message', 1500); }}, 'Copy message'),
+        waNumber(l.phone) ? h('a',{class:'btn small', href:'https://wa.me/' + waNumber(l.phone) + '?text=' + encodeURIComponent(q.message || ''), target:'_blank', rel:'noopener', onclick:e => e.stopPropagation()}, 'WhatsApp') : null,
+        inLead ? null : h('button',{type:'button', class:'linkbtn', onclick:() => { S.crmTab = 'leads'; S.crmOpen = l.id; renderCrm(); }}, 'Client'))))))));
+}
+
+function renderCrm(){
+  const root = $('#view-crm'); if (!root) return; root.replaceChildren();
+  const tab = S.crmTab || 'leads';
+  root.append(h('div',{class:'head'},
+    h('div',{}, h('h1',{},'Clients & leads'), h('div',{class:'note'},'Every client and enquiry, what was said, rough quotes sent and when to follow up. Everyone in sales sees all of it.')),
+    h('div',{class:'row', style:'gap:8px'},
+      h('button',{class:'btn', onclick:() => { S.qdraft = newQuote(null); S.crmTab = 'quote'; renderCrm(); }}, '+ Rough quote'),
+      h('button',{class:'btn primary', onclick:() => { S.crmNew = !S.crmNew; S.crmEdit = null; S.crmTab = 'leads'; renderCrm(); }}, S.crmNew ? 'Close' : '+ New client / lead'))));
+  if (!S.db){ root.append(h('div',{class:'card empty'},'Saved data is not available here.')); return; }
+  if (!S.loaded.leads){ root.append(h('div',{class:'card empty'},'Loading clients…')); return; }
+  if (S.crmNew) root.append(leadForm(null));
+  if (S.crmEdit && S.leads.has(S.crmEdit)) root.append(leadForm(S.leads.get(S.crmEdit)));
+  const all = [...S.leads.values()], quotes = all.flatMap(l => (l.quotes || []).map(q => ({q, l})));
+  const t = (k, n) => h('button',{type:'button', class:'jctab', 'aria-current': tab === k || (k === 'quotes' && tab === 'quote') ? 'page' : 'false', onclick:() => { S.crmTab = k; renderCrm(); }}, n);
+  root.append(h('nav',{class:'jump', 'aria-label':'Sales sections', style:'position:static;margin-bottom:14px'}, t('leads', 'Clients & leads (' + all.length + ')'), t('quotes', 'Rough quotes (' + quotes.length + ')')));
+  if (tab === 'quote'){ root.append(quoteForm()); return; }
+  if (tab === 'quotes'){
+    root.append(quotes.length ? quoteTable(quotes.sort((a, b) => String(b.q.date).localeCompare(String(a.q.date)) || 0)) : h('div',{class:'card empty'}, 'No rough quotes yet. Press “+ Rough quote”.'));
+    return;
+  }
+  // follow-ups first: overdue, today, next 7 days
+  const f = followLists(), month = today().slice(0, 7);
+  root.append(h('div',{class:'kpis'},
+    kpi('Active', String(all.filter(l => !LEAD_CLOSED.has(l.stage)).length), 'clients & leads'),
+    kpi('Follow-ups due', String(f.over.length + f.today.length), f.over.length ? f.over.length + ' overdue' : 'today', f.over.length ? 'bad' : ''),
+    kpi('Rough quotes', String(quotes.filter(x => String(x.q.date).startsWith(month)).length), 'this month'),
+    kpi('Won', String(all.filter(l => l.stage === 'won' && (l.log || []).some(e => e.kind === 'stage' && String(e.date).startsWith(month) && /Won/.test(e.text))).length), 'this month')));
+  if (f.over.length || f.today.length || f.soon.length){
+    const box = h('section',{class:'card fupcard'}, h('h2',{class:'crmh', style:'margin-top:0'}, 'Follow-ups'));
+    if (f.over.length) box.append(h('div',{class:'fuphead neg'}, 'Overdue (' + f.over.length + ')'), followRows(f.over));
+    if (f.today.length) box.append(h('div',{class:'fuphead'}, 'Today (' + f.today.length + ')'), followRows(f.today));
+    if (f.soon.length) box.append(h('details',{}, h('summary',{class:'fuphead'}, 'Next 7 days (' + f.soon.length + ')'), followRows(f.soon)));
+    root.append(box);
+  }
+  // the sheet
+  const fs = S.crmStage || 'active';
+  const counts = k => all.filter(l => k === 'active' ? !LEAD_CLOSED.has(l.stage) && l.stage !== 'hold' : k === 'all' ? true : (l.stage || 'new') === k).length;
+  const search = h('input',{type:'search', placeholder:'Search client, contact, phone, city or requirement', value:S.crmQ || '', style:'flex:1 1 260px'});
+  const tbox = h('div',{});
+  root.append(h('div',{class:'row', style:'margin:14px 0 10px;gap:10px'},
+    sel([['active', 'Active (' + counts('active') + ')'], ...LEAD_STAGES.map(([k, n]) => [k, n + ' (' + counts(k) + ')']), ['all', 'All (' + all.length + ')']], fs, {'aria-label':'Show stage', onchange:e => { S.crmStage = e.target.value; renderCrm(); }}),
+    sel([['', 'All sources'], ...LEAD_SOURCES], S.crmSrc || '', {'aria-label':'Source', onchange:e => { S.crmSrc = e.target.value; renderCrm(); }}),
+    search), tbox);
+  const draw = () => {
+    const q = String(S.crmQ || '').trim().toLowerCase();
+    const list = all.filter(l => fs === 'all' || (fs === 'active' ? !LEAD_CLOSED.has(l.stage) && l.stage !== 'hold' : (l.stage || 'new') === fs))
+      .filter(l => !S.crmSrc || l.source === S.crmSrc)
+      .filter(l => !q || [l.name, l.contact, l.phone, String(l.phone || '').replace(/\D/g, ''), l.city, l.requirement, l.sourceNote, l.email].join(' ').toLowerCase().includes(q))
+      .sort((a, b) => (followDue(a) ?? 1e9) - (followDue(b) ?? 1e9) || n0(b.updatedAt) - n0(a.updatedAt));
+    tbox.replaceChildren(list.length ? leadTable(list) : h('div',{class:'card empty'}, all.length ? 'No clients match.' : 'No clients yet. Press “+ New client / lead” to add the first one.'));
+  };
+  search.addEventListener('input', e => { S.crmQ = e.target.value; draw(); });
+  draw();
+}
+
+// Raj's costings with a quoted price, copied without any costs so the sales team can see them in the Database.
+// The owner's app keeps priceBook/<costing id> in step: {client, item, boxType, l, w, h, qty, pricePc, date}.
+let pbTimer = 0;
+function syncPriceBook(){
+  if (S.role !== 'owner' || !S.loaded.jobs || !S.loaded.priceBook) return;
+  clearTimeout(pbTimer);
+  pbTimer = setTimeout(() => {
+    const want = new Map();
+    for (const j of S.jobs.values()){
+      const price = j.quotePrice; if (price == null || price === '') continue;
+      want.set(j.id, {client:j.client || '', item:j.description || '', boxType:j.boxType || '', cat: j.cat || '', l:j.l ?? null, w:j.w ?? null, h:j.h ?? null, qty:j.qty ?? null, pricePc:n0(price), date:j.date || ''});
+    }
+    for (const [id, e] of want){ const cur = S.priceBook.get(id); if (!cur || stable(cur) !== stable(e)){ S.priceBook.set(id, e); flush('priceBook/' + id, () => e); } }
+    for (const id of [...S.priceBook.keys()]) if (!want.has(id)){ S.priceBook.delete(id); removeDoc('priceBook/' + id); }
+  }, 1500);
+}
+
 function renderHome(){
   const root = $('#view-home'); root.replaceChildren();
   const month = today().slice(0, 7), loading = '…';
@@ -3591,6 +3996,7 @@ function renderHome(){
   root.append(h('div',{class:'hgrid work'},
     tile('jobs', 'jobs', 'Cost calculator', 'Work out cost and quote for an order'),
     tile('cards', 'cards', 'Job cards', 'Instructions for the team, master sheet, PDFs'),
+    tile('crm', 'crm', 'Clients & leads', 'Sales team: client talks, follow-ups, rough quotes'),
     tile('samples', 'samples', 'Samples', 'Samples to be made for clients; the team marks them ready'),
     tile('orders', 'orders', 'Orders', 'Running orders in the factory, by product'),
     tile('pos', 'pos', 'Client POs & dispatches', 'Client POs, parts, delivery requests and dispatches'),
@@ -3619,6 +4025,14 @@ function renderHome(){
         h('h3',{}, 'Samples to make', h('span',{class:'sub'}, ' · ' + todo.length + ' sample' + (todo.length === 1 ? '' : 's') + (todo.some(smpLate) ? ' · ' + todo.filter(smpLate).length + ' late' : ''))),
         h('button',{class:'linkbtn', onclick:() => { S.smpTab = 'todo'; go('samples'); }}, todo.length > 5 ? 'See all ' + todo.length + ' →' : 'Open samples →')),
       sampleRows(todo.slice(0, 5), true)));
+  }
+  // Sales follow-ups due (Raj): overdue and today.
+  if (S.db && S.loaded.leads){
+    const f = followLists(), due = [...f.over, ...f.today];
+    if (due.length) root.append(h('div',{class:'row', style:'justify-content:space-between;align-items:baseline;margin-top:26px'},
+        h('h2',{class:'hsub', style:'margin:0'}, 'Sales follow-ups due (' + due.length + ')' + (f.over.length ? ' · ' + f.over.length + ' overdue' : '')),
+        h('button',{class:'linkbtn', onclick:() => { S.crmTab = 'leads'; go('crm'); }}, 'Clients & leads →')),
+      followRows(due.slice(0, 8), true));
   }
   root.append(h('h2',{class:'hsub', style:'margin-top:26px'}, 'Settings'));
   root.append(h('div',{class:'hgrid set'},
@@ -3727,6 +4141,7 @@ function rowDelete(what, onConfirm){
 // job cards, stock and the shared lists are open to people the page is shared with for editing.
 const ROLES = {
   inventory:{n:'Inventory', d:'Stock: add materials, record purchases when they arrive, correct counts, see what to buy; see running orders; see samples and mark them ready', views:['stock','orders','samples']},
+  sales:{n:'Sales team', d:'Clients & leads: talks, follow-ups and rough quotes with a ready message; add samples; see running orders; look up past boxes and selling prices in the Database (no costs)', views:['crm','samples','orders','past']},
   jobcards:{n:'Job cards', d:'Job cards: create, edit, print and download team sheets; samples; client POs, dispatches, invoices, challans and payment receipts', views:['cards','card','samples','orders','pos','order','bills','bill','pay']}
 };
 const isOwnerRole = () => S.role === 'owner';
@@ -3736,7 +4151,8 @@ const homeView = () => S.role === 'owner' ? 'home' : ((ROLES[S.role] || {views:[
 
 function applyRoleChrome(){
   const own = isOwnerRole(), r = ROLES[S.role];
-  [['tab-jobs','jobs'], ['tab-cards','cards'], ['tab-samples','samples'], ['tab-orders','orders'], ['tab-pos','pos'], ['tab-bills','bills'], ['tab-stock','stock']].forEach(([id, v]) => { const el = $('#' + id); if (el) el.hidden = !(S.role && canView(v) && (own || r)); });
+  [['tab-jobs','jobs'], ['tab-cards','cards'], ['tab-crm','crm'], ['tab-samples','samples'], ['tab-orders','orders'], ['tab-pos','pos'], ['tab-bills','bills'], ['tab-stock','stock']].forEach(([id, v]) => { const el = $('#' + id); if (el) el.hidden = !(S.role && canView(v) && (own || r)); });
+  { const el = $('#tab-db'); if (el) el.hidden = !(r && !own && canView('past')); }   // the owner finds the Database under Settings
   const sw = $('.setwrap'); if (sw) sw.hidden = !own;
   const chip = $('#rolechip');
   if (chip){ chip.hidden = !r; chip.textContent = r ? r.n + ' access' : ''; }
@@ -3751,7 +4167,7 @@ function renderAccess(){
     h('div',{}, window.FIRSTBOX_CLOUD ? 'Your account couldn’t be identified. Sign out and sign in again.' : 'This page couldn’t identify your Claude account. Make sure you are signed in to Claude, and ask the owner to share the page with you by adding your email in the Share menu.'))); return; }
   const req = S.myRequest;
   if (req){ root.append(card(h('h1',{},'Request sent'), h('div',{}, 'You asked for access as “' + (req.label || 'no name') + '”. Once the owner gives you access, this page opens your section by itself.'),
-    h('div',{class:'note'}, 'Sent ' + fmtDate((new Date(req.at || Date.now())).toISOString().slice(0, 10)) + '.'))); return; }
+    h('div',{class:'note'}, 'Sent ' + fmtDate(ymd(new Date(req.at || Date.now()))) + '.'))); return; }
   const name = h('input',{placeholder:'e.g. Ramesh – store', 'aria-label':'Your name and job'});
   const send = h('button',{class:'btn primary'}, 'Ask for access');
   const out = h('div',{});
@@ -3865,7 +4281,7 @@ function renderTeam(){
     h('section',{class:'card', style:'display:grid;gap:10px'}, h('h2',{},'People with access (' + team.length + ')'), teamBox));
   const draw = ps => {
     reqBox.replaceChildren(reqs.length ? h('div',{class:'tablebox'}, h('table',{}, h('thead',{}, h('tr',{}, h('th',{},'Person'), h('th',{},'Asked'), h('th',{},'Give access'))),
-      h('tbody',{}, reqs.map(x => h('tr',{}, nameCell(x, ps), h('td',{}, fmtDate(new Date(x.at || Date.now()).toISOString().slice(0, 10))),
+      h('tbody',{}, reqs.map(x => h('tr',{}, nameCell(x, ps), h('td',{}, fmtDate(ymd(new Date(x.at || Date.now())))),
         h('td',{}, h('div',{class:'row', style:'gap:6px'},
           Object.entries(ROLES).map(([k, r]) => h('button',{class:'btn small primary', onclick:() => setMember(x.id, k, x.label)}, r.n)),
           h('button',{class:'btn small danger', onclick:async () => { S.requests.delete(x.id); await removeDoc('requests/' + x.id); renderTeam(); }}, 'Decline')))))))) : h('div',{class:'note'},'No requests waiting.'));
@@ -6191,7 +6607,28 @@ async function boot(){
       homeSoon();
       if (S.view === 'card' && S.cardTab === 'mat' && !$('#view-card').contains(document.activeElement)) renderCard();
     }, fail);
-    liveSub('stock', 'stock'); liveSub('stockLog', 'slog');
+    if (S.role !== 'sales'){ liveSub('stock', 'stock'); liveSub('stockLog', 'slog'); }   // the sales team has no stock
+    // Clients & leads (owner + sales team)
+    if (S.role === 'owner' || canView('crm')) db.collection('leads').onSnapshot(snap => {
+      const m = new Map();
+      for (const d of snap.docs){ const path = 'leads/' + d.id; m.set(d.id, busy(path) && S.leads.has(d.id) ? S.leads.get(d.id) : {...d.data(), id:d.id}); }
+      for (const [id, x] of S.leads) if (!m.has(id) && busy('leads/' + id)) m.set(id, x);
+      S.leads = m; if (!snap.metadata.fromCache) S.loaded.leads = true;
+      if (S.view === 'crm' && !$('#view-crm').contains(document.activeElement)) renderCrm();
+      homeSoon();
+    }, () => { S.loaded.leads = true; if (S.view === 'crm') renderCrm(); });
+    // Selling prices from Raj's costings, without costs (owner writes, sales team reads) + past boxes, for the Database
+    if (S.role === 'owner' || canView('past')) db.collection('priceBook').onSnapshot(snap => {
+      const m = new Map(); for (const d of snap.docs) m.set(d.id, busy('priceBook/' + d.id) && S.priceBook.has(d.id) ? S.priceBook.get(d.id) : d.data());
+      S.priceBook = m; if (!snap.metadata.fromCache) S.loaded.priceBook = true;
+      syncPriceBook();
+      if (S.view === 'past' && S.role !== 'owner' && !$('#view-past').contains(document.activeElement)) renderPast();
+    }, () => { S.loaded.priceBook = true; });
+    if (S.role !== 'owner' && canView('past')) db.collection('pastwork').onSnapshot(snap => {
+      const m = new Map(); for (const d of snap.docs) m.set(d.id, {...d.data(), id:d.id});
+      S.past = m; if (!snap.metadata.fromCache) S.loaded.past = true;
+      if (S.view === 'past' && !$('#view-past').contains(document.activeElement)) renderPast();
+    }, () => { S.loaded.past = true; });
     if (S.role === 'owner' || canView('bills')){
       db.collection('invoices').onSnapshot(snap => {
         const m = new Map();
@@ -6315,6 +6752,7 @@ async function boot(){
       for (const [id, j] of S.jobs) if (!m.has(id) && busy('jobs/' + id)) m.set(id, j);
       S.jobs = m;
       if (!snap.metadata.fromCache){ S.loaded.jobs = true; doneLoading(); }
+      syncPriceBook();
       homeSoon();
     if (S.view === 'jobs'){ if (!$('#view-jobs').contains(document.activeElement) || document.activeElement === document.body) renderJobs(); }
       else if (S.view === 'job'){

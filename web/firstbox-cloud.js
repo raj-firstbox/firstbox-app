@@ -12,7 +12,7 @@
 
   const cfg = window.FIRSTBOX_CONFIG || {};
   const desktop = window.firstboxDesktop || null;
-  const STAFF = ['inventory', 'jobcards'];
+  const STAFF = ['inventory', 'jobcards', 'sales'];
   const VIRTUAL = ['team', 'requests'];
 
   let sb = null, session = null, me = null;

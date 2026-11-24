@@ -24,7 +24,7 @@ begin
   if public.my_role() <> 'owner' then raise exception 'Only the owner can add team members'; end if;
   if v_user !~ '^[a-z0-9][a-z0-9._-]{2,29}$' then raise exception 'Username: 3 to 30 letters or numbers (dots, dashes allowed), no spaces'; end if;
   if length(coalesce(p_password, '')) < 8 then raise exception 'Password: at least 8 characters'; end if;
-  if p_role not in ('inventory', 'jobcards') then raise exception 'Choose Inventory or Job cards'; end if;
+  if p_role not in ('inventory', 'jobcards', 'sales') then raise exception 'Choose Inventory, Job cards or Sales team'; end if;
   if exists (select 1 from auth.users where lower(email) = v_email)
      or exists (select 1 from public.members where lower(username) = v_user) then
     raise exception 'The username "%" is already taken', v_user;

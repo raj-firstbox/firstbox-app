@@ -8,10 +8,14 @@ create table if not exists public.members (
   email      text,
   name       text,
   role       text not null default 'pending'
-             check (role in ('owner','inventory','jobcards','pending','removed')),
+             check (role in ('owner','inventory','jobcards','sales','pending','removed')),
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+
+-- The Sales team role (added Nov 2026): widen the allowed roles on an existing table too.
+alter table public.members drop constraint if exists members_role_check;
+alter table public.members add constraint members_role_check check (role in ('owner','inventory','jobcards','sales','pending','removed'));
 
 -- 2. All app data, stored as small JSON documents grouped by collection
 --    (jobs, rates, rateHistory, config, jobcards, stock, stockLog, shared).
@@ -82,27 +86,32 @@ create policy docs_read on public.docs for select to authenticated using (
   or (public.my_role() = 'inventory' and col = 'orders')   -- the stock team sees the running orders list (read only)
   or (public.my_role() in ('inventory','jobcards') and col in ('samples','samplePics'))   -- samples (and their photos): the whole team sees them
   or (public.my_role() = 'jobcards' and col in ('orders','invoices','clients','billItems','payments'))
+  -- sales team: clients & leads, samples, running orders (+ job cards to group them), Database without costs (pastwork + priceBook), shared lists
+  or (public.my_role() = 'sales' and col in ('leads','samples','samplePics','orders','jobcards','pastwork','priceBook','shared'))
 );
 create policy docs_insert on public.docs for insert to authenticated with check (
   public.my_role() = 'owner'
   or (public.my_role() = 'jobcards'  and col in ('jobcards','stock','stockLog','orders','invoices','clients','billItems','payments','samples','samplePics'))
   or (public.my_role() = 'inventory' and col in ('stock','stockLog','samples'))   -- (saving is insert-or-update)
+  or (public.my_role() = 'sales'     and col in ('leads','samples','samplePics'))
 );
 create policy docs_update on public.docs for update to authenticated
   using (
     public.my_role() = 'owner'
     or (public.my_role() = 'jobcards'  and col in ('jobcards','stock','stockLog','orders','invoices','clients','billItems','payments','samples','samplePics'))
     or (public.my_role() = 'inventory' and col in ('stock','stockLog','samples'))   -- stock team can mark a sample ready
+    or (public.my_role() = 'sales'     and col in ('leads','samples','samplePics'))
   )
   with check (
     public.my_role() = 'owner'
     or (public.my_role() = 'jobcards'  and col in ('jobcards','stock','stockLog','orders','invoices','clients','billItems','payments','samples','samplePics'))
     or (public.my_role() = 'inventory' and col in ('stock','stockLog','samples'))   -- stock team can mark a sample ready
+    or (public.my_role() = 'sales'     and col in ('leads','samples','samplePics'))
   );
 create policy docs_delete on public.docs for delete to authenticated using (
   public.my_role() = 'owner'
   or (public.my_role() = 'inventory' and col = 'stock')
-  or (public.my_role() in ('jobcards','inventory') and col = 'samplePics')   -- photos go when a sample is marked ready (anyone can mark it)
+  or (public.my_role() in ('jobcards','inventory','sales') and col = 'samplePics')   -- photos go when a sample is marked ready (anyone can mark it)
 );
 
 grant select, insert, update, delete on public.docs to authenticated;
@@ -147,7 +156,7 @@ begin
   if public.my_role() <> 'owner' then raise exception 'Only the owner can add team members'; end if;
   if v_user !~ '^[a-z0-9][a-z0-9._-]{2,29}$' then raise exception 'Username: 3 to 30 letters or numbers (dots, dashes allowed), no spaces'; end if;
   if length(coalesce(p_password, '')) < 8 then raise exception 'Password: at least 8 characters'; end if;
-  if p_role not in ('inventory', 'jobcards') then raise exception 'Choose Inventory or Job cards'; end if;
+  if p_role not in ('inventory', 'jobcards', 'sales') then raise exception 'Choose Inventory, Job cards or Sales team'; end if;
   if exists (select 1 from auth.users where lower(email) = v_email)
      or exists (select 1 from public.members where lower(username) = v_user) then
     raise exception 'The username "%" is already taken', v_user;
