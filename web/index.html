@@ -3837,11 +3837,11 @@ function renderSamples(){
   draw();
 }
 
-// ---------- Clients & leads (Raj): the sales team's sheet of clients, talks, follow-ups and rough quotes ----------
+// ---------- Clients & leads (Raj): the sales team's sheet of clients, talks, follow-ups and quotes ----------
 // leads/<id>: {id, name, contact, phone, email, city, source, sourceNote, product (boxType), qty, requirement, stage,
 //   nextFollow (date), followNote, log:[{id, at, date, by, kind, text}], quotes:[{id, date, by, ...details, rows:[{qty, price}], message}],
 //   by, createdAt, updatedAt}. Owner + sales read and write; only the owner deletes. Everyone in sales sees every lead (Raj).
-const LEAD_STAGES = [['new','New enquiry'], ['req','Requirement taken'], ['quote','Rough quote sent'], ['nego','Negotiating'], ['pf','Proforma sent'], ['won','Won – order received'], ['hold','On hold'], ['lost','Lost']];
+const LEAD_STAGES = [['new','New enquiry'], ['req','Requirement taken'], ['quote','Quote sent'], ['nego','Negotiating'], ['pf','Proforma sent'], ['won','Won – order received'], ['hold','On hold'], ['lost','Lost']];
 const LEAD_CLOSED = new Set(['won', 'lost']);
 const STAGE_FOLLOW = {new:1, req:2, quote:3, nego:2, pf:3, hold:15};   // automatic next follow-up, in days, when the stage changes
 const LEAD_SOURCES = [['online','Online enquiry'], ['indiamart','IndiaMART'], ['reference','Reference'], ['other','Other']];
@@ -3957,7 +3957,7 @@ function leadDetail(l){
         .filter(([, v]) => v).map(([k, v]) => h('div',{class:'smpfact'}, h('span',{class:'sub'}, k), h('span',{}, v)))),
     l.requirement ? h('div',{class:'smptext'}, l.requirement) : null,
     h('div',{class:'row', style:'gap:8px;margin:8px 0'},
-      h('button',{type:'button', class:'btn small primary', onclick:() => { S.qdraft = newQuote(l); S.crmTab = 'quote'; renderCrm(); window.scrollTo(0, 0); }}, isOwnerRole() ? '+ Rough quote' : 'Create a quotation'),
+      h('button',{type:'button', class:'btn small primary', onclick:() => { S.qdraft = newQuote(l); S.crmTab = 'quote'; renderCrm(); window.scrollTo(0, 0); }}, isOwnerRole() ? '+ Quote' : 'Create a quotation'),
       h('button',{type:'button', class:'btn small', onclick:() => { S.smpPrefill = {client: l.name}; S.crmTab = 'sample'; renderCrm(); window.scrollTo(0, 0); }}, '+ Sample'),
       l.phone ? h('a',{class:'btn small', href:'tel:' + String(l.phone).replace(/[^\d+]/g, '')}, 'Call') : null,
       ph ? h('a',{class:'btn small', href:'https://wa.me/' + ph, target:'_blank', rel:'noopener'}, 'WhatsApp') : null,
@@ -3978,7 +3978,7 @@ function leadDetail(l){
 
 function leadTable(list){
   return h('div',{class:'tablebox'}, h('table',{class:'jobs crmtable'},
-    h('thead',{}, h('tr',{}, h('th',{},'Client'), h('th',{},'Source'), h('th',{},'Requirement'), h('th',{},'Stage'), h('th',{},'Rough quote'), h('th',{},'Next follow-up'), h('th',{},'Last update'))),
+    h('thead',{}, h('tr',{}, h('th',{},'Client'), h('th',{},'Source'), h('th',{},'Requirement'), h('th',{},'Stage'), h('th',{},'Quote'), h('th',{},'Next follow-up'), h('th',{},'Last update'))),
     h('tbody',{}, list.map(l => {
       const open = S.crmOpen === l.id, q = lastQuote(l), last = (l.log || [])[(l.log || []).length - 1], dd = followDue(l);
       const toggle = () => { S.crmOpen = open ? null : l.id; renderCrm(); };
@@ -4075,18 +4075,18 @@ function quoteMessage(q, signer){
   const its = quoteItems(q), many = its.length > 1;
   const who = String(q.contact || '').trim() || String(q.name || '').trim();
   return [
-    'Dear ' + (who || 'Sir/Madam') + ',', '', 'Greetings from Firstbox!', 'As discussed, here is our rough quotation for your requirement:', '',
+    'Dear ' + (who || 'Sir/Madam') + ',', '', 'Greetings from Firstbox!', 'As discussed, here is our quotation for your requirement:', '',
     ...its.flatMap((it, k) => [many ? '*Box ' + (k + 1) + '*' : null, ...itemSpec(it), ...(it.rows.some(r => r.qty) ? ['Price:', ...priceLines(it)] : []), '']),
     'GST ' + fmtN(q.gst, 1) + '% extra.', 'Transport charges extra, as actual (paid by the client).',
     q.delivery ? 'Delivery: ' + q.delivery + '.' : null, q.validity ? 'This quote is valid for ' + q.validity + ' days.' : null,
     q.note ? q.note : null, '',
-    'This is a rough estimate; the final price will be confirmed in our proforma invoice.', '', 'Regards,', signer || myName(), 'Firstbox'
+    'The final price will be confirmed in our proforma invoice.', '', 'Regards,', signer || myName(), 'Firstbox'
   ].filter(x => x != null).join('\n').replace(/\n{3,}/g, '\n\n');
 }
 // The request as Raj reads it (in the app, and on WhatsApp if the salesperson also sends it there).
 function quoteAskText(q){
   const its = quoteItems(q), many = its.length > 1;
-  return ['Rough quote needed – ' + (q.name || 'client') + (q.contact ? ' (' + q.contact + ')' : ''), 'Date: ' + fmtDate(q.date || today()), '',
+  return ['Quote needed – ' + (q.name || 'client') + (q.contact ? ' (' + q.contact + ')' : ''), 'Date: ' + fmtDate(q.date || today()), '',
     ...its.flatMap((it, k) => [many ? 'Box ' + (k + 1) + ':' : null, ...itemSpec(it), 'Quantity: ' + (it.rows.map(r => r.qty ? fmtN(r.qty) : '').filter(Boolean).join(' / ') || '—') + ' pcs', '']),
     q.askNote ? 'Note: ' + q.askNote : null, q.askNote ? '' : null, 'From ' + (q.askedBy || myName()) + ' · Firstbox app → Sales & marketing → Create a quotation']
     .filter(x => x != null).join('\n').replace(/\n{3,}/g, '\n\n');
@@ -4097,13 +4097,13 @@ function updQuote(leadId, quoteId, fn){
   fn(q, l); saveLead(l); return {l, q};
 }
 const copyText = async t => { try { await navigator.clipboard.writeText(t); } catch(e){ const ta = h('textarea',{style:'position:fixed;opacity:0'}, t); document.body.append(ta); ta.select(); try { document.execCommand('copy'); } catch(_){} ta.remove(); } };
-// Sent to the client: log it, stage → Rough quote sent, follow up in 3 days.
+// Sent to the client: log it, stage → Quote sent, follow up in 3 days.
 function markQuoteSent(leadId, quoteId, message){
   return updQuote(leadId, quoteId, (q, l) => {
     q.status = 'sent'; q.sentAt = Date.now(); q.sentBy = myName(); q.message = message;
-    logLead(l, 'quote', 'Rough quote sent to the client: ' + quoteProducts(q) + ' · ' + quoteLine(q));
+    logLead(l, 'quote', 'Quote sent to the client: ' + quoteProducts(q) + ' · ' + quoteLine(q));
     if (['new', 'req'].includes(l.stage || 'new')) setStage(l, 'quote');
-    l.nextFollow = addDays(today(), STAGE_FOLLOW.quote); l.followNote = 'Ask about the rough quote';
+    l.nextFollow = addDays(today(), STAGE_FOLLOW.quote); l.followNote = 'Ask about the quote';
   });
 }
 
@@ -4256,14 +4256,14 @@ function quoteForm(){
     const {leadId, msgEdited, mode: _m, msg, quoteId, ...rest} = q;
     const quote = {...clone(rest), id: qid, date: q.date || today(), by: myName(), askedBy: myName(), askedAt: Date.now(), status};
     quote.items.forEach(it => { it.rows = it.rows.filter(r => r.qty); if (it.hasVars !== 'yes') it.vars = []; else it.vars = it.vars.filter(v => v.name || v.qty); });
-    if (status === 'asked'){ quote.items.forEach(it => it.prices = {}); logLead(l, 'quote', 'Asked Raj for a rough quote: ' + quoteProducts(quote) + ' · ' + quoteQtyText(quote)); }
+    if (status === 'asked'){ quote.items.forEach(it => it.prices = {}); logLead(l, 'quote', 'Asked Raj for a quote: ' + quoteProducts(quote) + ' · ' + quoteQtyText(quote)); }
     (l.quotes = l.quotes || []).push(quote);
     saveLead(l);
     if (status === 'sent'){ const r = markQuoteSent(l.id, quote.id, q.msg || quoteMessage(q)); return r; }
     return {l, q: quote};
   };
   const done = l => { S.qdraft = null; S.crmTab = 'quote'; renderCrm(); };
-  const title = mode === 'price' ? 'Give the price' : mode === 'send' ? 'Price ready – send to the client' : own ? 'Rough quote' : 'Create a quotation';
+  const title = mode === 'price' ? 'Give the price' : mode === 'send' ? 'Price ready – send to the client' : own ? 'Quote' : 'Create a quotation';
   const help = mode === 'price' ? 'Fill in the price per piece for each quantity' + (q.items.some(it => it.prints.length > 1) ? ' and printing option' : '') + ' and press “Send price”. ' + (q.askedBy || 'The salesperson') + ' then sends the ready message to the client.'
     : mode === 'send' ? 'Raj has given the price. Check the message, then copy it or open WhatsApp to send it to the client.'
     : own ? 'Fill in the details and the price per piece. The message on the right is ready to send to the client.'
@@ -4330,8 +4330,8 @@ function quotePage(root){
   }
   if (S.qdraft){ root.append(quoteForm()); return; }
   root.append(h('div',{class:'row', style:'justify-content:space-between;align-items:center;margin-bottom:12px'},
-    h('div',{class:'note', style:'margin:0'}, own ? 'Quotation requests from the sales team, and rough quotes sent to clients.' : 'Ask Raj for a rough price, then send the ready message to the client.'),
-    h('button',{class:'btn primary', onclick:() => { S.qdraft = newQuote(null); S.qsentText = null; renderCrm(); }}, own ? '+ Rough quote' : '+ Create a quotation')));
+    h('div',{class:'note', style:'margin:0'}, own ? 'Quotation requests from the sales team, and quotes sent to clients.' : 'Ask Raj for the price, then send the ready message to the client.'),
+    h('button',{class:'btn primary', onclick:() => { S.qdraft = newQuote(null); S.qsentText = null; renderCrm(); }}, own ? '+ Quote' : '+ Create a quotation')));
   const sec = (title, list, empty) => { root.append(h('h3',{class:'crmh'}, title + ' (' + list.length + ')'), list.length ? quoteTable(list) : h('div',{class:'muted', style:'margin-bottom:10px'}, empty)); };
   const asked = all.filter(x => qStatus(x.q) === 'asked'), priced = all.filter(x => qStatus(x.q) === 'priced'), sent = all.filter(x => qStatus(x.q) === 'sent');
   if (own){ sec('Waiting for your price', asked, 'No requests waiting.'); sec('Price given – sales to send', priced, 'Nothing waiting to be sent.'); }
@@ -4343,7 +4343,7 @@ function renderCrm(){
   const root = $('#view-crm'); if (!root) return; root.replaceChildren();
   const own = isOwnerRole(), tab = S.crmTab || 'leads';
   root.append(h('div',{class:'head'},
-    h('div',{}, h('h1',{},'Sales & marketing'), h('div',{class:'note'},'Clients and enquiries, samples and rough quotations.'))));
+    h('div',{}, h('h1',{},'Sales & marketing'), h('div',{class:'note'},'Clients and enquiries, quotations and samples.'))));
   if (!S.db){ root.append(h('div',{class:'card empty'},'Saved data is not available here.')); return; }
   if (!S.loaded.leads){ root.append(h('div',{class:'card empty'},'Loading…')); return; }
   const all = [...S.leads.values()], qs = allQuotes();
@@ -4373,7 +4373,7 @@ function renderCrm(){
   root.append(h('div',{class:'kpis'},
     kpi('Active', String(all.filter(l => !LEAD_CLOSED.has(l.stage)).length), 'clients & leads'),
     kpi('Follow-ups due', String(f.over.length + f.today.length), f.over.length ? f.over.length + ' overdue' : 'today', f.over.length ? 'bad' : ''),
-    kpi('Rough quotes', String(qs.filter(x => qStatus(x.q) === 'sent' && String(x.q.sentAt ? ymd(new Date(x.q.sentAt)) : x.q.date).startsWith(month)).length), 'sent this month'),
+    kpi('Quotes', String(qs.filter(x => qStatus(x.q) === 'sent' && String(x.q.sentAt ? ymd(new Date(x.q.sentAt)) : x.q.date).startsWith(month)).length), 'sent this month'),
     kpi('Won', String(all.filter(l => l.stage === 'won' && (l.log || []).some(e => e.kind === 'stage' && String(e.date).startsWith(month) && /Won/.test(e.text))).length), 'this month')));
   if (f.over.length || f.today.length || f.soon.length){
     const box = h('section',{class:'card fupcard'}, h('h2',{class:'crmh', style:'margin-top:0'}, 'Follow-ups'));
