@@ -816,7 +816,10 @@ const TEMPLATES = {
 const PARTS = {
   print:{n:'1', title:'Printing & paper', note:'One box for each printed item (one name, or “Lid + Base” if printed together): paper, sheet size, ups and printing. Several variants on one sheet: use “+ Add variants”.',
     adds:[['sheet','Add a printed item']]},
-  finish:{n:'2', title:'Finishing', note:'Coating (lamination, varnish or hybrid) covers all printed sheets. Add foiling, spot UV, embossing or debossing if the job has them, and pick the printed sheet each runs on.',
+  finish:{n:'2', title:'Coating', note:'Coating (lamination, varnish or hybrid) covers all printed sheets.',
+    adds:[]},
+  // Raj: special effects have their own calculator, right after coating.
+  fx:{n:'3', title:'Special effects', note:'Add foiling, spot UV, embossing or debossing if the job has them, and pick the printed sheet each runs on.',
     adds:[['impression','Add special effect',{fx:true, name:'Special effect'}]]},
   board:{n:'3', title:'Kappa board', note:'Kappa board sheets for the box: board type, thickness, sheet size and ups.',
     adds:[['sheet','Kappa board sheet']]},
@@ -837,9 +840,9 @@ const PARTS = {
 };
 const PART_KEYS = Object.keys(PARTS);
 // Calculators every product gets unless PARTS_FOR says otherwise (fabrication and packaging are mono-carton only).
-const DEFAULT_PARTS = ['print','finish','board','insert','acc','die','make'];
+const DEFAULT_PARTS = ['print','finish','fx','board','insert','acc','die','make'];
 // Calculators shown for each product; anything not listed shows all.
-const PARTS_FOR = {mono:['print','finish','die','fab','pack'], mdf:['print','finish','insert','acc','die','make','mdfboard'], printing:['print','finish','die'], corrugated:['print','finish','board','die','fab','pack']};
+const PARTS_FOR = {mono:['print','finish','fx','die','fab','pack'], mdf:['print','finish','fx','insert','acc','die','make','mdfboard'], printing:['print','finish','fx','die'], corrugated:['print','finish','fx','board','die','fab','pack']};
 // Corrugated boxes use the board calculator for corrugated board instead of kappa board.
 const partTitle = k => k === 'board' && S.draft && S.draft.boxType === 'corrugated' ? 'Corrugation' : k === 'make' && S.draft && S.draft.boxType === 'mdf' ? 'Fabrication' : PARTS[k].title;
 const partNote = k => k === 'make' && S.draft && S.draft.boxType === 'mdf' ? 'Type the fabrication (making) charge per box for this job. It is multiplied by the quantity.' : k === 'board' && S.draft && S.draft.boxType === 'corrugated' ? 'Corrugated board: choose the ply and flute, the paper GSM of the liners and the fluting, then sheet size and ups. Cost = board weight × ₹ per kg.' : PARTS[k].note;
@@ -862,7 +865,7 @@ function inferPart(l){
   return 'print';
 }
 const isFinishCalc = l => l.calc === 'area' || l.calc === 'impression' || l.calc === 'perup';
-const partOf = l => l.calc === 'diecut' && (l.part === 'print' || l.part === 'die' || !l.part) ? 'die' : isFinishCalc(l) && (l.part === 'print' || l.part === 'finish' || !l.part) ? 'finish' : (l.pv === 2 && PARTS[l.part]) ? l.part : inferPart(l);
+const partOf = l => l.fx ? 'fx' : l.calc === 'diecut' && (l.part === 'print' || l.part === 'die' || !l.part) ? 'die' : isFinishCalc(l) && (l.part === 'print' || l.part === 'finish' || !l.part) ? 'finish' : (l.pv === 2 && PARTS[l.part]) ? l.part : inferPart(l);
 
 // ---------- state ----------
 const S = {db:null, rates:new Map(), jobs:new Map(), settings:{overheadPct:12, marginPct:25, wastagePct:5},
@@ -4998,7 +5001,7 @@ function addLine(calc, part, label, extra, linkTo){
   const l = makeLine(calc, o);
   if (calc === 'area' || calc === 'impression' || calc === 'printing' || calc === 'perup' || calc === 'diecut'){
     const sheets = [...j.lines].reverse().filter(x => x.calc === 'sheet');
-    const lastSheet = sheets.find(x => partOf(x) === (part === 'finish' ? 'print' : part));
+    const lastSheet = sheets.find(x => partOf(x) === (part === 'finish' || part === 'fx' ? 'print' : part));
     if (linkTo) l.link = linkTo; else if (lastSheet) l.link = lastSheet.id;
   }
   j.lines.push(l); touch(); renderLines();
@@ -5054,7 +5057,7 @@ function renderLinesInner(){
         box = otherBox;
       }
     }
-    const sheetLines = sheetsByPart(partOf(l) === 'finish' ? 'print' : partOf(l));
+    const sheetLines = sheetsByPart(partOf(l) === 'finish' || partOf(l) === 'fx' ? 'print' : partOf(l));
     const lr = l.rateId && S.rates.get(l.rateId);
     const millLine = l.calc === 'sheet' && (partOf(l) === 'board' || !!(lr && isMill(lr))) && !(j.boxType === 'corrugated' && !(lr && isMill(lr)));
     const same = partOf(l) === 'print'
@@ -5306,7 +5309,7 @@ function specFromCosting(j){
   });
   const coatL = j.lines.find(l => l.calc === 'area' && inPart(l, 'finish'));
   const coat = !coatL || !coatL.coat ? '' : coatL.coat === 'none' ? 'None' : (rname(coatL) || COATS[coatL.coat]);
-  const fx = j.lines.filter(l => l.fx && l.fxKind && inPart(l, 'finish')).map(l => ({kind: l.fxKind, sheet: l.link ? sheetName(l.link) : '', part: l.fxPart || '',
+  const fx = j.lines.filter(l => l.fx && l.fxKind && inPart(l, 'fx')).map(l => ({kind: l.fxKind, sheet: l.link ? sheetName(l.link) : '', part: l.fxPart || '',
     blocks: l.fxKind === 'spotuv' ? null : (l.passes ?? null), colour: l.fxKind === 'foil' ? (l.foilColour || '') : l.fxKind === 'spotuv' ? rname(l).replace(/^spot uv\s*[–-]\s*/i, '') : ''}));
   const boards = j.lines.filter(l => l.calc === 'sheet' && inPart(l, 'board')).map(l => ({type: rname(l) || l.name || '', thick: l.thick || '', L: l.L ?? null, W: l.W ?? null, ups: l.ups ?? null, count: sheetsOf(l, qty) || null}));
   const inserts = j.lines.filter(l => l.insert && l.insType && inPart(l, 'insert')).map(l => ({type: l.insType || '', material: l.foamMat || '', thick: l.foamThick ?? null, colour: l.insColour || '', cover: l.cover && l.cover !== 'none' ? l.cover : '', coverColour: l.coverColour || ''}));
