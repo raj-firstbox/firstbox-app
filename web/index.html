@@ -3355,7 +3355,7 @@ const SIDE = [
   {key:'jobs', n:'Cost calculator', icon: () => ICONS.jobs, view:'jobs', on:() => ['jobs', 'job'].includes(S.view)},
   {key:'cards', n:'Job cards', icon: () => ICONS.cards, view:'cards', on:() => ['cards', 'card'].includes(S.view)},
   {key:'crm', n:'Sales & marketing', icon: () => ICONS.crm, view:'crm', subs:[
-    {n:'Clients & leads', ...crmSub('leads')}, {n:'Create sample', ...crmSub('sample')}, {n:'Get a quotation', ...crmSub('quote'), badge:() => { const qs = allQuotes(); return isOwnerRole() ? qs.filter(x => qStatus(x.q) === 'asked').length : qs.filter(x => qStatus(x.q) === 'priced').length; }}]},
+    {n:'Clients & leads', ...crmSub('leads')}, {n:'Get a quotation', ...crmSub('quote'), badge:() => { const qs = allQuotes(); return isOwnerRole() ? qs.filter(x => qStatus(x.q) === 'asked').length : qs.filter(x => qStatus(x.q) === 'priced').length; }}, {n:'Create sample', ...crmSub('sample')}]},
   {key:'samples', n:'Samples', icon: () => ICONS.samples, view:'samples', hideFor:['sales']},
   {key:'orders', n:'Orders', icon: () => ICONS.orders, view:'orders', subs:[
     {n:'Running orders', view:'orders', on:() => S.view === 'orders'}, {n:'Client POs & dispatches', view:'pos', on:() => ['pos', 'order'].includes(S.view)}]},
@@ -4216,7 +4216,7 @@ function renderCrm(){
   const waiting = own ? qs.filter(x => qStatus(x.q) === 'asked').length : qs.filter(x => qStatus(x.q) === 'priced').length;
   const t = (k, n, badge) => h('button',{type:'button', class:'jctab', 'aria-current': tab === k ? 'page' : 'false', onclick:() => { S.crmTab = k; S.qdraft = null; S.qsentText = null; S.crmSampleDone = null; renderCrm(); }}, n, badge ? h('span',{class:'tabbadge'}, String(badge)) : null);
   root.append(h('nav',{class:'jump crmtabs', 'aria-label':'Sales & marketing sections', style:'position:static;margin-bottom:14px'},
-    t('leads', 'Clients & leads'), t('sample', 'Create sample'), t('quote', 'Get a quotation', waiting)));
+    t('leads', 'Clients & leads'), t('quote', 'Get a quotation', waiting), t('sample', 'Create sample')));
   if (tab === 'sample'){
     if (S.crmSampleDone && S.samples.has(S.crmSampleDone)){
       const s = S.samples.get(S.crmSampleDone);
@@ -4306,7 +4306,7 @@ function renderHome(){
   root.append(h('div',{class:'hgrid work'},
     tile('jobs', 'jobs', 'Cost calculator', 'Work out cost and quote for an order'),
     tile('cards', 'cards', 'Job cards', 'Instructions for the team, master sheet, PDFs'),
-    tile('crm', 'crm', 'Sales & marketing', 'Clients & leads, create sample, get a quotation'),
+    tile('crm', 'crm', 'Sales & marketing', 'Clients & leads, get a quotation, create sample'),
     tile('samples', 'samples', 'Samples', 'Samples to be made for clients; the team marks them ready'),
     tile('orders', 'orders', 'Orders', 'Running orders in the factory, by product'),
     tile('pos', 'pos', 'Client POs & dispatches', 'Client POs, parts, delivery requests and dispatches'),
