@@ -3989,10 +3989,9 @@ const rajPhone = () => waNumber(billCfg().phone);
 // A quote holds one or more boxes (`items`); each box can have more than one printing option (the client wants a price for both),
 // and Raj gives a price per piece for every quantity × printing option. Older quotes (one box, fields on the quote itself) are read by quoteItems.
 const QBOX_TYPES = ['rigid','shoulder','magnetic','slider','mono','corrugated','mdf','custom','printing'];
-// Mono cartons (Raj): carton style, paper as a choice + GSM, and the fabrication extras.
+// Mono cartons (Raj): carton style and paper as a choice + GSM (no pasting question — Raj).
 const MONO_STYLES = [['both','Both side flap'], ['self','Self lock'], ['bottom','Bottom lock'], ['custom','Custom shape']];
 const MONO_PAPERS = [['sbs','SBS'], ['artcard','Art card'], ['duplex','Duplex'], ['impaper','Imported paper'], ['imkraft','Imported kraft']];
-const MONO_FAB = [['window','Window pasting'], ['euro','Euro slot'], ['neck','Manual neck pasting']];
 const optName = (list, k) => (list.find(x => x[0] === k) || [, ''])[1];
 const qProdName = k => BOX[k] || k || '';
 function newQItem(product, qty){
@@ -4030,7 +4029,6 @@ function itemSpec(it){
   const c = fixCoat({lam: it.lam, fx: [...(it.fx || [])]});
   add('Coating', it.lam ? coatName(c.lam) : '');
   add('Special effects', [(c.fx || []).map(k => (SMP_FX.find(x => x[0] === k) || [k, k])[1]).join(', '), it.fxNote].filter(Boolean).join(' – '));
-  if (mono) add('Pasting / extras', (it.fab || []).map(k => optName(MONO_FAB, k)).filter(Boolean).join(', '));
   add('Insert', it.insert);
   if (it.hasVars === 'yes') add('Variants', (it.vars || []).filter(v => v.name || v.qty).map(v => (v.name || 'Variant') + (v.qty ? ' – ' + fmtN(v.qty) + ' pcs' : '')).join(', '));
   add('Other', it.extras);
@@ -4166,7 +4164,6 @@ function quoteForm(){
         Q('Special effects (if any)', h('div',{},
           h('div',{class:'smpfx'}, SMP_FX.map(([key, lab]) => h('label',{}, h('input',{type:'checkbox', checked: (it.fx || []).includes(key), onchange:e => { it.fx = e.target.checked ? [...new Set([...(it.fx || []), key])] : it.fx.filter(x => x !== key); refresh(); }}), ' ' + lab))),
           h('input',{value:it.fxNote || '', placeholder:'e.g. gold foil on logo', style:'margin-top:8px;width:100%', oninput:e => { it.fxNote = e.target.value; refresh(); }})), true),
-        mono ? Q('Pasting / extras (if any)', h('div',{class:'smpfx'}, MONO_FAB.map(([key, lab]) => h('label',{}, h('input',{type:'checkbox', checked: (it.fab || []).includes(key), onchange:e => { it.fab = e.target.checked ? [...new Set([...(it.fab || []), key])] : (it.fab || []).filter(x => x !== key); refresh(); }}), ' ' + lab))), true) : null,
         Q('Inserts', txt(it.insert, 'e.g. EVA foam, 1 cavity (empty if none)', v => it.insert = v)),
         Q('Any variants?', h('div',{}, choice([['no','No'], ['yes','Yes']], it.hasVars, v => it.hasVars = v), vars), true),
         Q('Other details (optional)', txt(it.extras, 'e.g. magnetic closure, ribbon pull, window', v => it.extras = v), true)]; })()),
