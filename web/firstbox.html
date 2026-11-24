@@ -350,6 +350,10 @@ input[type=date]{cursor:pointer}
 .smpfx{display:flex;flex-wrap:wrap;gap:6px 16px}
 .smpfx label{display:flex;align-items:center;gap:4px;font-size:14px}
 .smptable .btn.armed{background:var(--bad);border-color:var(--bad);white-space:normal;max-width:190px;line-height:1.25}
+.savefolder{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 14px;font-size:13px;color:var(--muted);background:var(--sunk);border-radius:8px;padding:8px 12px;margin:-4px 0 14px}
+.savefolder .sfpath{overflow-wrap:anywhere;min-width:0}
+.savefolder b{color:var(--fg);font-weight:600}
+.savefolder .sfbtns{display:flex;gap:14px}
 .smpacts{display:flex;flex-wrap:wrap;align-items:center;gap:6px 8px}
 .smppics{display:flex;flex-wrap:wrap;gap:10px;margin:4px 0 8px}
 .smppic{position:relative;width:110px;height:110px;border-radius:8px;overflow:hidden;border:1px solid var(--line);background:var(--surface);display:grid;place-items:center}
@@ -2175,6 +2179,28 @@ function openPicker(el){ if (!el) return; try { el.focus(); if (el.showPicker) e
 document.addEventListener('click', e => { const t = e.target; if (t instanceof HTMLInputElement && t.type === 'date' && !t.disabled && !t.readOnly) openPicker(t); });
 
 // ----- List: Proforma invoices | Tax invoices | Saved items -----
+// Desktop app only: where its PDFs are saved, with Change / Open (Raj). The picker needs the app from v1.0.3;
+// older installs get a hint to update. Browsers and phones show nothing (files go to the browser's Downloads).
+function saveFolderBar(sub){
+  const d = window.firstboxDesktop; if (!d) return null;
+  const box = h('div',{class:'savefolder'}), sep = d.platform === 'win32' ? '\\' : '/';
+  if (!d.getSaveFolder){
+    box.append(h('span',{}, '📁 PDFs are saved in Documents › Firstbox › ' + sub + '. To choose another folder, update the Firstbox app (Help › Check for updates).'));
+    return box;
+  }
+  const draw = info => {
+    if (!info) return;
+    box.replaceChildren(...[
+      h('span',{class:'sfpath'}, '📁 PDFs are saved in ', h('b',{}, info.folder + sep + sub)),
+      info.missing ? h('span',{class:'neg'}, ' (the folder you chose isn’t available right now, so Documents › Firstbox is used)') : null,
+      h('span',{class:'sfbtns'},
+        h('button',{type:'button', class:'linkbtn', onclick: async () => draw(await d.chooseSaveFolder())}, 'Change folder'),
+        h('button',{type:'button', class:'linkbtn', onclick: () => d.openFolder()}, 'Open folder'),
+        info.custom || info.missing ? h('button',{type:'button', class:'linkbtn', onclick: async () => draw(await d.resetSaveFolder())}, 'Use standard folder') : null)].filter(Boolean));
+  };
+  d.getSaveFolder().then(draw, () => {});
+  return box;
+}
 function renderBills(){
   const root = $('#view-bills'); root.replaceChildren();
   const own = isOwnerRole(), cfg = billCfg(), tab = S.billTab || 'proforma';
@@ -2183,6 +2209,7 @@ function renderBills(){
   root.append(h('div',{class:'head'},
     h('div',{}, h('h1',{},'Sales & invoices'), h('div',{class:'note'},'Proforma invoices, tax invoices, delivery challans and payment receipts.')),
     NEW[tab] ? h('button',{class:'btn primary', onclick:() => tab === 'payments' ? newPaymentFor(null) : mk(tab)}, NEW[tab]) : null));
+  root.append(saveFolderBar('Invoices') || '');
   const optTab = (k, n, d) => h('button',{type:'button', class:'saletab', 'aria-current': tab === k ? 'page' : 'false', onclick:() => { S.billTab = k; S.billQ = ''; renderBills(); }}, h('b',{}, n), h('span',{}, d));
   root.append(h('nav',{class:'saletabs', 'aria-label':'Sales documents'},
     optTab('proforma', 'Proforma invoices', 'Quotes to confirm an order'),
@@ -3498,6 +3525,7 @@ function renderSamples(){
   root.append(h('div',{class:'head'},
     h('div',{}, h('h1',{},'Samples'), h('div',{class:'note'},'Samples to be made for clients. Tap a sample to see its details; whoever makes it presses “Mark ready”.')),
     edit ? h('button',{class:'btn primary', onclick:() => { S.smpNew = !S.smpNew; S.smpEdit = null; renderSamples(); }}, S.smpNew ? 'Close' : '+ New sample') : null));
+  root.append(saveFolderBar('Samples') || '');
   if (S.smpNew && edit) root.append(sampleForm(null));
   if (S.smpEdit && edit && S.samples.has(S.smpEdit)) root.append(sampleForm(S.samples.get(S.smpEdit)));
   if (!S.db){ root.append(h('div',{class:'card empty'},'Saved data is not available here.')); return; }
@@ -4678,6 +4706,7 @@ function renderCards(){
   root.append(h('div',{class:'head'},
     h('div',{}, h('h1',{},'Job cards'), h('div',{class:'note'}, isOwnerRole() ? 'For internal use. Make one from an approved costing (“Create job card” on the costing), or start a blank one here.' : 'Press “+ New job card” to start one. Each job card takes its materials out of stock automatically.')),
     h('button',{class:'btn primary', onclick:() => { S.newCardOpen = !S.newCardOpen; renderCards(); }}, S.newCardOpen ? 'Close' : '+ New job card')));
+  root.append(saveFolderBar('Job cards') || '');
   if (S.newCardOpen && S.newCardMode === 'repeat'){
     // Repeat an earlier job: find it by job card no. or client name, then press Repeat.
     const rq = h('input',{type:'search', placeholder:'Type job card no. or client name, e.g. CO-105 or Oud House', value:S.repQ || '', style:'flex:1 1 280px', 'aria-label':'Find the earlier job'});

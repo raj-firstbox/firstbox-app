@@ -1,7 +1,8 @@
 // Firstbox desktop app (Mac and Windows).
 // Opens the Firstbox page in its own window. If the online copy of the page is reachable it loads that,
 // so changes reach everyone without reinstalling; otherwise it uses the copy built into the app.
-// PDFs and other files the page saves go to Documents/Firstbox on this computer.
+// PDFs and other files the page saves go to Documents/Firstbox on this computer, or to a folder the person
+// picks with File › Change save folder… (remembered in firstbox-settings.json in the app's data folder).
 const { app, BrowserWindow, ipcMain, shell, dialog, Menu } = require('electron');
 const path = require('path');
 const fs = require('fs');
@@ -13,11 +14,40 @@ const ONLINE_ORIGIN = ONLINE_URL ? new URL(ONLINE_URL).origin : null;
 
 let win = null;
 
+// ---- Where files are saved ----
+const SETTINGS_FILE = () => path.join(app.getPath('userData'), 'firstbox-settings.json');
+function readSettings() { try { return JSON.parse(fs.readFileSync(SETTINGS_FILE(), 'utf8')) || {}; } catch (e) { return {}; } }
+function writeSettings(s) { try { fs.mkdirSync(path.dirname(SETTINGS_FILE()), { recursive: true }); fs.writeFileSync(SETTINGS_FILE(), JSON.stringify(s, null, 2)); } catch (e) {} }
+const defaultRoot = () => path.join(app.getPath('documents'), 'Firstbox');
+// The chosen folder, if it is still there (an unplugged drive or a removed folder falls back to Documents/Firstbox).
+function chosenRoot() {
+  const r = readSettings().saveRoot;
+  if (!r) return null;
+  try { return fs.statSync(r).isDirectory() ? r : null; } catch (e) { return null; }
+}
+function saveRoot() { return chosenRoot() || defaultRoot(); }
 function firstboxFolder(sub) {
-  const dir = path.join(app.getPath('documents'), 'Firstbox', sub || '');
-  fs.mkdirSync(dir, { recursive: true });
+  let dir = path.join(saveRoot(), sub || '');
+  try { fs.mkdirSync(dir, { recursive: true }); }
+  catch (e) { dir = path.join(defaultRoot(), sub || ''); fs.mkdirSync(dir, { recursive: true }); }   // e.g. a read-only folder
   return dir;
 }
+function saveFolderInfo() {
+  const s = readSettings(), chosen = chosenRoot();
+  return { folder: saveRoot(), custom: !!chosen, missing: !!(s.saveRoot && !chosen), wanted: s.saveRoot || '' };
+}
+async function chooseSaveFolder() {
+  const res = await dialog.showOpenDialog(win, {
+    title: 'Choose where Firstbox saves files',
+    message: 'Job cards, invoices and other PDFs will be saved in this folder (in Job cards, Invoices, Samples and Files sub-folders).',
+    buttonLabel: 'Use this folder', defaultPath: saveRoot(), properties: ['openDirectory', 'createDirectory']
+  });
+  if (res.canceled || !res.filePaths || !res.filePaths[0]) return saveFolderInfo();
+  const s = readSettings(); s.saveRoot = res.filePaths[0]; writeSettings(s);
+  buildMenu();
+  return saveFolderInfo();
+}
+function resetSaveFolder() { const s = readSettings(); delete s.saveRoot; writeSettings(s); buildMenu(); return saveFolderInfo(); }
 function safeName(name) {
   return String(name || 'file').replace(/[\\/:*?"<>|\u0000-\u001f]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 150) || 'file';
 }
@@ -27,13 +57,16 @@ function isTrusted(url) {
   try { return !!ONLINE_ORIGIN && new URL(url).origin === ONLINE_ORIGIN; } catch (e) { return false; }
 }
 
-// Save a file the page made. Job card PDFs go in Documents/Firstbox/Job cards/<job card no.>/, invoices in Documents/Firstbox/Invoices/
+// Save a file the page made. Job card PDFs go in <save folder>/Job cards/<job card no.>/, sales documents in <save folder>/Invoices/,
+// sample sheets in <save folder>/Samples/, anything else in <save folder>/Files/.
 ipcMain.handle('firstbox:save-file', async (event, name, bytes) => {
   if (!isTrusted(event.senderFrame && event.senderFrame.url)) throw new Error('Not allowed');
   const file = safeName(name);
   const m = /^([A-Z]{2}-\d+)\b/.exec(file);
   const pdf = file.toLowerCase().endsWith('.pdf');
-  const dir = pdf && m ? firstboxFolder(path.join('Job cards', m[1])) : pdf && /^(Tax invoice|Proforma) /i.test(file) ? firstboxFolder('Invoices') : firstboxFolder('Files');
+  const dir = pdf && m ? firstboxFolder(path.join('Job cards', m[1]))
+    : pdf && /^(Tax invoice|Proforma|Delivery challan|Payment receipt) /i.test(file) ? firstboxFolder('Invoices')
+    : pdf && /^Sample SM-/i.test(file) ? firstboxFolder('Samples') : firstboxFolder('Files');
   const full = path.join(dir, file);
   fs.writeFileSync(full, Buffer.from(bytes));
   shell.showItemInFolder(full);
@@ -44,6 +77,9 @@ ipcMain.handle('firstbox:open-folder', async (event) => {
   return shell.openPath(firstboxFolder(''));
 });
 ipcMain.handle('firstbox:version', () => app.getVersion());
+ipcMain.handle('firstbox:get-save-folder', (event) => isTrusted(event.senderFrame && event.senderFrame.url) ? saveFolderInfo() : null);
+ipcMain.handle('firstbox:choose-save-folder', (event) => isTrusted(event.senderFrame && event.senderFrame.url) ? chooseSaveFolder() : null);
+ipcMain.handle('firstbox:reset-save-folder', (event) => isTrusted(event.senderFrame && event.senderFrame.url) ? resetSaveFolder() : null);
 
 async function onlineReachable() {
   if (!ONLINE_URL) return false;
@@ -96,6 +132,9 @@ function buildMenu() {
     ...(isMac ? [{ role: 'appMenu' }] : []),
     { label: 'File', submenu: [
       { label: 'Open Firstbox folder', click: () => shell.openPath(firstboxFolder('')) },
+      { label: 'Change save folder…', click: () => chooseSaveFolder() },
+      { label: 'Use the standard folder (Documents › Firstbox)', enabled: !!chosenRoot(), click: () => resetSaveFolder() },
+      { label: 'Saving to: ' + saveRoot(), enabled: false },
       { type: 'separator' },
       isMac ? { role: 'close' } : { role: 'quit' }
     ] },
