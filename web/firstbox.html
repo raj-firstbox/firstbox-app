@@ -850,7 +850,7 @@ const S = {db:null, rates:new Map(), jobs:new Map(), settings:{overheadPct:12, m
   loaded:{rates:false, jobs:false, hist:false, cards:false, stock:false, shared:false, past:false, orders:false, bills:false, payments:false, samples:false, leads:false, priceBook:false}, samples:new Map(), leads:new Map(), priceBook:new Map(), crmTab:'leads', smpTab:'todo', smpQ:'', smpNew:false, smpEdit:null, smpOpen:null, bills:new Map(), clients:new Map(), billItems:new Map(), payments:new Map(), paydraft:null, payId:null, billTab:'proforma', clientEdit:false, billing:null, bdraft:null, billQ:'', billFilter:'all', orders:new Map(), poRates:new Map(), orderId:null, ordQ:'', ordFilter:'open', ordNew:false, ordEdit:false, dispEdit:null, dispOpen:false, hist:new Map(), cards:new Map(), cardId:null, cdraft:null, newCardOpen:false, cardQ:'', past:new Map(), pq:null, pastNew:false, pastEdit:null, role:null, myId:null, myRequest:null, user:null, team:new Map(), requests:new Map(), shared:{}, cardTab:'master', printAll:false, stock:new Map(), slog:new Map(), stockCat:'all', stockQ:'', stockOpen:null, stockNew:false, issue:null,
   hs:{cat:null, sel:null, slots:{}, mode:'rs', range:'all', focus:null}, slow:false, view:'jobs', jobId:null, draft:null,
   filters:{q:'', status:'all', month:'all'},
-  diecutDefaults:{die:1500, first:1200, next:800},
+  diecutDefaults:{die:1500, first:1000, next:800},
   printDefaults:{plate:350, rows:{'1':{first:1650,next:800,min:2000}, '4':{first:1600,next:800,min:null}, '5':{first:2100,next:1300,min:null}}}, newOpen:false, ratesDeferred:false};
 
 // ---------- utils ----------
@@ -1313,7 +1313,8 @@ function packEditor(l){
 
 // Copies the colour-wise printing rate into the line, so later rate changes don't alter old costings.
 const printTable = () => S.settings.printing || S.printDefaults;
-const dieTable = () => ({...S.diecutDefaults, ...(S.settings.diecut || {})});
+// Raj (Nov 2026): cutting ₹1,000 for the first 1000 sheets (was ₹1,200). A saved table still on the old ₹1,200 reads as ₹1,000 until he saves it again (v:2).
+const dieTable = () => { const t = {...S.diecutDefaults, ...(S.settings.diecut || {})}; if (!t.v && t.first === 1200) t.first = 1000; return t; };
 function snapDie(l){ const D = dieTable(); l.setup = D.die ?? null; l.first = D.first ?? null; l.next = D.next ?? null; }
 // Spot UV normal (Raj): fixed charge + first 1000 sheets + each further 1000; crystal keeps its rate from the Rate list.
 // Crystal (Raj): fixed ₹1,000 + ₹2,000 for the first 1000 sheets (₹2 a sheet) + ₹2.50 a sheet after.
@@ -6611,7 +6612,7 @@ function renderRates(){
 
 function dieRatesCard(){
   const D = dieTable();
-  const save = (k, v) => { S.settings.diecut = {...dieTable(), [k]: v}; saveSettings(); };
+  const save = (k, v) => { S.settings.diecut = {...dieTable(), [k]: v, v:2}; saveSettings(); };
   return h('div',{class:'card', style:'margin-bottom:16px;display:grid;gap:10px'},
     h('h3',{},'Die cutting rates'),
     h('div',{class:'note'},'Die cutting = number of dies × rate per die + cutting (first 1000 sheets, then each further 1000; a part 1000 counts as full). You enter the number of dies on each costing.'),
