@@ -3344,15 +3344,15 @@ function sampleForm(ex){
   draw();
   return wrap;
 }
-// Everything filled in, for the opened sample.
-function smpFacts(s){
+// Everything filled in, as [label, value] pairs ('photo' marks where the photos go). Used on screen and on the A6 sheet.
+function smpFactList(s){
   const rows = [];
-  const add = (k, v) => { if (v != null && v !== '') rows.push(h('div',{class:'smpfact'}, h('span',{class:'sub'}, k), h('span',{}, v))); };
+  const add = (k, v) => { if (v != null && v !== '') rows.push([k, String(v)]); };
   const yn = v => v === 'yes' ? 'Yes' : v === 'no' ? 'No' : '';
   if (s.make || s.prod){
     add('Sample', SMP_MAKE[s.make]); add('Product', smpProd(s) === 'mono' ? 'Mono carton' : BOX[s.boxType]);
     add('Dimension', smpSize(s));
-    if ((s.picIds || []).length) rows.push(h('div',{class:'smpfact', style:'grid-column:1/-1'}, h('span',{class:'sub'}, 'Photo of the product (tap to see it big) · deleted automatically when the sample is marked ready'), picThumbs(s.picIds.map(id => ({id})))));
+    if ((s.picIds || []).length) rows.push(['photo', '']);
     else if (s.picsDeleted) add('Photo of the product', (s.picsDeleted === 1 ? 'Photo' : s.picsDeleted + ' photos') + ' deleted when the sample was marked ready');
     if (smpProd(s) === 'rigid') add('Board thickness', s.board ? s.board + ' mm' : '');
     if (smpProd(s) === 'mono') add('Paper GSM', s.gsm ? fmtN(s.gsm) : '');
@@ -3363,7 +3363,90 @@ function smpFacts(s){
     if (smpProd(s) === 'mono') add('Laser cut', s.make === 'die' ? 'No (die made)' : yn(s.laser));
     if (smpProd(s) === 'rigid') add('Inserts', s.insert || 'None');
   }
+  return rows;
+}
+function smpFacts(s){
+  const rows = smpFactList(s).map(([k, v]) => k === 'photo'
+    ? h('div',{class:'smpfact', style:'grid-column:1/-1'}, h('span',{class:'sub'}, 'Photo of the product (tap to see it big) · deleted automatically when the sample is marked ready'), picThumbs(s.picIds.map(id => ({id}))))
+    : h('div',{class:'smpfact'}, h('span',{class:'sub'}, k), h('span',{}, v)));
   return rows.length ? h('div',{class:'smpfacts'}, rows) : null;
+}
+// ---- A6 sheet for the person making the sample (Raj): one page, print-ready, downloads as a PDF ----
+async function buildSamplePdf(s){
+  const {PDFDocument, StandardFonts, rgb} = await loadPdfLib();
+  const doc = await PDFDocument.create(); doc.setTitle('Sample ' + s.id + ' · ' + (s.client || '')); doc.setAuthor('Firstbox');
+  const F = await doc.embedFont(StandardFonts.Helvetica), FB = await doc.embedFont(StandardFonts.HelveticaBold);
+  const W = 297.64, H = 419.53, M = 16, BW = W - 2 * M, HT = 2000;   // A6 portrait
+  const OR = rgb(0.92, 0.38, 0.137), SOFT = rgb(0.992, 0.922, 0.875), INK = rgb(0.1, 0.1, 0.12), GREY = rgb(0.42, 0.42, 0.45), LINE = rgb(0.88, 0.84, 0.8);
+  let page = doc.addPage([W, HT]); let y = HT - M;
+  const tw = (t, f, z) => f.widthOfTextAtSize(pdfSafe(t), z);
+  const text = (t, x, yy, f, z, c) => page.drawText(pdfSafe(t), {x, y: yy, size: z, font: f, color: c || INK});
+  const wrap = (t, f, z, w) => { const out = []; for (const para of String(t == null ? '' : t).split('\n')){ let cur = ''; for (const word of para.split(/\s+/).filter(Boolean)){ const nx = cur ? cur + ' ' + word : word; if (tw(nx, f, z) <= w || !cur) cur = nx; else { out.push(cur); cur = word; } } out.push(cur); } return out; };
+  // header: logo + sample number
+  try { const lg = await doc.embedJpg(Uint8Array.from(atob(LOGO().split(',')[1]), ch => ch.charCodeAt(0))); const lh = 20, lw = lg.width * lh / lg.height; page.drawImage(lg, {x: M, y: y - lh, width: lw, height: lh}); } catch(e){}
+  text('SAMPLE', W - M - tw('SAMPLE', F, 7), y - 7, F, 7, GREY);
+  text(s.id, W - M - tw(s.id, FB, 15), y - 21, FB, 15, OR);
+  y -= 27; page.drawRectangle({x: M, y, width: BW, height: 1.6, color: OR}); y -= 16;
+  // client + date
+  for (const ln of wrap(s.client || '—', FB, 13, BW)){ text(ln, M, y, FB, 13); y -= 15; }
+  text('Date: ' + (fmtDate(s.date) || '—') + (s.by ? '   ·   Added by ' + s.by : ''), M, y, F, 7.5, GREY); y -= 11;
+  // what to make, in an orange band
+  const what = smpWhat(s) || 'Sample', wl = wrap(what, FB, 10, BW - 12);
+  page.drawRectangle({x: M, y: y - wl.length * 12 - 6, width: BW, height: wl.length * 12 + 10, color: SOFT});
+  wl.forEach((ln, i) => text(ln, M + 6, y - 9 - i * 12, FB, 10)); y -= wl.length * 12 + 16;
+  // every answer
+  const LW = 76, VW = BW - LW - 4;
+  const rows = smpFactList(s).filter(([k]) => !['Sample', 'Product'].includes(k));   // already in the orange band
+  for (const [k, v] of rows){
+    if (k === 'photo') continue;
+    const vl = wrap(v, FB, 8.5, VW), hgt = Math.max(1, vl.length) * 10.5 + 5;
+    wrap(k, F, 7.5, LW - 4).forEach((ln, i) => text(ln, M, y - 8 - i * 9, F, 7.5, GREY));
+    vl.forEach((ln, i) => text(ln, M + LW, y - 8 - i * 10.5, FB, 8.5));
+    y -= hgt; page.drawRectangle({x: M, y: y + 1, width: BW, height: 0.5, color: LINE});
+  }
+  if (!rows.length && s.kind) { text(SMP_KIND[s.kind] || '', M, y - 8, FB, 8.5); y -= 14; }
+  // photos of the product
+  const pics = [];
+  for (const id of s.picIds || []){ const src = await loadPic(id); if (!src) continue; try { pics.push(await doc.embedJpg(Uint8Array.from(atob(src.split(',')[1]), ch => ch.charCodeAt(0)))); } catch(e){} }
+  if (pics.length){
+    y -= 8; text('Photo of the product', M, y, F, 7.5, GREY); y -= 5;
+    const gap = 6, cw = (BW - gap * (pics.length - 1)) / pics.length, mh = pics.length === 1 ? 150 : 110;
+    let rowH = 0; pics.forEach((im, i) => { const k = Math.min(cw / im.width, mh / im.height), w = im.width * k, hh = im.height * k; rowH = Math.max(rowH, hh);
+      page.drawImage(im, {x: M + i * (cw + gap) + (cw - w) / 2, y: y - hh, width: w, height: hh}); });
+    y -= rowH + 4;
+  }
+  // notes (and the older free-text details)
+  const notes = [s.details, s.notes].filter(Boolean).join('\n');
+  if (notes){
+    y -= 8; const nl = wrap(notes, F, 8.5, BW - 12), nh = nl.length * 10.5 + 18;
+    page.drawRectangle({x: M, y: y - nh, width: BW, height: nh, borderColor: LINE, borderWidth: 0.8});
+    text('Notes', M + 6, y - 10, FB, 7.5, GREY); nl.forEach((ln, i) => text(ln, M + 6, y - 21 - i * 10.5, F, 8.5)); y -= nh;
+  }
+  // sign-off
+  y -= 22; const third = (BW - 16) / 3;
+  ['Made by', 'Date', 'Checked by'].forEach((lab, i) => { const x = M + i * (third + 8); page.drawRectangle({x, y, width: third, height: 0.7, color: INK}); text(lab, x, y - 9, F, 7, GREY); });
+  y -= 22; page.drawRectangle({x: M, y: y - 1, width: 9, height: 9, borderColor: INK, borderWidth: 0.8}); text('Sample ready', M + 14, y + 0.5, FB, 8.5); y -= 6;
+  // fit on one A6 page: crop if it fits, otherwise shrink to fit
+  const used = HT - y + 14, foot = 'Firstbox · Sample ' + s.id + ' · printed ' + fmtDate(today());
+  if (used <= H){ page.setMediaBox(0, HT - H, W, H); page.setCropBox(0, HT - H, W, H); text(foot, M, HT - H + 9, F, 6, GREY); }
+  else {
+    const emb = await doc.embedPage(page, {left: 0, bottom: HT - used, right: W, top: HT}); doc.removePage(0);
+    page = doc.addPage([W, H]); const k = (H - 16) / used;
+    page.drawPage(emb, {x: (W - W * k) / 2, y: H - used * k, xScale: k, yScale: k}); text(foot, M, 7, F, 6, GREY);
+  }
+  return doc.save();
+}
+async function downloadSamplePdf(s, btn){
+  const label = btn.textContent; btn.disabled = true; btn.textContent = 'Making PDF…';
+  const fail = t => { btn.textContent = t; setTimeout(() => btn.textContent = label, 2500); };
+  try {
+    const dl = window.claude && window.claude.use ? await window.claude.use('downloads') : null;
+    if (!dl){ fail('Can’t download here'); return; }
+    let bytes; try { bytes = await buildSamplePdf(s); } catch(e){ console.error(e); fail('Couldn’t make PDF'); return; }
+    const name = ('Sample ' + s.id + ' ' + (s.client || '')).replace(/[\\/:*?"<>|]+/g, ' ').replace(/\s+/g, ' ').trim() + '.pdf';
+    try { const res = await dl.save({filename: name, data: new Blob([bytes], {type:'application/pdf'})}); btn.textContent = res && res.path ? 'Saved' : 'Downloaded'; setTimeout(() => btn.textContent = label, 2000); return; }
+    catch(e){ if (e && e.code === 'declined') return; fail('Download didn’t work'); }
+  } finally { btn.disabled = false; if (btn.textContent === 'Making PDF…') btn.textContent = label; }
 }
 // "Mark ready" — when the sample has photos, a second tap is needed, because marking it ready deletes them.
 function readyBtn(s){
@@ -3402,6 +3485,7 @@ function sampleRows(list, compact){
             ? h('div',{}, h('span',{class:'pill Completed'}, 'Ready'), h('div',{class:'sub'}, (s.readyBy ? s.readyBy + ' · ' : '') + fmtDate(s.readyAt)),
                 compact ? null : h('button',{type:'button', class:'linkbtn', style:'font-size:12px', onclick:e => { e.stopPropagation(); markSample(s, false); }}, 'Not ready yet'))
             : readyBtn(s),
+          h('button',{type:'button', class:'btn small', title:'Print-ready A6 sheet for the person making this sample', onclick:e => { e.stopPropagation(); downloadSamplePdf(s, e.currentTarget); }}, '⬇ A6 PDF'),
           // Edit and Delete on the line itself (Raj), next to Mark ready.
           edit ? h('button',{type:'button', class:'btn small', onclick:e => { e.stopPropagation(); S.smpEdit = s.id; S.smpNew = false; S.smpOpen = s.id; if (S.view !== 'samples') go('samples'); else renderSamples(); window.scrollTo(0, 0); }}, 'Edit') : null,
           own ? rowDelete('sample ' + s.id, async () => { S.samples.delete(s.id); if (S.smpOpen === s.id) S.smpOpen = null; for (const id of s.picIds || []) removeDoc('samplePics/' + id); await removeDoc('samples/' + s.id);
