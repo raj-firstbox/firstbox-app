@@ -4155,9 +4155,9 @@ function quoteForm(){
   const piDone = mode === 'pi' && !!(q.pi && q.pi.status);   // already sent: show it, the owner makes the proforma
   const refresh = () => { if (mode === 'pi'){ msgBox.value = piText(q, S.leads.get(q.leadId)); return; }
     for (const it of q.items || []){ const c = wrap.querySelector('[data-conv="' + it.id + '"]'); if (c) c.textContent = [it.l, it.w, it.h].some(v => v != null && v !== '') ? '= ' + qSizeIn(it, it.unit === 'in' ? 'mm' : 'in') : ''; }
-    if (!q.msgEdited){ q.msg = showClientMsg ? quoteMessage(q, mode === 'send' ? (q.askedBy || myName()) : myName()) : quoteAskText(q); msgBox.value = q.msg; } };
+    if (!q.msgEdited){ q.msg = showClientMsg ? quoteMessage(q, mode === 'send' || mode === 'edit' || mode === 'quoted' ? (q.askedBy || myName()) : myName()) : quoteAskText(q); msgBox.value = q.msg; } };
   const pickLead = name => { const l = leads.find(x => String(x.name).trim().toLowerCase() === String(name).trim().toLowerCase()); q.leadId = l ? l.id : ''; if (l){ q.contact = q.contact || l.contact || ''; q.phone = q.phone || l.phone || ''; } };
-  const ro = mode !== 'new';   // pricing or sending: the details are fixed
+  const ro = mode !== 'new' && mode !== 'edit';   // pricing or sending: the details are fixed (owner/admin 'edit' reopens every question)
   let contactIn, phoneIn;
   const choice = (opts, val, on) => h('div',{class:'smpchoice', role:'group'}, opts.map(([k, lab]) =>
     h('button',{type:'button', class:'jctab', 'aria-pressed': String(val === k), onclick:() => { on(k); refresh(); draw(); }}, lab)));
@@ -4235,7 +4235,8 @@ function quoteForm(){
         it.product === 'mdf' ? Q('Accessories', txt(it.acc, 'e.g. handle (black rope), 2 magnets, ribbon', v => it.acc = v)) : null,
         Q('Any variants?', h('div',{}, choice([['no','No'], ['yes','Yes']], it.hasVars, v => it.hasVars = v), vars), true),
         Q('Other details (optional)', txt(it.extras, 'e.g. magnetic closure, ribbon pull, window', v => it.extras = v), true)]; })()),
-      own ? h('div',{class:'fld', style:'margin-top:12px'}, h('span',{class:'fl'}, 'Price per piece'), priceGrid(it, true)) : null);
+      own ? h('div',{class:'fld', style:'margin-top:12px'}, h('span',{class:'fl'}, mode === 'edit' ? 'Price given (per piece)' : 'Price per piece'), priceGrid(it, true)) : null,
+      mode === 'edit' && qStatus(q) === 'sent' ? h('div',{class:'fld', style:'margin-top:12px'}, h('span',{class:'fl'}, 'Quoted to the client'), priceGrid(it, 'quoted')) : null);
   }
   function draw(){
     if (mode === 'pi'){
@@ -4278,7 +4279,7 @@ function quoteForm(){
       h('datalist',{id:'quote-leads'}, leads.map(l => h('option',{value:l.name}))),
       h('div',{class:'smpqs'},
         qn(1, 'Client name', h('div',{},
-          h('input',{value:q.name, list:'quote-leads', placeholder:'Pick a client or type a new one', oninput:e => { q.name = e.target.value; pickLead(q.name); refresh(); },
+          h('input',{value:q.name, list:'quote-leads', placeholder:'Pick a client or type a new one', disabled: mode === 'edit' ? true : null, oninput:e => { q.name = e.target.value; pickLead(q.name); refresh(); },
             onchange:() => { if (!contactIn.value && q.contact) contactIn.value = q.contact; if (!phoneIn.value && q.phone) phoneIn.value = q.phone; refresh(); }}),
           h('div',{class:'grid', style:'margin-top:8px'},
             fld('Contact person', contactIn = h('input',{value:q.contact, oninput:e => { q.contact = e.target.value; refresh(); }})),
@@ -4293,14 +4294,28 @@ function quoteForm(){
         : fld('Note with the request (optional)', h('input',{value:q.askNote, placeholder:'e.g. Client says competitor quoted ₹40; needs reply today', oninput:e => { q.askNote = e.target.value; refresh(); }}), 'wide'));
   }
   // a new quote: a lead for the client (found by name, or made now) and the quote on it
+  const checkBoxes = () => {
+    for (const [k, it] of q.items.entries()){
+      const b = q.items.length > 1 ? ' for box ' + (k + 1) : '';
+      if (!it.product){ alert0(wrap, 'Choose the type of box' + b + '.'); return false; }
+      if (!it.rows.some(r => r.qty)){ alert0(wrap, 'Enter the quantity' + b + '.'); return false; }
+    }
+    return true;
+  };
+  // Custom-shape pictures go to samplePics when the quote is saved; the box keeps their ids.
+  const savePics = qid => q.items.forEach((it, k) => {
+    const mono = it.product === 'mono' && it.style === 'custom';
+    const added = mono ? (it.newPics || []).map((p, i) => { const id = 'Q-' + qid + '-' + k + '-' + Date.now().toString(36) + i; picCache.set(id, Promise.resolve(p.data));
+      flush('samplePics/' + id, () => ({quote: qid, data: p.data, at: Date.now(), by: myName()})); return id; }) : [];
+    it.picIds = [...(mono ? it.picIds || [] : []), ...added]; if (!it.picIds.length) delete it.picIds;
+    delete it.newPics;
+  });
+  const tidyItems = items => items.forEach(it => { it.rows = it.rows.filter(r => r.qty); if (it.hasVars !== 'yes') it.vars = []; else it.vars = (it.vars || []).filter(v => v.name || v.qty); });
+  // a new quote: a lead for the client (found by name, or made now) and the quote on it
   const saveNew = status => {
     q.name = String(q.name || '').trim();
     if (!q.name){ alert0(wrap, 'Enter the client name.'); return null; }
-    for (const [k, it] of q.items.entries()){
-      const b = q.items.length > 1 ? ' for box ' + (k + 1) : '';
-      if (!it.product){ alert0(wrap, 'Choose the type of box' + b + '.'); return null; }
-      if (!it.rows.some(r => r.qty)){ alert0(wrap, 'Enter the quantity' + b + '.'); return null; }
-    }
+    if (!checkBoxes()) return null;
     if (status === 'sent' && !quoteHasPrice(q)){ alert0(wrap, 'Enter the price per piece.'); return null; }
     pickLead(q.name);
     const first = q.items[0];
@@ -4308,25 +4323,31 @@ function quoteForm(){
     if (!q.leadId) logLead(l, 'note', 'Added with a quotation request');
     if (!l.contact && q.contact) l.contact = q.contact; if (!l.phone && q.phone) l.phone = q.phone;
     const qid = uid();
-    q.items.forEach((it, k) => {
-      const mono = it.product === 'mono' && it.style === 'custom';
-      const added = mono ? (it.newPics || []).map((p, i) => { const id = 'Q-' + qid + '-' + k + '-' + i; picCache.set(id, Promise.resolve(p.data));
-        flush('samplePics/' + id, () => ({quote: qid, data: p.data, at: Date.now(), by: myName()})); return id; }) : [];
-      it.picIds = [...(mono ? it.picIds || [] : []), ...added]; if (!it.picIds.length) delete it.picIds;
-      delete it.newPics;
-    });
+    savePics(qid);
     const {leadId, msgEdited, mode: _m, msg, quoteId, ...rest} = q;
     const quote = {...clone(rest), id: qid, date: q.date || today(), by: myName(), askedBy: myName(), askedAt: Date.now(), status};
-    quote.items.forEach(it => { it.rows = it.rows.filter(r => r.qty); if (it.hasVars !== 'yes') it.vars = []; else it.vars = it.vars.filter(v => v.name || v.qty); });
+    tidyItems(quote.items);
     if (status === 'asked'){ quote.items.forEach(it => it.prices = {}); logLead(l, 'quote', 'Quotation requested: ' + quoteProducts(quote) + ' · ' + quoteQtyText(quote)); }
     (l.quotes = l.quotes || []).push(quote);
     saveLead(l);
     if (status === 'sent'){ const r = markQuoteSent(l.id, quote.id, q.msg || quoteMessage(q)); return r; }
     return {l, q: quote};
   };
+  // Owner/admin correct a quote already priced or sent (Raj: in case of a mistake). The status stays; the change is logged.
+  const saveEdit = () => {
+    if (!checkBoxes()) return null;
+    savePics(q.quoteId);
+    const items = clone(q.items); tidyItems(items);
+    return updQuote(q.leadId, q.quoteId, (x, l) => {
+      Object.assign(x, {items, contact: q.contact, phone: q.phone, date: q.date || x.date, gst: q.gst, validity: q.validity, note: q.note, askNote: q.askNote, editedAt: Date.now(), editedBy: myName()});
+      if (qStatus(x) === 'sent' && q.msgEdited === false) x.message = quoteMessage(x, x.askedBy);
+      logLead(l, 'quote', 'Quote corrected by ' + myName() + ': ' + quoteLine(x));
+    });
+  };
   const done = l => { S.qdraft = null; S.crmTab = 'quote'; renderCrm(); };
-  const title = mode === 'pi' ? (piDone ? 'Proforma invoice request' : 'Send for proforma invoice') : mode === 'price' ? 'Give the price' : mode === 'send' ? 'Price ready – send to the client' : mode === 'quoted' ? 'Quoted price' : own ? 'Quote' : 'Create a quotation';
-  const help = mode === 'pi' ? (piDone ? (q.pi.status === 'made' ? 'Proforma invoice ' + (q.pi.billNo || '') + ' has been made.' : 'Requested by ' + (q.pi.by || '—') + ' on ' + fmtDate(ymd(new Date(q.pi.at || Date.now()))) + '.') : 'The client has agreed. Enter the client’s GST number (or tick “not available” and give the reason), add any notes, and press “Send for proforma invoice”.')
+  const title = mode === 'edit' ? 'Check & edit quote' : mode === 'pi' ? (piDone ? 'Proforma invoice request' : 'Send for proforma invoice') : mode === 'price' ? 'Give the price' : mode === 'send' ? 'Price ready – send to the client' : mode === 'quoted' ? 'Quoted price' : own ? 'Quote' : 'Create a quotation';
+  const help = mode === 'edit' ? 'Correct anything that was wrong: box details, quantities or prices. Press “Save changes”; the quote keeps its place and the change is noted in the client’s history.' + (qStatus(q) === 'sent' ? ' This quote was already sent: copy the updated message and send it again if the client needs it.' : '')
+    : mode === 'pi' ? (piDone ? (q.pi.status === 'made' ? 'Proforma invoice ' + (q.pi.billNo || '') + ' has been made.' : 'Requested by ' + (q.pi.by || '—') + ' on ' + fmtDate(ymd(new Date(q.pi.at || Date.now()))) + '.') : 'The client has agreed. Enter the client’s GST number (or tick “not available” and give the reason), add any notes, and press “Send for proforma invoice”.')
     : mode === 'price' ? 'Fill in the price per piece for each quantity' + (q.items.some(it => it.prints.length > 1) ? ' and printing option' : '') + ' and press “Send price”. ' + (q.askedBy || 'The salesperson') + ' then sends the ready message to the client.'
     : mode === 'send' ? 'The price is ready. If you are quoting the client a different price, type it under “quoted to client” (leave it empty to use the price given). Check the message, then copy it or open WhatsApp to send it.'
     : mode === 'quoted' ? 'Type the price you quoted or agreed with the client for each quantity. Leave it empty to use the price given.'
@@ -4346,6 +4367,9 @@ function quoteForm(){
         logLead(l, 'quote', 'Price given: ' + quoteLine(x) + (q.rajNote ? ' (' + q.rajNote + ')' : '')); });
       if (r) done(r.l);
     }}, 'Send price to ' + (q.askedBy || 'sales')));
+  } else if (mode === 'edit'){
+    btns.push(h('button',{type:'button', class:'btn primary', onclick:() => { const r = saveEdit(); if (r) done(r.l); }}, 'Save changes'));
+    if (qStatus(q) === 'sent') btns.push(h('button',{type:'button', class:'btn', onclick: async e => { const r = saveEdit(); if (!r) return; await copyText(quoteMessage(r.q, r.q.askedBy)); e.target.textContent = 'Saved · message copied'; setTimeout(() => done(r.l), 900); }}, 'Save & copy updated message'));
   } else if (mode === 'pi'){
     if (!piDone) btns.push(h('button',{type:'button', class:'btn primary', onclick:() => {
       const pi = q.pi, g = gstinInfo(pi.gstin);
@@ -4441,6 +4465,7 @@ function quoteTable(items, inLead){
         st === 'asked' && own ? h('button',{type:'button', class:'btn small primary', onclick:e => { e.stopPropagation(); openQuote(l, q, 'price'); }}, 'Give price') : null,
         st === 'priced' ? h('button',{type:'button', class:'btn small primary', onclick:e => { e.stopPropagation(); openQuote(l, q, 'send'); }}, 'Send to client') : null,
         st === 'sent' ? h('button',{type:'button', class:'btn small', onclick: async e => { e.stopPropagation(); const b = e.currentTarget; await copyText(q.message || ''); b.textContent = 'Copied'; setTimeout(() => b.textContent = 'Copy message', 1500); }}, 'Copy message') : null,
+        own && st !== 'asked' ? h('button',{type:'button', class:'btn small', title:'Check and correct this quote', onclick:e => { e.stopPropagation(); openQuote(l, q, 'edit'); }}, 'Edit quote') : null,
         st === 'sent' && !piOf(q) && (own || S.role === 'sales') ? h('button',{type:'button', class:'btn small primary', onclick:e => { e.stopPropagation(); openQuote(l, q, 'pi'); }}, 'Send for proforma invoice') : null,
         piOf(q) ? h('button',{type:'button', class:'btn small' + (own && q.pi.status === 'requested' ? ' primary' : ''), onclick:e => { e.stopPropagation(); openQuote(l, q, 'pi'); }}, own && q.pi.status === 'requested' ? 'Make proforma' : 'Proforma request') : null,
         st === 'sent' && (own || S.role === 'sales') ? h('button',{type:'button', class:'btn small', title:'The price you quoted or agreed with the client', onclick:e => { e.stopPropagation(); openQuote(l, q, 'quoted'); }}, 'Quoted price') : null,
