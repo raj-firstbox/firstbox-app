@@ -652,7 +652,7 @@ body.has-side .side{display:flex}
       <button class="tab" id="tab-samples" data-go="samples">Samples</button>
       <button class="tab" id="tab-orders" data-go="orders">Orders</button>
       <button class="tab" id="tab-pos" data-go="pos">POs &amp; dispatches</button>
-      <button class="tab" id="tab-bills" data-go="bills">Sales &amp; invoices</button>
+      <button class="tab" id="tab-bills" data-go="bills">Billing</button>
       <button class="tab" id="tab-stock" data-go="stock">Stock</button>
       <button class="tab" id="tab-db" data-go="past" hidden>Database</button>
     </nav>
@@ -2362,7 +2362,7 @@ function renderBills(){
   const mk = type => { const b = newBill(type); saveBill(b); go('bill', b.id); };
   const NEW = {proforma:'+ Create proforma', invoice:'+ Create invoice', challan:'+ Create delivery challan', payments:'+ Record payment'};
   root.append(h('div',{class:'head'},
-    h('div',{}, h('h1',{},'Sales & invoices'), h('div',{class:'note'},'Proforma invoices, tax invoices, delivery challans and payment receipts.')),
+    h('div',{}, h('h1',{},'Billing'), h('div',{class:'note'},'Proforma invoices, tax invoices, delivery challans and payment receipts.')),
     NEW[tab] ? h('button',{class:'btn primary', onclick:() => tab === 'payments' ? newPaymentFor(null) : mk(tab)}, NEW[tab]) : null));
   root.append(saveFolderBar('Invoices') || '');
   const optTab = (k, n, d) => h('button',{type:'button', class:'saletab', 'aria-current': tab === k ? 'page' : 'false', onclick:() => { S.billTab = k; S.billQ = ''; renderBills(); }}, h('b',{}, n), h('span',{}, d));
@@ -3340,7 +3340,7 @@ const SIDE = [
   {key:'samples', n:'Samples', icon: () => ICONS.samples, view:'samples', hideFor:['sales']},
   {key:'orders', n:'Orders', icon: () => ICONS.orders, view:'orders', subs:[
     {n:'Running orders', view:'orders', on:() => S.view === 'orders'}, {n:'Client POs & dispatches', view:'pos', on:() => ['pos', 'order'].includes(S.view)}]},
-  {key:'bills', n:'Sales & invoices', icon: () => ICONS.bills, view:'bills', subs:[
+  {key:'bills', n:'Billing', icon: () => ICONS.bills, view:'bills', subs:[
     {n:'Proforma invoices', ...billSub('proforma')}, {n:'Tax invoices', ...billSub('invoice')}, {n:'Delivery challans', ...billSub('challan')}, {n:'Payment receipts', ...billSub('payments')}, {n:'Saved items', ...billSub('items')}]},
   {key:'stock', n:'Stock', icon: () => ICONS.stock, view:'stock'},
   {key:'db', n:'Database', icon: () => ICONS.past, view:'past', staffOnly:true},
@@ -3406,7 +3406,7 @@ $('#sideshade') && $('#sideshade').addEventListener('click', () => document.body
   } }
 document.addEventListener('keydown', e => { if (e.key === 'Escape') document.body.classList.remove('side-open'); });
 // Phones: icons and short names on the section tabs (shown as a bottom bar on small screens).
-{ const SHORT = {jobs:'Costing', cards:'Job cards', crm:'Sales', samples:'Samples', past:'Database', orders:'Orders', pos:'POs', bills:'Invoices', stock:'Stock'};
+{ const SHORT = {jobs:'Costing', cards:'Job cards', crm:'Sales', samples:'Samples', past:'Database', orders:'Orders', pos:'POs', bills:'Billing', stock:'Stock'};
   document.querySelectorAll('.bar nav .tab').forEach(b => { const v = b.dataset.go, full = b.textContent.trim();
     b.innerHTML = '<svg class="tico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + (ICONS[v] || '') + '</svg>';
     b.append(h('span',{class:'tabfull'}, full), h('span',{class:'tabshort', 'aria-hidden':'true'}, SHORT[v] || full)); b.setAttribute('aria-label', full); }); }
@@ -4291,7 +4291,7 @@ function renderHome(){
     tile('samples', 'samples', 'Samples', 'Samples to be made for clients; the team marks them ready'),
     tile('orders', 'orders', 'Orders', 'Running orders in the factory, by product'),
     tile('pos', 'pos', 'Client POs & dispatches', 'Client POs, parts, delivery requests and dispatches'),
-    tile('bills', 'bills', 'Sales & invoices', 'Proforma, tax invoice, delivery challan, payment receipts'),
+    tile('bills', 'bills', 'Billing', 'Proforma, tax invoice, delivery challan, payment receipts'),
     tile('stock', 'stock', 'Stock', 'Materials in stock, what to buy for upcoming jobs')));
   // Live running orders (Raj): updates by itself whenever an order or dispatch changes.
   if (S.db && S.loaded.orders){
