@@ -1424,7 +1424,7 @@ function closeSettings(focusBtn){ const m = $('#setmenu'), b = $('#setbtn'); if 
 $('#setbtn').addEventListener('click', e => { e.stopPropagation(); const m = $('#setmenu'); if (!m.hidden) return closeSettings(); m.hidden = false; $('#setbtn').setAttribute('aria-expanded', 'true'); m.querySelector('button').focus(); });
 document.addEventListener('click', e => { if (!e.target.closest('.setwrap')) closeSettings(); });
 // Logo goes back to the home tiles (owner).
-{ const br = $('.brand'); if (br){ br.classList.add('home-link'); br.title = 'Home'; br.addEventListener('click', () => { if (S.role === 'owner') go('home'); }); } }
+{ const br = $('.brand'); if (br){ br.classList.add('home-link'); br.title = 'Home'; br.addEventListener('click', () => { if (canView('home')) go('home'); }); } }
 document.addEventListener('keydown', e => {
   const m = $('#setmenu'); if (!m || m.hidden) return;
   if (e.key === 'Escape') closeSettings(true);
@@ -3346,7 +3346,7 @@ const sideSvg = (d, cls) => { const s = h('span',{class: cls || 'sico', 'aria-hi
 const crmSub = k => ({view:'crm', set:() => { S.crmTab = k; S.qdraft = null; S.qsentText = null; S.crmSampleDone = null; }, on:() => S.view === 'crm' && (S.crmTab || 'leads') === k});
 const billSub = k => ({view:'bills', set:() => { S.billTab = k; S.billQ = ''; }, on:() => (S.view === 'bills' && (S.billTab || 'proforma') === k) || (k === 'payments' && S.view === 'pay') || (S.view === 'bill' && S.bdraft && S.bdraft.type === k)});
 const SIDE = [
-  {key:'home', n:'Home', icon: SIDE_ICONS.home, view:'home', ownerOnly:true},
+  {key:'home', n:'Home', icon: SIDE_ICONS.home, view:'home'},
   {key:'jobs', n:'Cost calculator', icon: () => ICONS.jobs, view:'jobs', on:() => ['jobs', 'job'].includes(S.view)},
   {key:'cards', n:'Job cards', icon: () => ICONS.cards, view:'cards', on:() => ['cards', 'card'].includes(S.view)},
   {key:'crm', n:'Sales & marketing', icon: () => ICONS.crm, view:'crm', subs:[
@@ -3439,8 +3439,8 @@ let typingOff = 0;
 document.addEventListener('focusout', () => { clearTimeout(typingOff); typingOff = setTimeout(() => { const a = document.activeElement; if (!a || !a.matches || !a.matches('input:not([type=checkbox]):not([type=radio]),textarea,select')) document.body.classList.remove('typing'); }, 400); });
 // Manager (view only, Raj): in the views a manager can open, every form control is switched off and every button that would
 // change something is hidden. Tabs, filters, search, opening things, copying and PDF downloads still work. (Writes are blocked in flush too.)
-const RO_VIEWS = ['crm','samples','cards','card','stock','orders'];
-const RO_KEEP = /pdf|download|print|^show|see all|^hide|^open|close|^back|←|copy|whatsapp|^call|more|less|^details$|^client$|^all\b/i;
+const RO_VIEWS = ['home','crm','samples','cards','card','stock','orders'];
+const RO_KEEP = /pdf|download|print|^show|see all|^hide|^open|close|^back|←|→|copy|whatsapp|^call|more|less|^details$|^client$|^all\b/i;
 function lockRO(node){
   if (!isRO() || !(node instanceof Element)) return;
   const vw = node.closest('[id^="view-"]'); if (!vw || !RO_VIEWS.includes(vw.id.slice(5))) return;
@@ -3449,7 +3449,7 @@ function lockRO(node){
     if (el.closest('[data-ro-ok]')) continue;
     if (el.tagName === 'BUTTON' || el.tagName === 'LABEL'){
       const t = (el.getAttribute('aria-label') || '') + ' ' + el.textContent.trim();
-      if (el.tagName === 'BUTTON' && (el.classList.contains('jctab') || el.classList.contains('jcno') || el.closest('nav,.jump,.crmtabs') || RO_KEEP.test(el.textContent.trim()) || RO_KEEP.test(el.getAttribute('aria-label') || ''))) continue;
+      if (el.tagName === 'BUTTON' && (el.classList.contains('jctab') || el.classList.contains('htile') || el.classList.contains('jcno') || el.closest('nav,.jump,.crmtabs') || RO_KEEP.test(el.textContent.trim()) || RO_KEEP.test(el.getAttribute('aria-label') || ''))) continue;
       el.style.setProperty('display', 'none', 'important');
       continue;
     }
@@ -4431,7 +4431,9 @@ function renderHome(){
   const short = stock.filter(i => n0(i.qty) < 0).length, low = stock.filter(i => n0(i.qty) >= 0 && n0(i.reorder) > 0 && n0(i.qty) <= n0(i.reorder)).length;
   const lastCard = cards.sort((a, b) => n0(b.createdAt) - n0(a.createdAt))[0];
   const icon = k => { const s = h('span',{class:'hicon', 'aria-hidden':'true'}); s.innerHTML = '<svg viewBox="0 0 24 24" width="30" height="30" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">' + ICONS[k] + '</svg>'; return s; };
-  const tile = (k, view, title, desc, stat, alert, small) => h('button',{type:'button', class:'htile' + (small ? ' small' : ''), onclick:() => go(view)},
+  // Everyone gets a Home (Raj): tiles only for the sections this login can open.
+  const own = isOwnerRole(), seesOrders = canView('orders');
+  const tile = (k, view, title, desc, stat, alert, small) => !(own || canView(view)) || (view === 'samples' && S.role === 'sales') ? null : h('button',{type:'button', class:'htile' + (small ? ' small' : ''), onclick:() => go(view)},
     icon(k), h('span',{class:'htext'}, h('span',{class:'htitle'}, title), h('span',{class:'hdesc'}, desc)));
   const hr = new Date().getHours();
   const so = document.getElementById('fbc-signout');
@@ -4449,9 +4451,10 @@ function renderHome(){
     tile('orders', 'orders', 'Orders', 'Running orders in the factory, by product'),
     tile('pos', 'pos', 'Client POs & dispatches', 'Client POs, parts, delivery requests and dispatches'),
     tile('bills', 'bills', 'Billing', 'Proforma, tax invoice, delivery challan, payment receipts'),
-    tile('stock', 'stock', 'Stock', 'Materials in stock, what to buy for upcoming jobs')));
+    tile('stock', 'stock', 'Stock', 'Materials in stock, what to buy for upcoming jobs'),
+    own ? null : tile('past', 'past', 'Database', 'Boxes made before and their selling prices')));
   // Live running orders (Raj): updates by itself whenever an order or dispatch changes.
-  if (S.db && S.loaded.orders){
+  if (S.db && seesOrders && S.loaded.orders){
     const rows = runningRows();
     root.append(h('div',{class:'row', style:'justify-content:space-between;align-items:baseline;margin-top:22px'},
       h('h2',{class:'hsub', style:'margin:0'}, 'Running orders' + (rows.length ? ' (' + rows.length + ')' : '')),
@@ -4467,29 +4470,38 @@ function renderHome(){
         runningTable(list, 5)));
     }
     // Samples to make sit with the running orders too (Raj), as their own group after the products.
-    const todo = S.loaded.samples ? smpTodo() : [];
+    const todo = S.loaded.samples && canView('samples') ? smpTodo() : [];
     if (todo.length) root.append(h('div',{class:'rungroup'},
       h('div',{class:'row', style:'justify-content:space-between;align-items:baseline'},
         h('h3',{}, 'Samples to make', h('span',{class:'sub'}, ' · ' + todo.length + ' sample' + (todo.length === 1 ? '' : 's') + (todo.some(smpLate) ? ' · ' + todo.filter(smpLate).length + ' late' : ''))),
-        h('button',{class:'linkbtn', onclick:() => { S.smpTab = 'todo'; go('samples'); }}, todo.length > 5 ? 'See all ' + todo.length + ' →' : 'Open samples →')),
+        h('button',{class:'linkbtn', onclick:() => { if (S.role === 'sales'){ S.crmTab = 'sample'; go('crm'); } else { S.smpTab = 'todo'; go('samples'); } }}, todo.length > 5 ? 'See all ' + todo.length + ' →' : 'Open samples →')),
       sampleRows(todo.slice(0, 5), true)));
   }
   // Quotation requests from the sales team, waiting for Raj's price.
-  if (S.db && S.loaded.leads){
+  if (S.db && own && S.loaded.leads){
     const asked = allQuotes().filter(x => qStatus(x.q) === 'asked').sort((a, b) => n0(a.q.askedAt) - n0(b.q.askedAt));
     if (asked.length) root.append(h('div',{class:'row', style:'justify-content:space-between;align-items:baseline;margin-top:26px'},
         h('h2',{class:'hsub', style:'margin:0'}, 'Quotation requests for you (' + asked.length + ')'),
         h('button',{class:'linkbtn', onclick:() => { S.crmTab = 'quote'; S.qdraft = null; go('crm'); }}, 'Create a quotation →')),
       quoteTable(asked.slice(0, 8)));
   }
+  // Sales team: quotes Raj has priced, ready to send to the client.
+  if (S.db && S.role === 'sales' && S.loaded.leads){
+    const ready = allQuotes().filter(x => qStatus(x.q) === 'priced').sort((a, b) => n0(a.q.pricedAt) - n0(b.q.pricedAt));
+    if (ready.length) root.append(h('div',{class:'row', style:'justify-content:space-between;align-items:baseline;margin-top:26px'},
+        h('h2',{class:'hsub', style:'margin:0'}, 'Price ready – send to the client (' + ready.length + ')'),
+        h('button',{class:'linkbtn', onclick:() => { S.crmTab = 'quote'; S.qdraft = null; go('crm'); }}, 'Quotations →')),
+      quoteTable(ready.slice(0, 8)));
+  }
   // Sales follow-ups due (Raj): overdue and today.
-  if (S.db && S.loaded.leads){
+  if (S.db && (own || canView('crm')) && S.loaded.leads){
     const f = followLists(), due = [...f.over, ...f.today];
     if (due.length) root.append(h('div',{class:'row', style:'justify-content:space-between;align-items:baseline;margin-top:26px'},
         h('h2',{class:'hsub', style:'margin:0'}, 'Sales follow-ups due (' + due.length + ')' + (f.over.length ? ' · ' + f.over.length + ' overdue' : '')),
         h('button',{class:'linkbtn', onclick:() => { S.crmTab = 'leads'; go('crm'); }}, 'Clients & leads →')),
       followRows(due.slice(0, 8), true));
   }
+  if (!own) return;   // settings are for Raj (and admins) only
   root.append(h('h2',{class:'hsub', style:'margin-top:26px'}, 'Settings'));
   root.append(h('div',{class:'hgrid set'},
     tile('rates', 'rates', 'Rate list', 'Paper, board, lamination, printing and other rates', S.loaded.rates ? S.rates.size + ' rates' : loading, false, true),
@@ -4597,10 +4609,10 @@ function rowDelete(what, onConfirm){
 // job cards, stock and the shared lists are open to people the page is shared with for editing.
 // Logins (Raj, Nov 2026). The owner and admins (role 'admin' in the database) have full control: the page treats an admin like the owner.
 const ROLES = {
-  jobcards:{n:'Accounts team', d:'Job cards, running orders, client POs & dispatches, billing (proforma, tax invoices, challans, payment receipts) and stock: view, add and edit', views:['cards','card','orders','pos','order','bills','bill','pay','stock']},
-  sales:{n:'Sales team', d:'Sales & marketing (clients & leads, quotations) and samples: view, add and edit. Running orders and the Database (selling prices, no costs): view only', views:['crm','orders','past','samples']},
-  manager:{n:'Manager', d:'View only: running orders, job cards, samples, Sales & marketing, stock and the Database. No cost calculator, client POs or billing', views:['orders','cards','card','samples','crm','stock','past'], ro:true},
-  inventory:{n:'Stock team', d:'Stock: add materials, record purchases when they arrive, correct counts, see what to buy; see running orders; see samples and mark them ready', views:['stock','orders','samples']}
+  jobcards:{n:'Accounts team', d:'Job cards, running orders, client POs & dispatches, billing (proforma, tax invoices, challans, payment receipts) and stock: view, add and edit', views:['home','cards','card','orders','pos','order','bills','bill','pay','stock']},
+  sales:{n:'Sales team', d:'Sales & marketing (clients & leads, quotations) and samples: view, add and edit. Running orders and the Database (selling prices, no costs): view only', views:['home','crm','orders','past','samples']},
+  manager:{n:'Manager', d:'View only: running orders, job cards, samples, Sales & marketing, stock and the Database. No cost calculator, client POs or billing', views:['home','orders','cards','card','samples','crm','stock','past'], ro:true},
+  inventory:{n:'Stock team', d:'Stock: add materials, record purchases when they arrive, correct counts, see what to buy; see running orders; see samples and mark them ready', views:['home','stock','orders','samples']}
 };
 // The roles the owner can give on Team & access (admin is not a page role: an admin signs in with full control).
 const TEAM_ROLES = {...ROLES, admin:{n:'Admin', d:'Full control, same as Raj: everything, including the cost calculator, rates, billing and team logins'}};
