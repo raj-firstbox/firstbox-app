@@ -4270,10 +4270,10 @@ function quoteForm(){
   const help = mode === 'price' ? 'Fill in the price per piece for each quantity' + (q.items.some(it => it.prints.length > 1) ? ' and printing option' : '') + ' and press “Send price”. ' + (q.askedBy || 'The salesperson') + ' then sends the ready message to the client.'
     : mode === 'send' ? 'Raj has given the price. Check the message, then copy it or open WhatsApp to send it to the client.'
     : own ? 'Fill in the details and the price per piece. The message on the right is ready to send to the client.'
-    : 'Ask the client the questions in this order and fill them in as you go. Then press “Send to Raj”. Raj gives the price in the app; you then get the ready message for the client.';
+    : 'Ask the client the questions in this order and fill them in as you go. Then press “Request for quotation”. Raj gives the price in the app; you then get the ready message for the client.';
   const btns = [];
   if (mode === 'new' && !own){
-    btns.push(h('button',{type:'button', class:'btn primary', onclick:() => { const r = saveNew('asked'); if (!r) return; S.qsentText = quoteAskText({...r.q, name: r.l.name}); done(r.l); }}, 'Send to Raj'));
+    btns.push(h('button',{type:'button', class:'btn primary', onclick:() => { const r = saveNew('asked'); if (!r) return; S.qsentText = quoteAskText({...r.q, name: r.l.name}); done(r.l); }}, 'Request for quotation'));
   } else if (mode === 'new'){
     btns.push(h('button',{type:'button', class:'btn primary', onclick: async e => { const r = saveNew('sent'); if (!r) return; await copyText(r.q.message); e.target.textContent = 'Saved · message copied'; setTimeout(() => done(r.l), 900); }}, 'Save & copy message'),
       h('button',{type:'button', class:'btn', onclick:() => { const ph = waNumber(q.phone); const r = saveNew('sent'); if (!r) return; window.open('https://wa.me/' + ph + '?text=' + encodeURIComponent(r.q.message), '_blank', 'noopener'); done(r.l); }}, 'Save & open WhatsApp'),
@@ -4328,7 +4328,7 @@ function quotePage(root){
   const own = isOwnerRole(), all = allQuotes().sort((a, b) => n0(b.q.askedAt || 0) - n0(a.q.askedAt || 0) || String(b.q.date).localeCompare(String(a.q.date)));
   if (S.qsentText){
     const t = S.qsentText, ph = rajPhone();   // stays until they open something else
-    root.append(h('div',{class:'card qsent'}, h('b',{}, '✓ Sent to Raj.'), ' He will see it in the app and give the price. You’ll find it under “Price ready” when he does.',
+    root.append(h('div',{class:'card qsent'}, h('b',{}, '✓ Quotation requested.'), ' Raj will see it in the app and give the price. You’ll find it under “Price ready” when he does.',
       ph ? h('div',{style:'margin-top:8px'}, h('a',{class:'btn small', href:'https://wa.me/' + ph + '?text=' + encodeURIComponent(t), target:'_blank', rel:'noopener'}, 'Also tell Raj on WhatsApp')) : null));
   }
   if (S.qdraft){ root.append(quoteForm()); return; }
