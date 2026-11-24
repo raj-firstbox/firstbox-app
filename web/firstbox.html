@@ -405,6 +405,7 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center}
 .qgrid th{font-size:12px;color:var(--muted);font-weight:600}
 .qgrid td input{width:110px;max-width:100%}
 .linkbtn.danger{color:var(--bad)}
+.qquote{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.qquote .sub{white-space:nowrap}
 .qrow{display:flex;gap:8px;align-items:center}
 .qrow input{flex:1 1 120px;min-width:0;width:0}
 .quotecols > *{min-width:0}
@@ -4065,12 +4066,17 @@ function quoteSpec(q){
   const its = quoteItems(q);
   return its.length === 1 ? itemSpec(its[0]) : its.flatMap((it, k) => ['Box ' + (k + 1) + ':', ...itemSpec(it).map(x => '  ' + x)]);
 }
+// Quoted price (Raj): the price the salesperson actually gave the client (e.g. ₹110 when the price given was ₹100). Kept per quantity × option in `quoted`;
+// when empty, the given price is used. The client message always uses the quoted price.
+const qQuoted = (it, p, r) => { const v = (it.quoted || {})[p.id + '|' + r.id]; return v === '' || v == null ? null : v; };
+const qClient = (it, p, r) => qQuoted(it, p, r) ?? qPrice(it, p, r);
+const priceTxt = (it, p, r) => { const c = qClient(it, p, r), g = qPrice(it, p, r); return c == null ? '—' : money2(c) + (g != null && c !== g ? ' (given ' + money2(g) + ')' : ''); };
 const quoteLine = q => { if (!q) return ''; const its = quoteItems(q), many = its.length > 1;
   return its.map((it, k) => (many ? 'Box ' + (k + 1) + ': ' : '') + it.rows.filter(r => r.qty).map(r => fmtN(r.qty) + ' pcs @ ' +
-    it.prints.map(p => qPrice(it, p, r) != null ? money2(qPrice(it, p, r)) : '—').join(' / ')).join(' · ')).join('  |  '); };
+    it.prints.map(p => priceTxt(it, p, r)).join(' / ')).join(' · ')).join('  |  '); };
 const priceLines = it => it.rows.filter(r => r.qty).map(r => '• ' + fmtN(r.qty) + ' pcs – ' + (it.prints.length === 1
-  ? (qPrice(it, it.prints[0], r) != null ? money2(qPrice(it, it.prints[0], r)) + ' per piece' : 'price on request')
-  : it.prints.map((p, i) => 'option ' + (i + 1) + ': ' + (qPrice(it, p, r) != null ? money2(qPrice(it, p, r)) + ' / pc' : 'on request')).join(' · ')));
+  ? (qClient(it, it.prints[0], r) != null ? money2(qClient(it, it.prints[0], r)) + ' per piece' : 'price on request')
+  : it.prints.map((p, i) => 'option ' + (i + 1) + ': ' + (qClient(it, p, r) != null ? money2(qClient(it, p, r)) + ' / pc' : 'on request')).join(' · ')));
 function newQuote(l){
   return {mode:'new', leadId: l ? l.id : '', name: l ? l.name : '', contact: l ? (l.contact || '') : '', phone: l ? (l.phone || '') : '', date: today(),
     items:[newQItem(l && l.product || '', l && l.qty ? l.qty : null)], askNote:'',
@@ -4103,8 +4109,9 @@ function updQuote(leadId, quoteId, fn){
 }
 const copyText = async t => { try { await navigator.clipboard.writeText(t); } catch(e){ const ta = h('textarea',{style:'position:fixed;opacity:0'}, t); document.body.append(ta); ta.select(); try { document.execCommand('copy'); } catch(_){} ta.remove(); } };
 // Sent to the client: log it, stage → Quote sent, follow up in 3 days.
-function markQuoteSent(leadId, quoteId, message){
+function markQuoteSent(leadId, quoteId, message, items){
   return updQuote(leadId, quoteId, (q, l) => {
+    if (items) q.items = clone(items);   // with the quoted prices the salesperson typed
     q.status = 'sent'; q.sentAt = Date.now(); q.sentBy = myName(); q.message = message;
     logLead(l, 'quote', 'Quote sent to the client: ' + quoteProducts(q) + ' · ' + quoteLine(q));
     if (['new', 'req'].includes(l.stage || 'new')) setStage(l, 'quote');
@@ -4120,7 +4127,7 @@ function quoteForm(){
   const msgBox = h('textarea',{rows:18, class:'quotemsg', oninput:e => { q.msg = e.target.value; q.msgEdited = true; }});
   const leads = [...S.leads.values()].sort((a, b) => String(a.name).localeCompare(String(b.name)));
   // the right-hand box: the request for Raj while asking, the client's message once there is a price
-  const showClientMsg = own || mode === 'send';
+  const showClientMsg = own || mode === 'send' || mode === 'quoted';
   const refresh = () => { if (!q.msgEdited){ q.msg = showClientMsg ? quoteMessage(q, mode === 'send' ? (q.askedBy || myName()) : myName()) : quoteAskText(q); msgBox.value = q.msg; } };
   const pickLead = name => { const l = leads.find(x => String(x.name).trim().toLowerCase() === String(name).trim().toLowerCase()); q.leadId = l ? l.id : ''; if (l){ q.contact = q.contact || l.contact || ''; q.phone = q.phone || l.phone || ''; } };
   const ro = mode !== 'new';   // pricing or sending: the details are fixed
@@ -4130,12 +4137,17 @@ function quoteForm(){
   const qn = (n, label, ctl, wide) => h('div',{class:'smpq' + (wide ? ' wide' : '')}, h('div',{class:'smpql'}, h('span',{class:'smpqn'}, n), label), ctl);
   const txt = (val, ph, on) => h('input',{value: val || '', placeholder: ph || '', oninput:e => { on(e.target.value); refresh(); }});
   // Price per piece for every quantity (rows) × printing option (columns).
+  // editable: 'price' = the price given (owner); 'quoted' = the price the salesperson quotes to the client (shown next to the price given).
   const priceGrid = (it, editable) => h('div',{class:'qgridbox'}, h('table',{class:'qgrid'},
-    h('thead',{}, h('tr',{}, h('th',{}, 'Quantity'), it.prints.map((p, i) => h('th',{}, it.prints.length > 1 ? 'Option ' + (i + 1) + ': ' + (printName(p) || '—') : '₹ per piece')))),
-    h('tbody',{}, it.rows.filter(r => r.qty || editable).map(r => h('tr',{}, h('td',{}, r.qty ? fmtN(r.qty) + ' pcs' : '—'),
-      it.prints.map((p, i) => h('td',{}, editable
-        ? numIn(qPrice(it, p, r), v => { it.prices = it.prices || {}; it.prices[p.id + '|' + r.id] = v; refresh(); }, {placeholder:'₹ / pc', 'aria-label':'Price per piece, ' + (r.qty ? fmtN(r.qty) + ' pcs' : 'quantity') + (it.prints.length > 1 ? ', option ' + (i + 1) : '')})
-        : qPrice(it, p, r) != null ? money2(qPrice(it, p, r)) : '—')))))));
+    h('thead',{}, h('tr',{}, h('th',{}, 'Quantity'), it.prints.map((p, i) => h('th',{}, it.prints.length > 1 ? 'Option ' + (i + 1) + ': ' + (printName(p) || '—') : editable === 'quoted' ? 'Price given → quoted to client (₹ per piece)' : '₹ per piece')))),
+    h('tbody',{}, it.rows.filter(r => r.qty || editable === true).map(r => h('tr',{}, h('td',{}, r.qty ? fmtN(r.qty) + ' pcs' : '—'),
+      it.prints.map((p, i) => { const lab = (r.qty ? fmtN(r.qty) + ' pcs' : 'quantity') + (it.prints.length > 1 ? ', option ' + (i + 1) : '');
+        return h('td',{}, editable === true
+        ? numIn(qPrice(it, p, r), v => { it.prices = it.prices || {}; it.prices[p.id + '|' + r.id] = v; refresh(); }, {placeholder:'₹ / pc', 'aria-label':'Price per piece, ' + lab})
+        : editable === 'quoted'
+        ? h('div',{class:'qquote'}, h('span',{class:'sub'}, qPrice(it, p, r) != null ? 'Given ' + money2(qPrice(it, p, r)) + ' →' : 'No price given →'),
+            numIn(qQuoted(it, p, r), v => { it.quoted = it.quoted || {}; it.quoted[p.id + '|' + r.id] = v; refresh(); }, {placeholder: qPrice(it, p, r) != null ? String(qPrice(it, p, r)) : '₹ / pc', 'aria-label':'Quoted to client, ' + lab}))
+        : priceTxt(it, p, r)); }))))));
   // Custom-shape cartons (Raj): up to 3 pictures of the shape, shrunk like sample photos; saved in samplePics when the quote is saved.
   const shapePics = it => {
     it.newPics = it.newPics || [];
@@ -4208,11 +4220,11 @@ function quoteForm(){
           q.items.length > 1 ? h('div',{class:'qboxhead'}, h('b',{}, 'Box ' + (k + 1))) : null,
           h('div',{class:'smptext'}, itemSpec(it).join('\n') || '—'),
           (it.picIds || []).length ? h('div',{style:'margin-top:8px'}, h('div',{class:'sub'}, 'Picture of the shape (tap to open)'), picThumbs(it.picIds.map(id => ({id})))) : null,
-          h('div',{class:'fld', style:'margin-top:10px'}, h('span',{class:'fl'}, 'Price per piece'), priceGrid(it, mode === 'price')))),
+          h('div',{class:'fld', style:'margin-top:10px'}, h('span',{class:'fl'}, 'Price per piece'), priceGrid(it, mode === 'price' ? true : mode === 'send' || mode === 'quoted' ? 'quoted' : false)))),
         mode === 'price' ? h('div',{class:'grid'},
           fld('GST %', numIn(q.gst, x => { q.gst = x; refresh(); })),
           fld('Valid for (days)', numIn(q.validity, x => { q.validity = x; refresh(); })),
-          fld('Note for ' + (q.askedBy || 'the salesperson'), h('input',{value:q.rajNote || '', placeholder:'e.g. Can go to ₹46 for 5000+', oninput:e => q.rajNote = e.target.value}))) : null);
+          fld('Note for ' + (q.askedBy || 'the salesperson'), h('input',{value:q.rajNote || '', placeholder:'e.g. Can go to ₹46 for 5000+', oninput:e => q.rajNote = e.target.value}))) : '');   // '' not null: replaceChildren would print "null"
       return;
     }
     body.replaceChildren(
@@ -4266,9 +4278,10 @@ function quoteForm(){
     return {l, q: quote};
   };
   const done = l => { S.qdraft = null; S.crmTab = 'quote'; renderCrm(); };
-  const title = mode === 'price' ? 'Give the price' : mode === 'send' ? 'Price ready – send to the client' : own ? 'Quote' : 'Create a quotation';
+  const title = mode === 'price' ? 'Give the price' : mode === 'send' ? 'Price ready – send to the client' : mode === 'quoted' ? 'Quoted price' : own ? 'Quote' : 'Create a quotation';
   const help = mode === 'price' ? 'Fill in the price per piece for each quantity' + (q.items.some(it => it.prints.length > 1) ? ' and printing option' : '') + ' and press “Send price”. ' + (q.askedBy || 'The salesperson') + ' then sends the ready message to the client.'
-    : mode === 'send' ? 'The price is ready. Check the message, then copy it or open WhatsApp to send it to the client.'
+    : mode === 'send' ? 'The price is ready. If you are quoting the client a different price, type it under “quoted to client” (leave it empty to use the price given). Check the message, then copy it or open WhatsApp to send it.'
+    : mode === 'quoted' ? 'Type the price you quoted or agreed with the client for each quantity. Leave it empty to use the price given.'
     : own ? 'Fill in the details and the price per piece. The message on the right is ready to send to the client.'
     : 'Ask the client the questions in this order and fill them in as you go. Then press “Request for quotation”. Once the price is given, you get the ready message for the client.';
   const btns = [];
@@ -4285,9 +4298,15 @@ function quoteForm(){
         logLead(l, 'quote', 'Price given: ' + quoteLine(x) + (q.rajNote ? ' (' + q.rajNote + ')' : '')); });
       if (r) done(r.l);
     }}, 'Send price to ' + (q.askedBy || 'sales')));
+  } else if (mode === 'quoted'){
+    btns.push(h('button',{type:'button', class:'btn primary', onclick:() => {
+      const r = updQuote(q.leadId, q.quoteId, (x, l) => { x.items = clone(q.items); logLead(l, 'quote', 'Quoted price updated: ' + quoteLine(x)); });
+      if (r) done(r.l);
+    }}, 'Save quoted price'),
+      h('button',{type:'button', class:'btn', onclick: async e => { await copyText(q.msg || quoteMessage(q, q.askedBy)); e.target.textContent = 'Copied'; }}, 'Copy updated message'));
   } else {
-    btns.push(h('button',{type:'button', class:'btn primary', onclick: async e => { const m = q.msg || quoteMessage(q, q.askedBy); await copyText(m); const r = markQuoteSent(q.leadId, q.quoteId, m); e.target.textContent = 'Copied · marked as sent'; if (r) setTimeout(() => done(r.l), 900); }}, 'Copy message & mark sent'),
-      h('button',{type:'button', class:'btn', onclick:() => { const m = q.msg || quoteMessage(q, q.askedBy); const ph = waNumber(q.phone); const r = markQuoteSent(q.leadId, q.quoteId, m); window.open('https://wa.me/' + ph + '?text=' + encodeURIComponent(m), '_blank', 'noopener'); if (r) done(r.l); }}, 'Open WhatsApp & mark sent'));
+    btns.push(h('button',{type:'button', class:'btn primary', onclick: async e => { const m = q.msg || quoteMessage(q, q.askedBy); await copyText(m); const r = markQuoteSent(q.leadId, q.quoteId, m, q.items); e.target.textContent = 'Copied · marked as sent'; if (r) setTimeout(() => done(r.l), 900); }}, 'Copy message & mark sent'),
+      h('button',{type:'button', class:'btn', onclick:() => { const m = q.msg || quoteMessage(q, q.askedBy); const ph = waNumber(q.phone); const r = markQuoteSent(q.leadId, q.quoteId, m, q.items); window.open('https://wa.me/' + ph + '?text=' + encodeURIComponent(m), '_blank', 'noopener'); if (r) done(r.l); }}, 'Open WhatsApp & mark sent'));
   }
   btns.push(h('button',{type:'button', class:'btn', onclick:() => { S.qdraft = null; renderCrm(); }}, 'Cancel'));
   wrap.append(h('h2',{}, title), h('div',{class:'note'}, help),
@@ -4329,6 +4348,7 @@ function quoteTable(items, inLead){
         st === 'asked' && own ? h('button',{type:'button', class:'btn small primary', onclick:e => { e.stopPropagation(); openQuote(l, q, 'price'); }}, 'Give price') : null,
         st === 'priced' ? h('button',{type:'button', class:'btn small primary', onclick:e => { e.stopPropagation(); openQuote(l, q, 'send'); }}, 'Send to client') : null,
         st === 'sent' ? h('button',{type:'button', class:'btn small', onclick: async e => { e.stopPropagation(); const b = e.currentTarget; await copyText(q.message || ''); b.textContent = 'Copied'; setTimeout(() => b.textContent = 'Copy message', 1500); }}, 'Copy message') : null,
+        st === 'sent' && (own || S.role === 'sales') ? h('button',{type:'button', class:'btn small', title:'The price you quoted or agreed with the client', onclick:e => { e.stopPropagation(); openQuote(l, q, 'quoted'); }}, 'Quoted price') : null,
         st !== 'asked' && (own || S.role === 'sales') ? h('button',{type:'button', class:'btn small', title:'Same boxes, new quantities', onclick:e => { e.stopPropagation(); requoteQty(l, q); }}, 'Request another quantity') : null,
         st === 'sent' && waNumber(l.phone) ? h('a',{class:'btn small', href:'https://wa.me/' + waNumber(l.phone) + '?text=' + encodeURIComponent(q.message || ''), target:'_blank', rel:'noopener', onclick:e => e.stopPropagation()}, 'WhatsApp') : null,
         inLead ? null : h('button',{type:'button', class:'linkbtn', onclick:() => { S.crmTab = 'leads'; S.crmOpen = l.id; renderCrm(); }}, 'Client')))); }))));
