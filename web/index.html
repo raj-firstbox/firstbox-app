@@ -1061,6 +1061,17 @@ function sheetsOf(src, qty){
 }
 function calcLine(l, j, byId){
   const qty = n0(j.qty);
+  if (l.uvSlab && l.fxKind === 'spotuv'){
+    // Spot UV, normal (Raj, Nov 2026): fixed ₹1,000 (positive) + ₹1,200 for the first 1000 sheets + ₹1,000 for each further 1000 (a part 1000 counts as full).
+    const linked = l.link && byId.get(l.link);
+    const src = linked && linked.calc === 'sheet' ? linked : l;
+    const sh = sheetsOf(src, qty), k = Math.ceil(sh / 1000);
+    if (!sh) return {amount:0, detail:'No sheets yet', qd:'No sheets yet'};
+    const run = n0(l.first) + (k - 1) * n0(l.next), amt = n0(l.setup) + run;
+    return {amount: amt,
+      detail: 'Fixed ₹' + fmtN(n0(l.setup)) + '  ·  ' + fmtN(sh) + ' sheets = ' + k + ' × 1000 → ₹' + fmtN(n0(l.first)) + ' first 1000' + (k > 1 ? ' + ' + (k - 1) + ' × ₹' + fmtN(n0(l.next)) : '') + ' = ₹' + fmtN(run),
+      qd: fmtN(sh) + ' sheets'};
+  }
   if (l.calc === 'sheet'){
     const sh = sheetsOf(l, qty);
     const kg = n0(l.L) * n0(l.W) * n0(l.gsm) / 1550000;
@@ -1321,6 +1332,12 @@ function packEditor(l){
 const printTable = () => S.settings.printing || S.printDefaults;
 const dieTable = () => ({...S.diecutDefaults, ...(S.settings.diecut || {})});
 function snapDie(l){ const D = dieTable(); l.setup = D.die ?? null; l.first = D.first ?? null; l.next = D.next ?? null; }
+// Spot UV normal (Raj): fixed charge + first 1000 sheets + each further 1000; crystal keeps its rate from the Rate list.
+const uvTable = () => ({setup:1000, first:1200, next:1000, ...(S.settings.spotuv || {})});
+function snapUv(l, r){
+  if (l.fxKind !== 'spotuv' || /crystal/i.test((r && r.name) || '')){ l.uvSlab = false; return; }
+  const U = uvTable(); l.uvSlab = true; l.setup = U.setup; l.first = U.first; l.next = U.next;
+}
 // Pantone (Raj): each Pantone is one more colour on the press (2 colours + 1 Pantone = priced as 3 colours),
 // plus Pantone ink at ₹1,500 per kg, 1 kg good for 3,000 sheets, charged for the part kg used (2,100 sheets = 0.7 kg).
 const pmsN = l => l.pms === 'yes' ? Math.max(1, n0(l.pmsCount) || 1) : 0;
@@ -1338,6 +1355,7 @@ function applyRate(l, r, setName){
   if (l.calc === 'impression' || l.calc === 'perup') l.setup = r.setup ?? null;
   if (l.calc === 'area'){ l.rollRate = r.rollRate ?? null; l.perKg = r.sqmPerKg ?? null; l.labourPct = S.settings.lamLabourPct ?? 100; l.paisaDiv = r.paisaDiv ?? null; }
   if (setName || !l.name) l.name = r.name;
+  if (l.fxKind === 'spotuv') snapUv(l, r);
 }
 function linesFromTemplate(box){
   const keys = {}, out = [];
@@ -4798,6 +4816,7 @@ function needsRate(l){
   if (l.calc === 'area' && l.coat === 'none') return false;
   if (l.calc === 'area') return l.rate == null && (l.rollRate == null || !n0(l.perKg)) && !n0(l.paisaDiv);
   if (l.making) return l.rate == null;
+  if (l.fx && l.uvSlab && l.fxKind === 'spotuv') return l.first == null;
   if (l.fx) return !l.fxKind || (l.fxKind !== 'spotuv' && l.passes == null) || l.rate == null;
   if (l.calc === 'diecut' && partOf(l) === 'die' && l.dies == null) return true;
   if (['sheet','area','impression','perup','piece'].includes(l.calc)) return l.rate == null;
@@ -5087,7 +5106,11 @@ function renderLinesInner(){
         f.push(...ownCount());
       }
       const pu = l.calc === 'perup';
-      if (isFx && l.fxKind && l.fxKind !== 'spotuv'){
+      if (l.uvSlab && l.fxKind === 'spotuv'){
+        const uv = (label, key) => fld(label, numIn(l[key], v => { upd(key, v); if (v != null){ S.settings.spotuv = {...uvTable(), [key]: v}; saveSettings(); } }));
+        f.push(uv('Fixed ₹', 'setup'), uv('First 1000 sheets ₹', 'first'), uv('Each further 1000 ₹', 'next'));
+      }
+      else if (isFx && l.fxKind && l.fxKind !== 'spotuv'){
         const tx = (label, key, ph, w) => fld(label, h('input',{value:l[key] || '', placeholder:ph, style:'width:' + w + 'px', oninput:e => upd(key, e.target.value)}));
         f.push(fld('No. of blocks', numIn(l.passes, v => upd('passes', v), {inputmode:'numeric', placeholder:'enter', class:'bigin'})),
           tx(l.fxKind === 'foil' ? 'Foiling part' : 'Part', 'fxPart', 'e.g. logo on lid', 200),
@@ -5095,7 +5118,7 @@ function renderLinesInner(){
           fld('Block ₹ / pass', numIn(l.setup, v => upd('setup', v))));
       }
       if ((l.calc === 'impression' || pu) && !isFx) f.push(fld(pu ? 'Foil colours / passes' : 'Passes / colours', numIn(l.passes, v => upd('passes', v), {inputmode:'numeric'})), fld(pu ? 'Block ₹ / pass' : 'Setup ₹ / pass', numIn(l.setup, v => upd('setup', v))));
-      f.push(fld(l.calc === 'area' ? '₹ / 100 sq in' : pu ? '₹ per up' : '₹ / 1000 sheets', numIn(l.rate, v => upd('rate', v))), fld(pu ? 'Minimum ₹ / pass' : 'Min charge ₹', numIn(l.minCharge, v => upd('minCharge', v))));
+      if (!(l.uvSlab && l.fxKind === 'spotuv')) f.push(fld(l.calc === 'area' ? '₹ / 100 sq in' : pu ? '₹ per up' : '₹ / 1000 sheets', numIn(l.rate, v => upd('rate', v))), fld(pu ? 'Minimum ₹ / pass' : 'Min charge ₹', numIn(l.minCharge, v => upd('minCharge', v))));
     } else if (l.calc === 'piece'){
       if (l.accKind){
         // Details for items supplied with the box.
@@ -5149,6 +5172,7 @@ function renderLinesInner(){
               const cat = FX_CAT[l.fxKind];
               const r = cat ? (findRate(cat, 'perup', l.fxKind === 'spotuv' ? 'normal' : null) || findRate(cat, 'impression', l.fxKind === 'spotuv' ? 'normal' : null)) : null;
               if (r){ l.calc = r.calc; applyRate(l, r, false); } else { l.rateId = null; l.rate = null; }
+              if (l.fxKind === 'spotuv'){ if (!r){ l.calc = 'impression'; snapUv(l, null); } } else l.uvSlab = false;
               l.passes = l.fxKind && l.fxKind !== 'spotuv' ? null : 1;
               touch(); renderLines();
             }}), 'name coatpick')
