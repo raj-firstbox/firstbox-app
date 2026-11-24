@@ -4299,6 +4299,14 @@ function quoteForm(){
   draw(); refresh();
   return wrap;
 }
+// The client wants a price for a different quantity (Raj): a new request with the same client and boxes, quantities and prices cleared.
+function requoteQty(l, q){
+  const lead = S.leads.get(l.id) || l, d = newQuote(lead);
+  d.contact = q.contact || lead.contact || ''; d.phone = q.phone || lead.phone || '';
+  d.items = clone(quoteItems(q)).map(it => ({...it, id: uid(), rows:[{id: uid(), qty:null}], prices:{}}));
+  d.askNote = 'New quantity for the quote of ' + fmtDate(q.date);
+  S.qdraft = d; S.qsentText = null; S.crmTab = 'quote'; if (S.view !== 'crm') go('crm'); else renderCrm(); window.scrollTo(0, 0);
+}
 // Open a quote in the right step: Raj gives the price, sales sends it.
 function openQuote(l, q, mode){
   const lead = S.leads.get(l.id) || l;
@@ -4321,6 +4329,7 @@ function quoteTable(items, inLead){
         st === 'asked' && own ? h('button',{type:'button', class:'btn small primary', onclick:e => { e.stopPropagation(); openQuote(l, q, 'price'); }}, 'Give price') : null,
         st === 'priced' ? h('button',{type:'button', class:'btn small primary', onclick:e => { e.stopPropagation(); openQuote(l, q, 'send'); }}, 'Send to client') : null,
         st === 'sent' ? h('button',{type:'button', class:'btn small', onclick: async e => { e.stopPropagation(); const b = e.currentTarget; await copyText(q.message || ''); b.textContent = 'Copied'; setTimeout(() => b.textContent = 'Copy message', 1500); }}, 'Copy message') : null,
+        st !== 'asked' && (own || S.role === 'sales') ? h('button',{type:'button', class:'btn small', title:'Same boxes, new quantities', onclick:e => { e.stopPropagation(); requoteQty(l, q); }}, 'Request another quantity') : null,
         st === 'sent' && waNumber(l.phone) ? h('a',{class:'btn small', href:'https://wa.me/' + waNumber(l.phone) + '?text=' + encodeURIComponent(q.message || ''), target:'_blank', rel:'noopener', onclick:e => e.stopPropagation()}, 'WhatsApp') : null,
         inLead ? null : h('button',{type:'button', class:'linkbtn', onclick:() => { S.crmTab = 'leads'; S.crmOpen = l.id; renderCrm(); }}, 'Client')))); }))));
 }
