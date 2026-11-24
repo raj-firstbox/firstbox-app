@@ -350,6 +350,7 @@ input[type=date]{cursor:pointer}
 .smpfx{display:flex;flex-wrap:wrap;gap:6px 16px}
 .smpfx label{display:flex;align-items:center;gap:4px;font-size:14px}
 .smptable .btn.armed{background:var(--bad);border-color:var(--bad);white-space:normal;max-width:190px;line-height:1.25}
+.smpacts{display:flex;flex-wrap:wrap;align-items:center;gap:6px 8px}
 .smppics{display:flex;flex-wrap:wrap;gap:10px;margin:4px 0 8px}
 .smppic{position:relative;width:110px;height:110px;border-radius:8px;overflow:hidden;border:1px solid var(--line);background:var(--surface);display:grid;place-items:center}
 .smppic.loading{background:var(--sunk)}
@@ -514,6 +515,7 @@ body:not(.show-rates) .adv{display:none}
   table.jobs td[data-lab]::before{content:attr(data-lab);display:block;font-size:10.5px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:var(--muted);margin-bottom:1px}
   table.jobs td.lead{grid-column:1/-1;padding-right:44px}
   table.smptable td:nth-child(3){grid-column:1/-1}
+  table.smptable td:last-child{grid-column:1/-1}
   table.jobs td.act{position:absolute;top:8px;right:8px;padding:0}
   table.jobs td:empty{display:none}
   table.jobs .sub{max-width:none}
@@ -3393,15 +3395,17 @@ function sampleRows(list, compact){
             smpFacts(s),
             s.details ? h('div',{class:'smptext'}, s.details) : null,
             s.notes ? h('div',{class:'smptext'}, s.notes) : null,
-            h('div',{class:'sub'}, 'Added' + (s.by ? ' by ' + s.by : '') + ' on ' + fmtDate(s.date)),
-            (edit || own) ? h('div',{class:'row', style:'gap:8px;margin-top:6px'},
-              edit ? h('button',{type:'button', class:'btn small', onclick:e => { e.stopPropagation(); S.smpEdit = s.id; S.smpNew = false; renderSamples(); window.scrollTo(0, 0); }}, 'Edit') : null,
-              own ? rowDelete('sample ' + s.id, async () => { S.samples.delete(s.id); S.smpOpen = null; for (const id of s.picIds || []) removeDoc('samplePics/' + id); await removeDoc('samples/' + s.id); renderSamples(); }) : null) : null) : null),
+            h('div',{class:'sub'}, 'Added' + (s.by ? ' by ' + s.by : '') + ' on ' + fmtDate(s.date))) : null),
         h('td',{}, smpSize(s) || '—'),
-        h('td',{}, s.status === 'ready'
-          ? [h('span',{class:'pill Completed'}, 'Ready'), h('div',{class:'sub'}, (s.readyBy ? s.readyBy + ' · ' : '') + fmtDate(s.readyAt)),
-             compact ? null : h('button',{type:'button', class:'linkbtn', style:'font-size:12px', onclick:e => { e.stopPropagation(); markSample(s, false); }}, 'Not ready yet')]
-          : readyBtn(s)));
+        h('td',{}, h('div',{class:'smpacts'},
+          s.status === 'ready'
+            ? h('div',{}, h('span',{class:'pill Completed'}, 'Ready'), h('div',{class:'sub'}, (s.readyBy ? s.readyBy + ' · ' : '') + fmtDate(s.readyAt)),
+                compact ? null : h('button',{type:'button', class:'linkbtn', style:'font-size:12px', onclick:e => { e.stopPropagation(); markSample(s, false); }}, 'Not ready yet'))
+            : readyBtn(s),
+          // Edit and Delete on the line itself (Raj), next to Mark ready.
+          edit ? h('button',{type:'button', class:'btn small', onclick:e => { e.stopPropagation(); S.smpEdit = s.id; S.smpNew = false; S.smpOpen = s.id; if (S.view !== 'samples') go('samples'); else renderSamples(); window.scrollTo(0, 0); }}, 'Edit') : null,
+          own ? rowDelete('sample ' + s.id, async () => { S.samples.delete(s.id); if (S.smpOpen === s.id) S.smpOpen = null; for (const id of s.picIds || []) removeDoc('samplePics/' + id); await removeDoc('samples/' + s.id);
+            if (S.view === 'samples') renderSamples(); if (S.view === 'home') renderHome(); if (S.view === 'orders') renderOrders(); }) : null)));
     }))));
 }
 function renderSamples(){
