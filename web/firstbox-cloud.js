@@ -334,6 +334,29 @@
     }
   });
 
+  // E-way bills through the GSP gstinapi.in (supabase/ewaybill-api.sql). The key and passwords stay in the database.
+  window.firstboxEwb = Object.freeze({
+    async status() {
+      const { data, error } = await sb.rpc('ewb_api_status');
+      if (error) return { ready: false, missing: true };
+      return data || { ready: false };
+    },
+    async setup(key, user, pass, test) {
+      const { error } = await sb.rpc('set_ewb_api', { p_key: key, p_user: user, p_pass: pass, p_test: test });
+      if (error) rpcErr(error);
+    },
+    async generate(gstin, payload) {
+      const { data, error } = await sb.rpc('ewb_generate', { p_gstin: gstin, p_payload: payload });
+      if (error) rpcErr(error);
+      return data;
+    },
+    async cancel(gstin, no, reason, remark) {
+      const { data, error } = await sb.rpc('ewb_cancel', { p_gstin: gstin, p_no: no, p_reason: reason, p_remark: remark });
+      if (error) rpcErr(error);
+      return data;
+    }
+  });
+
   window.claude = Object.freeze({
     async use(name) {
       if (!['db', 'user', 'downloads'].includes(name)) return null;

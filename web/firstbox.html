@@ -2495,36 +2495,97 @@ function renderBill(){
       own ? rowDelete(BILL_TYPE[b.type].toLowerCase(), async () => { await deleteBill(b); S.billTab = b.type; go('bills'); }) : null)));
   root.append(h('div',{id:'bill-alert'}));
   // E-way bill panel (tax invoices): what's missing, the file for the portal, then the number back.
-  const ewbBox = h('div',{}); root.append(ewbBox);
+  const ewbBox = h('div',{}), ewbMsg = h('div',{class:'note', role:'status', 'aria-live':'polite'}); root.append(ewbBox);
   let trBox = null;
   function drawEwb(){
     const btn = $('#ewb-btn'); if (btn) btn.textContent = (b.transport || {}).eway ? 'E-way bill ' + b.transport.eway : 'Generate e-way bill';
     if (b.type !== 'invoice' || S.ewbOpen !== b.id){ ewbBox.replaceChildren(); return; }
-    const probs = ewbProblems(b), c = billCalc(b), tr = b.transport || {};
-    const msg = h('div',{class:'note', role:'status'});
-    const say = t => { msg.textContent = t; };
+    const api = window.firstboxEwb;
+    if (api && S.ewbApi === undefined){ S.ewbApi = null; api.status().then(x => { S.ewbApi = x || {ready:false}; drawEwb(); }).catch(() => { S.ewbApi = {ready:false}; drawEwb(); }); }
+    const live = !!(S.ewbApi && S.ewbApi.ready), probs = ewbProblems(b), c = billCalc(b), tr = b.transport || {};
+    const msg = ewbMsg;
+    const say = (t, bad) => { msg.className = 'note' + (bad ? ' warnline' : ''); msg.textContent = t; };
+    const refreshTr = () => { if (trBox){ const nb = transportCard(b, touch); trBox.replaceWith(nb); trBox = nb; } };
     const num = h('input',{value: tr.eway || '', placeholder:'12-digit e-way bill no.', inputmode:'numeric', style:'max-width:220px', 'aria-label':'E-way bill number'});
     const saveNum = () => { const v = num.value.replace(/\D/g, '');
-      if (v && v.length !== 12){ say('An e-way bill number has 12 digits.'); return; }
-      b.transport = b.transport || {mode:'Road'}; b.transport.eway = v; if (v) b.transport.on = true; touch();
-      if (trBox){ const nb = transportCard(b, touch); trBox.replaceWith(nb); trBox = nb; }
-      drawEwb(); };
+      if (v && v.length !== 12){ say('An e-way bill number has 12 digits.', true); return; }
+      b.transport = b.transport || {mode:'Road'}; b.transport.eway = v; if (v) b.transport.on = true; touch(); refreshTr(); drawEwb(); };
+    const errText = r => { const code = String(r.error_code || ''), e = String(r.error || r.message || 'The e-way bill was not made.');
+      if (code === '108') return 'The e-way bill API username or password was refused (code 108). Check them in ⚙ Billing details, and that gstinapi.in is the GSP chosen on the e-way bill website.';
+      if (r.http_status === 403 || /paid_account/.test(e)) return 'gstinapi.in needs a credit pack for real e-way bills (test mode is free). Buy credits in your gstinapi.in dashboard, then try again.';
+      if (r.http_status === 401) return 'gstinapi.in refused the API key. Paste it again in ⚙ Billing details.';
+      if (r.http_status === 429 || code === '658') return 'Too many tries in a short time. Wait a few minutes and try again.';
+      return e + (code ? ' (code ' + code + ')' : '') + '.'; };
+    // Steps for the manual route (download the file, upload it on the portal, type the number back).
+    const manual = () => [
+      h('div',{}, h('b',{}, '1. '), 'Download the e-way bill file.'),
+      h('div',{class:'row'}, h('button',{class:live ? 'btn' : 'btn primary', onclick:async e => { const t = e.currentTarget; t.disabled = true; await downloadEwb(b, say); t.disabled = false; }}, 'Download e-way bill file')),
+      h('div',{}, h('b',{}, '2. '), 'Open the e-way bill portal and log in → e-Waybill → Generate Bulk → choose the file → Upload → Generate.'),
+      h('div',{class:'row'}, h('a',{class:'btn', href: EWB_PORTAL, target:'_blank', rel:'noopener'}, 'Open e-way bill portal')),
+      h('div',{}, h('b',{}, '3. '), 'Type the e-way bill number the portal gives you. It prints on the invoice PDF.'),
+      h('div',{class:'row'}, num, h('button',{class:'btn', onclick:saveNum}, 'Save number'))];
+    const generate = async t => {
+      t.disabled = true; t.textContent = 'Making the e-way bill…'; say('');
+      try {
+        const r = await api.generate(billCfg().gstin, ewbPayload(b)) || {};
+        if (!r.success){ say(errText(r), true); return; }
+        if (r.test_mode){ S.ewbConfirm = null; drawEwb(); say('✓ Test worked: sample number ' + r.ewaybill_no + '. Nothing was filed and nothing was saved on the invoice. Switch off test mode in ⚙ Billing details to make real e-way bills.'); return; }
+        b.transport = b.transport || {mode:'Road'};
+        Object.assign(b.transport, {on: true, eway: String(r.ewaybill_no || '').replace(/\D/g, ''), ewbDate: r.ewaybill_date || '', ewbValid: r.valid_upto || '', ewbAt: Date.now(), ewbBy: S.myName || ''});
+        S.ewbConfirm = null; touch(); await saveAll(); refreshTr(); drawEwb();
+        say((r.already_existed ? '✓ This invoice already had an e-way bill; its number is now saved: ' : '✓ E-way bill made and saved on the invoice: ') + b.transport.eway + '.');
+      } catch(e){ say('Couldn’t make the e-way bill: ' + (e && e.message ? e.message : 'try again') + '.', true); }
+      finally { if (t.isConnected){ t.disabled = false; t.textContent = 'Yes, generate e-way bill'; } }
+    };
+    const cancelForm = () => {
+      const why = sel([['2','Order cancelled'], ['3','Data entry mistake'], ['1','Duplicate'], ['4','Others']], '3', {'aria-label':'Reason'});
+      const rem = h('input',{placeholder:'Short remark (optional)', maxlength:'50', 'aria-label':'Remark'});
+      const go2 = h('button',{class:'btn danger', onclick:async () => {
+        go2.disabled = true; go2.textContent = 'Cancelling…';
+        try {
+          const r = await api.cancel(billCfg().gstin, tr.eway, why.value, rem.value.trim() || why.selectedOptions[0].textContent) || {};
+          if (!r.success){ say(errText(r), true); return; }
+          if (r.test_mode){ say('✓ Test cancel worked. Nothing was cancelled, because test mode is on.'); return; }
+          b.transport.ewbCancelled = [...(b.transport.ewbCancelled || []), {no: tr.eway, date: r.cancel_date || today(), reason: why.selectedOptions[0].textContent, by: S.myName || ''}];
+          Object.assign(b.transport, {eway: '', ewbDate: '', ewbValid: '', ewbAt: null});
+          S.ewbCancel = null; touch(); await saveAll(); refreshTr(); drawEwb(); say('✓ E-way bill cancelled.');
+        } catch(e){ say('Couldn’t cancel: ' + (e && e.message ? e.message : 'try again') + '.', true); }
+        finally { if (go2.isConnected){ go2.disabled = false; go2.textContent = 'Cancel e-way bill'; } } }}, 'Cancel e-way bill');
+      return h('div',{class:'inv-pbox'}, h('b',{}, 'Cancel e-way bill ' + tr.eway + '?'), h('div',{class:'note'}, 'Allowed only within 24 hours of making it. This cannot be undone.'),
+        h('div',{class:'grid'}, fld('Reason', why), fld('Remark', rem)), h('div',{class:'row'}, go2, h('button',{class:'btn', onclick:() => { S.ewbCancel = null; drawEwb(); }}, 'Keep it')));
+    };
+    let body;
+    if (tr.eway && live){
+      body = [h('div',{class:'inv-pbox'},
+        h('b',{}, '✓ E-way bill no. ' + tr.eway),
+        tr.ewbDate || tr.ewbValid ? h('div',{class:'note'}, [tr.ewbDate ? 'Made ' + tr.ewbDate : '', tr.ewbValid ? 'valid until ' + tr.ewbValid : ''].filter(Boolean).join(' · ')) : null,
+        h('div',{class:'row'}, h('a',{class:'btn', href: EWB_PORTAL, target:'_blank', rel:'noopener'}, 'Open e-way bill portal'),
+          S.ewbCancel === b.id ? null : h('button',{class:'btn', onclick:() => { S.ewbCancel = b.id; drawEwb(); }}, 'Cancel e-way bill…'))),
+        S.ewbCancel === b.id ? cancelForm() : null];
+    } else if (probs.length){
+      body = [h('div',{class:'inv-pbox'},
+        h('b',{}, 'Fill these in first (this list updates as you type):'),
+        h('ul',{style:'margin:4px 0 0 18px;padding:0'}, probs.map(t => h('li',{}, t))),
+        h('div',{}, h('button',{class:'btn', onclick:drawEwb}, 'Check again')))];
+    } else if (live){
+      const sh = ewbShip(b);
+      body = [h('div',{class:'inv-pbox'},
+        h('b',{}, '✓ All the details are there.'),
+        S.ewbApi.test ? h('div',{class:'warnline'}, 'Test mode is on: this only checks the details, nothing is filed. Switch it off in ⚙ Billing details for real e-way bills.') : null,
+        S.ewbConfirm === b.id
+          ? [h('div',{}, 'This files an e-way bill with the GST system for invoice ', h('b',{}, b.no || ''), ', ', h('b',{}, rs2(c.total)), ', to ', h('b',{}, (b.client || {}).name || ''), sh ? ' (shipped to ' + (sh.name || sh.address || 'another address') + ')' : '', ', ',
+              (tr.mode || 'Road') === 'Road' ? (ewbVehicle(tr.vehicle) ? 'vehicle ' + ewbVehicle(tr.vehicle) : 'transporter ' + String(tr.id || '').toUpperCase()) : tr.mode, ', ' + n0(tr.distance) + ' km.'),
+             h('div',{class:'row'}, h('button',{class:'btn primary', onclick:e => generate(e.currentTarget)}, 'Yes, generate e-way bill'), h('button',{class:'btn', onclick:() => { S.ewbConfirm = null; drawEwb(); }}, 'Not now'))]
+          : h('div',{class:'row'}, h('button',{class:'btn primary', onclick:() => { S.ewbConfirm = b.id; drawEwb(); }}, S.ewbApi.test ? 'Test e-way bill' : 'Generate e-way bill now'))),
+        h('details',{}, h('summary',{class:'note', style:'cursor:pointer'}, 'Or make it yourself on the portal'), h('div',{class:'inv-pbox', style:'margin-top:8px'}, ...manual()))];
+    } else {
+      body = [h('div',{class:'inv-pbox'}, h('b',{}, '✓ All the details are there.'), ...manual(),
+        isOwnerRole() && api ? h('div',{class:'note'}, 'To make e-way bills with one click, set up the connection in ', h('button',{class:'linkbtn', onclick:() => go('billing')}, '⚙ Billing details'), '.') : null)];
+    }
     ewbBox.replaceChildren(h('section',{class:'inv-party', style:'margin-bottom:16px'},
       h('div',{class:'row', style:'justify-content:space-between'}, h('h2',{}, 'E-way bill'), h('button',{class:'linkbtn', onclick:() => { S.ewbOpen = null; drawEwb(); }}, 'Close')),
-      c.total < 50000 ? h('div',{class:'note'}, 'This invoice is ' + rs(c.total) + ': an e-way bill is normally needed only above ₹50,000, but you can still make one.') : null,
-      probs.length ? h('div',{class:'inv-pbox'},
-          h('b',{}, 'Fill these in first (this list updates as you type):'),
-          h('ul',{style:'margin:4px 0 0 18px;padding:0'}, probs.map(t => h('li',{}, t))),
-          h('div',{}, h('button',{class:'btn', onclick:drawEwb}, 'Check again')))
-        : h('div',{class:'inv-pbox'},
-          h('b',{}, '✓ All the details are there.'),
-          h('div',{}, h('b',{}, '1. '), 'Download the e-way bill file.'),
-          h('div',{class:'row'}, h('button',{class:'btn primary', onclick:async e => { const t = e.currentTarget; t.disabled = true; await downloadEwb(b, say); t.disabled = false; }}, 'Download e-way bill file')),
-          h('div',{}, h('b',{}, '2. '), 'Open the e-way bill portal and log in → e-Waybill → Generate Bulk → choose the file → Upload → Generate.'),
-          h('div',{class:'row'}, h('a',{class:'btn', href: EWB_PORTAL, target:'_blank', rel:'noopener'}, 'Open e-way bill portal')),
-          h('div',{}, h('b',{}, '3. '), 'Type the e-way bill number the portal gives you. It prints on the invoice PDF.'),
-          h('div',{class:'row'}, num, h('button',{class:'btn', onclick:saveNum}, 'Save number'))),
-      msg));
+      c.total < 50000 && !tr.eway ? h('div',{class:'note'}, 'This invoice is ' + rs(c.total) + ': an e-way bill is normally needed only above ₹50,000, but you can still make one.') : null,
+      ...body, msg));
   }
   if (own && !cfg.gstin) root.append(h('div',{class:'banner'}, 'Firstbox’s GSTIN and bank details are not filled in yet. Add them in ', h('button',{class:'linkbtn', onclick:() => go('billing')}, '⚙ Billing details'), '.'));
   const paper = h('div',{class:'inv'}); root.append(paper);
@@ -2777,6 +2838,28 @@ function renderBilling(){
     h('div',{class:'note'}, 'Uses the AppyFlow GST verification service (appyflow.in): 50 free lookups, then about 40–50 paise per lookup from a prepaid wallet. Sign up there, copy your “key secret” and paste it here. The key is stored inside your database and is never shown in the app again.'),
     gst && gst.setKey ? [h('div',{class:'row', style:'align-items:flex-end;gap:8px'}, fld('Key secret', keyIn), keyBtn), st] : h('div',{class:'note'}, 'This works in the Firstbox app (Mac / Windows), not in this preview.')));
   if (gst && gst.isSet) gst.isSet().then(on => { if (!st.textContent) st.textContent = on ? '✓ GST lookup is switched on.' : 'Not set up yet.'; }).catch(() => {});
+  // E-way bill connection through the GSP gstinapi.in (kept inside the database; key and password never shown again)
+  const ewb = window.firstboxEwb;
+  if (ewb && ewb.setup){
+    const est = h('div',{class:'note', role:'status'});
+    const ek = h('input',{type:'password', autocomplete:'off', placeholder:'gak_…  (leave empty to keep the saved one)'});
+    const eu = h('input',{autocomplete:'off', placeholder:'E-way bill API username'});
+    const ep = h('input',{type:'password', autocomplete:'new-password', placeholder:'(leave empty to keep the saved one)'});
+    const et = h('input',{type:'checkbox', checked:true});
+    const show = x => { S.ewbApi = x; eu.value = x.user || ''; et.checked = x.test !== false;
+      est.className = 'note' + (x.ready ? '' : ' warnline');
+      est.textContent = x.missing ? 'The database part isn’t installed yet (supabase/ewaybill-api.sql).' : x.ready ? '✓ Connected' + (x.test !== false ? ' · TEST MODE: nothing is filed' : ' · real e-way bills are filed') + '.' : 'Not set up yet' + (x.key || x.user || x.pass ? ' (missing: ' + [x.key ? '' : 'API key', x.user ? '' : 'username', x.pass ? '' : 'password'].filter(Boolean).join(', ') + ').' : '.'); };
+    const eb = h('button',{class:'btn primary', onclick:async () => { eb.disabled = true; est.className = 'note'; est.textContent = 'Saving…';
+      try { await ewb.setup(ek.value.trim() || null, eu.value.trim() || null, ep.value || null, et.checked); ek.value = ''; ep.value = ''; show(await ewb.status()); }
+      catch(e){ est.className = 'note warnline'; est.textContent = 'Couldn’t save: ' + (e && e.message ? e.message : 'try again'); }
+      finally { eb.disabled = false; } }}, 'Save e-way bill connection');
+    root.append(card('E-way bill connection (gstinapi.in)',
+      h('div',{class:'note'}, 'Makes e-way bills with one click from a tax invoice. Needs: the API key from your gstinapi.in dashboard, and the e-way bill API username and password you created on the e-way bill website (Registration › For GSP, with gstinapi.in chosen). They are stored inside your database and are never shown again. Owner, admins and the accounts team can make e-way bills.'),
+      h('div',{class:'grid'}, fld('gstinapi.in API key', ek), fld('E-way bill API username', eu), fld('E-way bill API password', ep)),
+      h('label',{class:'row', style:'gap:8px'}, et, 'Test mode: check everything without filing (free). Untick when you are ready for real e-way bills.'),
+      h('div',{class:'row'}, eb), est));
+    ewb.status().then(show).catch(() => {});
+  }
   root.append(saveFoot());   // Save button at the bottom too
 }
 
@@ -3067,30 +3150,44 @@ function ewbProblems(b){
   }
   return out;
 }
-function ewbData(b){
+const EWB_UQC = {NOS:'NOS', PCS:'PCS', SET:'SET', BOX:'BOX', KG:'KGS', KGS:'KGS', PKT:'PAC', ROLL:'ROL'};
+// One e-way bill in the API's field names (as india-compliance sends it); ewbData renames a few for the bulk file.
+function ewbBill(b){
   const cfg = billCfg(), cl = b.client || {}, tr = b.transport || {}, calc = billCalc(b), sh = ewbShip(b), inter = calc.inter;
   const from = ewbAddr(cfg.address), to = ewbAddr((sh || cl).address), goods = ewbGoods(b);
-  const byHsn = new Map();
-  for (const r of goods){ const k = String(r.it.hsn).trim() + '|' + n0(r.it.gst); const e = byHsn.get(k) || {hsn: String(r.it.hsn).trim(), gst: n0(r.it.gst), amt: 0, tax: 0}; e.amt = r2(e.amt + r.amt); e.tax = r2(e.tax + r.tax); byHsn.set(k, e); }
-  const half = v => r2(v / 2), items = [...byHsn.values()];
-  const tax = r2(items.reduce((a, e) => a + e.tax, 0)), cg = r2(items.reduce((a, e) => a + half(e.tax), 0));
-  const taxable = r2(items.reduce((a, e) => a + e.amt, 0)), gi = new Set(goods.map(r => r.it)), other = calc.rows.filter(r => !gi.has(r.it) && (r.it.name || n0(r.it.qty))).reduce((a, r) => a + r.total, 0);
+  const half = v => r2(v / 2), gi = new Set(goods.map(r => r.it));
+  const tax = r2(goods.reduce((a, r) => a + r.tax, 0)), cg = r2(goods.reduce((a, r) => a + half(r.tax), 0)), taxable = r2(goods.reduce((a, r) => a + r.amt, 0));
+  const other = r2(calc.rows.filter(r => !gi.has(r.it) && (r.it.name || n0(r.it.qty))).reduce((a, r) => a + r.total, 0) + n0(calc.round));
   const mode = {Road: 1, Rail: 2, Air: 3, Ship: 4}[tr.mode || 'Road'] || 1;
+  const hsnAmt = {}; goods.forEach(r => { const k = String(r.it.hsn).trim(); hsnAmt[k] = (hsnAmt[k] || 0) + r.amt; });
   const bill = {
     userGstin: String(cfg.gstin).toUpperCase(), supplyType: 'O', subSupplyType: 1, subSupplyDesc: '', docType: 'INV',
-    docNo: ewbTxt(b.no, '/ -', 16), docDate: ewbDate(b.date), transType: sh ? 2 : 1,
+    docNo: ewbTxt(b.no, '/ -', 16), docDate: ewbDate(b.date), transactionType: sh ? 2 : 1,
     fromGstin: String(cfg.gstin).toUpperCase(), fromTrdName: ewbTxt(cfg.name, '/. -', 100), fromAddr1: from.a1, fromAddr2: from.a2, fromPlace: from.place,
-    fromPincode: ewbPin(cfg.pin), fromStateCode: +cfg.state, actualFromStateCode: +cfg.state,
+    fromPincode: ewbPin(cfg.pin), fromStateCode: +cfg.state, actFromStateCode: +cfg.state,
     toGstin: cl.gstin && (gstinInfo(cl.gstin) || {}).ok ? String(cl.gstin).toUpperCase() : 'URP', toTrdName: ewbTxt(cl.name, '/. -', 100),
-    toAddr1: to.a1, toAddr2: to.a2, toPlace: to.place, toPincode: ewbPin((sh || cl).pin), toStateCode: ewbState(cl), actualToStateCode: ewbState(sh || cl),
+    toAddr1: to.a1, toAddr2: to.a2, toPlace: to.place, toPincode: ewbPin((sh || cl).pin), toStateCode: ewbState(cl), actToStateCode: ewbState(sh || cl),
     totalValue: taxable, cgstValue: inter ? 0 : cg, sgstValue: inter ? 0 : r2(tax - cg), igstValue: inter ? tax : 0, cessValue: 0,
-    TotNonAdvolVal: 0, OthValue: r2(Math.max(0, other)), totInvValue: calc.total,
+    cessNonAdvolValue: 0, otherValue: other, totInvValue: calc.total,
     transMode: mode, transDistance: Math.round(n0(tr.distance)), transporterId: String(tr.id || '').trim().toUpperCase(), transporterName: ewbTxt(tr.name, '@#/,&. -', 100),
     transDocNo: ewbTxt(tr.docNo, '/. -', 15), transDocDate: ewbDate(tr.docDate),
-    itemList: items.map((e, i) => ({itemNo: i + 1, hsnCode: +e.hsn, taxableAmount: e.amt, qtyUnit: '',
-      sgstRate: inter ? 0 : e.gst / 2, cgstRate: inter ? 0 : e.gst / 2, igstRate: inter ? e.gst : 0, cessRate: 0, cessNonAdvol: 0}))};
+    itemList: goods.map((r, i) => ({itemNo: i + 1, productName: '', productDesc: ewbTxt(r.it.name, '/. -&,', 100), hsnCode: +String(r.it.hsn).trim(),
+      qtyUnit: EWB_UQC[String(r.it.unit || '').toUpperCase()] || 'OTH', quantity: n0(r.it.qty), taxableAmount: r.amt,
+      sgstRate: inter ? 0 : n0(r.it.gst) / 2, cgstRate: inter ? 0 : n0(r.it.gst) / 2, igstRate: inter ? n0(r.it.gst) : 0, cessRate: 0, cessNonAdvol: 0})),
+    mainHsnCode: +(Object.entries(hsnAmt).sort((x, y) => y[1] - x[1])[0] || ['0'])[0]};
   if (mode === 1){ const v = ewbVehicle(tr.vehicle); if (v) bill.vehicleNo = v; bill.vehicleType = 'R'; }
-  return {version: '1.0.0421', billLists: [bill]};
+  return bill;
+}
+// Bulk-upload file for the portal (Generate Bulk), version 1.0.0621.
+function ewbData(b){
+  const bill = ewbBill(b);
+  for (const [k, v] of [['transactionType','transType'], ['actFromStateCode','actualFromStateCode'], ['actToStateCode','actualToStateCode'], ['otherValue','OthValue'], ['cessNonAdvolValue','TotNonAdvolVal']]){ bill[v] = bill[k]; delete bill[k]; }
+  return {version: '1.0.0621', billLists: [bill]};
+}
+// The same e-way bill for the GSP's API: empty values left out.
+function ewbPayload(b){
+  const clean = v => Array.isArray(v) ? v.map(clean) : v && typeof v === 'object' ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, clean(x)]).filter(([, x]) => x !== '' && x != null)) : v;
+  return clean(ewbBill(b));
 }
 async function downloadEwb(b, say){
   const dl = window.claude && window.claude.use ? await window.claude.use('downloads') : null;
