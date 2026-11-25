@@ -2494,10 +2494,10 @@ function renderBill(){
     h('div',{class:'row'}, saveBtn(),
       pf ? h('button',{class:'btn', onclick:() => convertToInvoice(b)}, to ? 'Open tax invoice ' + to.no : 'Convert to Tax Invoice') : null,
       b.type === 'invoice' ? (b.challanId && S.bills.has(b.challanId) ? h('button',{class:'btn', onclick:() => go('bill', b.challanId)}, 'Open challan ' + S.bills.get(b.challanId).no) : h('button',{class:'btn', onclick:() => challanFromInvoice(b)}, 'Make delivery challan')) : null,
-      !dc ? h('button',{class:'btn', onclick:() => newPaymentFor(b)}, '+ Record payment') : null,
       b.type === 'invoice' || dc ? h('button',{class:'btn', id:'ewb-btn', onclick:() => { S.ewbOpen = S.ewbOpen === b.id ? null : b.id; drawEwb(); if (S.ewbOpen) ewbBox.scrollIntoView({block:'nearest'}); }}, (b.transport || {}).eway ? 'E-way bill ' + b.transport.eway : 'Generate e-way bill') : null,
-      h('button',{class:'btn', onclick:e => downloadBill(b, e.currentTarget)}, 'Download PDF'),
       b.type === 'invoice' || dc ? h('button',{class:'btn', onclick:e => downloadBill(b, e.currentTarget, true)}, 'Get receiving copy') : null,
+      h('button',{class:'btn', onclick:e => downloadBill(b, e.currentTarget)}, 'Download PDF'),
+      !dc ? h('button',{class:'btn', onclick:() => newPaymentFor(b)}, '+ Record payment') : null,
       own ? rowDelete(BILL_TYPE[b.type].toLowerCase(), async () => { await deleteBill(b); S.billTab = b.type; go('bills'); }) : null)));
   root.append(h('div',{id:'bill-alert'}));
   // E-way bill panel (tax invoices): what's missing, the file for the portal, then the number back.
