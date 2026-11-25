@@ -2497,6 +2497,7 @@ function renderBill(){
       !dc ? h('button',{class:'btn', onclick:() => newPaymentFor(b)}, '+ Record payment') : null,
       b.type === 'invoice' || dc ? h('button',{class:'btn', id:'ewb-btn', onclick:() => { S.ewbOpen = S.ewbOpen === b.id ? null : b.id; drawEwb(); if (S.ewbOpen) ewbBox.scrollIntoView({block:'nearest'}); }}, (b.transport || {}).eway ? 'E-way bill ' + b.transport.eway : 'Generate e-way bill') : null,
       h('button',{class:'btn', onclick:e => downloadBill(b, e.currentTarget)}, 'Download PDF'),
+      b.type === 'invoice' || dc ? h('button',{class:'btn', onclick:e => downloadBill(b, e.currentTarget, true)}, 'Get receiving copy') : null,
       own ? rowDelete(BILL_TYPE[b.type].toLowerCase(), async () => { await deleteBill(b); S.billTab = b.type; go('bills'); }) : null)));
   root.append(h('div',{id:'bill-alert'}));
   // E-way bill panel (tax invoices): what's missing, the file for the portal, then the number back.
@@ -2916,15 +2917,15 @@ function renderBilling(){
   root.append(saveFoot());   // Save button at the bottom too
 }
 
-async function downloadBill(b, btn){
+async function downloadBill(b, btn, receiving){
   const label = btn.textContent; btn.disabled = true; btn.textContent = 'Making PDF…';
   const say = t => { const a = $('#bill-alert'); if (a) a.replaceChildren(h('div',{class:'banner'}, t)); };
   try {
     const dl = window.claude && window.claude.use ? await window.claude.use('downloads') : null;
     if (!dl){ say('Downloading isn’t available in this view.'); return; }
     let bytes;
-    try { bytes = await buildBillPdf(b); } catch(e){ console.error(e); say('Couldn’t make the PDF. Check your internet connection and try again.'); return; }
-    const name = ((b.type === 'proforma' ? 'Proforma ' : 'Tax invoice ') + (b.no || '') + ' ' + ((b.client || {}).name || '')).replace(/[\\/:*?"<>|]+/g, ' ').replace(/\s+/g, ' ').trim() + '.pdf';
+    try { bytes = await buildBillPdf(b, receiving ? {receiving: true} : undefined); } catch(e){ console.error(e); say('Couldn’t make the PDF. Check your internet connection and try again.'); return; }
+    const name = ((b.type === 'proforma' ? 'Proforma ' : b.type === 'challan' ? 'Delivery challan ' : 'Tax invoice ') + (b.no || '') + ' ' + ((b.client || {}).name || '') + (receiving ? ' - Receiving copy' : '')).replace(/[\\/:*?"<>|]+/g, ' ').replace(/\s+/g, ' ').trim() + '.pdf';
     try { const res = await dl.save({filename: name, data: new Blob([bytes], {type:'application/pdf'})}); btn.textContent = res && res.path ? 'Saved' : 'Downloaded'; if (res && res.path) say('Saved to ' + res.path); setTimeout(() => btn.textContent = label, 2000); return; }
     catch(e){ if (e && e.code === 'declined') return; say('The download didn’t work here. Try again.'); }
   } finally { btn.disabled = false; if (btn.textContent === 'Making PDF…') btn.textContent = label; }
@@ -2955,7 +2956,7 @@ async function buildBillPdf(b, opt){
 
   // Header: title, number, date; logo on the right.
   text(pf ? 'Proforma Invoice' : dc ? 'DELIVERY CHALLAN' : 'TAX INVOICE', M, H - 60, F, 24, BLUE);
-  if (rc){ const tx = M + tw('TAX INVOICE', F, 24) + 14, lab = 'RECEIVING COPY', lw = tw(lab, FB, 10) + 16;
+  if (rc){ const tx = M + tw(dc ? 'DELIVERY CHALLAN' : 'TAX INVOICE', F, 24) + 14, lab = 'RECEIVING COPY', lw = tw(lab, FB, 10) + 16;
     page.drawRectangle({x: tx, y: H - 63, width: lw, height: 20, borderColor: BLUE, borderWidth: 1.2}); text(lab, tx + 8, H - 56, FB, 10, BLUE); }
   text(dc ? 'Challan No' : 'Invoice No', M + 1, H - 90, F, 9, GREY); text(b.no || '', M + 70, H - 90, FB, 9);
   text(dc ? 'Challan Date' : 'Invoice Date', M + 1, H - 108, F, 9, GREY); text(billDate(b.date), M + 70, H - 108, FB, 9);
@@ -3133,7 +3134,7 @@ async function buildBillPdf(b, opt){
     const tot = parts.reduce((a, [t, f]) => a + tw(t, f, 9), 0); let cx = W / 2 - tot / 2;
     parts.forEach(([t, f]) => { cx = text(t, cx, y - 6, f, 9); });
   }
-  if (rc){
+  if (rc && !dc){
     // Receiver signs and stamps here; a photo of this page marks the delivery done (Delivery box on the invoice).
     if (y < 75) newPage();
     const sx = W - M - 210, sy = y - 46;
