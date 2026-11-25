@@ -702,6 +702,8 @@ body.has-side .side{display:flex}
         <button type="button" role="menuitem" id="tab-history" data-go="history"><b>Price history</b><span>How raw material prices have changed over time</span></button>
         <button type="button" role="menuitem" id="tab-past" data-go="past"><b>Database</b><span>Boxes made before and their selling prices</span></button>
         <button type="button" role="menuitem" id="tab-billing" data-go="billing"><b>Billing details</b><span>Firstbox GSTIN, address, bank, invoice numbers and terms</span></button>
+        <button type="button" role="menuitem" id="tab-clients" data-go="clients"><b>Clients</b><span>Every client billed, with GSTIN and delivery addresses</span></button>
+        <button type="button" role="menuitem" id="tab-items" data-go="items"><b>Saved items</b><span>Items used on bills: HSN, unit, rate and description</span></button>
         <button type="button" role="menuitem" id="tab-team" data-go="team"><b>Team &amp; access</b><span>Choose who can use inventory and job cards</span></button>
       </div>
     </div>
@@ -722,6 +724,8 @@ body.has-side .side{display:flex}
   <section id="view-pay" hidden></section>
   <section id="view-bill" hidden></section>
   <section id="view-billing" hidden></section>
+  <section id="view-clients" hidden></section>
+  <section id="view-items" hidden></section>
   <section id="view-orders" hidden></section>
   <section id="view-order" hidden></section>
   <section id="view-pos" hidden></section>
@@ -1441,7 +1445,7 @@ function fromHash(){
   else if (hsh.startsWith('order-')) go('order', hsh.slice(6));
   else if (hsh.startsWith('bill-')) go('bill', hsh.slice(5));
   else if (hsh.startsWith('pay-')) go('pay', hsh.slice(4));
-  else go(['home','jobs','rates','history','cards','stock','team','past','orders','pos','samples','crm','bills','billing'].includes(hsh) ? hsh : homeView());
+  else go(['home','jobs','rates','history','cards','stock','team','past','orders','pos','samples','crm','bills','billing','clients','items'].includes(hsh) ? hsh : homeView());
 }
 document.querySelectorAll('[data-go]').forEach(b => b.addEventListener('click', () => { closeSettings(); go(b.dataset.go); }));
 // Settings menu (top-left gear): Rate list and Price history.
@@ -1462,7 +1466,7 @@ function render(){
   renderSide();
   const ready = S.role === 'owner' || !!ROLES[S.role];
   $('#view-access').hidden = ready;
-  if (!ready){ ['home','past','jobs','job','rates','history','cards','stock','card','team','orders','order','pos','samples','crm','bills','bill','billing','pay'].forEach(v => $('#view-' + v).hidden = true); renderAccess(); return; }
+  if (!ready){ ['home','past','jobs','job','rates','history','cards','stock','card','team','orders','order','pos','samples','crm','bills','bill','billing','clients','items','pay'].forEach(v => $('#view-' + v).hidden = true); renderAccess(); return; }
   $('#view-team').hidden = S.view !== 'team';
   $('#tab-team').setAttribute('aria-current', S.view === 'team' ? 'page' : 'false');
   $('#view-home').hidden = S.view !== 'home';
@@ -1486,6 +1490,10 @@ function render(){
   $('#view-bill').hidden = S.view !== 'bill';
   $('#view-pay').hidden = S.view !== 'pay';
   $('#view-billing').hidden = S.view !== 'billing';
+  $('#view-clients').hidden = S.view !== 'clients';
+  $('#view-items').hidden = S.view !== 'items';
+  $('#tab-clients').setAttribute('aria-current', S.view === 'clients' ? 'page' : 'false');
+  $('#tab-items').setAttribute('aria-current', S.view === 'items' ? 'page' : 'false');
   $('#tab-bills').setAttribute('aria-current', S.view === 'bills' || S.view === 'bill' || S.view === 'pay' ? 'page' : 'false');
   $('#tab-billing').setAttribute('aria-current', S.view === 'billing' ? 'page' : 'false');
   $('#view-order').hidden = S.view !== 'order';
@@ -1497,7 +1505,7 @@ function render(){
   $('#tab-jobs').setAttribute('aria-current', S.view === 'jobs' || S.view === 'job' ? 'page' : 'false');
   $('#tab-rates').setAttribute('aria-current', S.view === 'rates' ? 'page' : 'false');
   $('#tab-history').setAttribute('aria-current', S.view === 'history' ? 'page' : 'false');
-  $('#setbtn').classList.toggle('on', S.view === 'rates' || S.view === 'history' || S.view === 'team' || S.view === 'billing' || S.view === 'past');
+  $('#setbtn').classList.toggle('on', S.view === 'rates' || S.view === 'history' || S.view === 'team' || S.view === 'billing' || S.view === 'past' || S.view === 'clients' || S.view === 'items');
   if (S.view === 'team'){ renderTeam(); return; }
   if (S.view === 'home') renderHome();
   else if (S.view === 'past') renderPast();
@@ -1516,6 +1524,8 @@ function render(){
   else if (S.view === 'bill') renderBill();
   else if (S.view === 'pay') renderPay();
   else if (S.view === 'billing') renderBilling();
+  else if (S.view === 'clients') renderClients();
+  else if (S.view === 'items') renderItems();
   else renderRates();
 }
 
@@ -2275,6 +2285,7 @@ function rememberClient(cl){
   clearTimeout(clientT);
   clientT = setTimeout(() => {
     if (!String(cl.name || '').trim()) return;
+    { const g = gstinInfo(cl.gstin); if (!g || !g.ok) return; }   // Raj: a client without a (valid) GSTIN is not saved
     const ex = clientMatch(cl.name, gstinInfo(cl.gstin) ? cl.gstin : ''), id = ex ? ex.id : (cl.gstin ? String(cl.gstin).toUpperCase() : 'c-' + uid());
     const keep = ex ? Object.fromEntries(Object.entries(ex).filter(([k]) => k !== 'id')) : {createdAt: Date.now()};   // keeps delivery addresses, notes, tag
     const doc = {...keep, name: String(cl.name).trim(), address: cl.address || '', state: cl.state || '', pin: cl.pin || '', gstin: String(cl.gstin || '').trim().toUpperCase(), pan: cl.pan || '', email: cl.email || '', phone: cl.phone || '', tag: '', updatedAt: Date.now()};   // billed → no longer a prospect
@@ -2372,10 +2383,10 @@ function clientsFromCsv(rows){
   if (C.name < 0) return {error: 'This file has no "Name" column. Export the client list as CSV and try again.'};
   const ships = head.map((hd, i) => /^shipping details/.test(hd) ? i : -1).filter(i => i >= 0);
   const get = (r, i) => i >= 0 ? cleanTxt(r[i]) : '';
-  const out = [], byKey = new Map(); let merged = 0, skipped = 0;
+  const out = [], byKey = new Map(); let merged = 0, skipped = 0, noGst = 0;
   for (const r of rows.slice(1)){
     const name = get(r, C.name); if (!name){ skipped++; continue; }
-    let gstin = get(r, C.gstin).toUpperCase().replace(/\s/g, ''); const g = gstinInfo(gstin); if (!g) gstin = '';
+    let gstin = get(r, C.gstin).toUpperCase().replace(/\s/g, ''); const g = gstinInfo(gstin); if (!g || !g.ok){ noGst++; continue; }   // Raj: only clients with a GSTIN
     const street = get(r, C.street), city = get(r, C.city);
     const address = [street, city && !normC(street).includes(normC(city)) ? city : ''].filter(Boolean).join(', ');
     const state = (g && g.code) || stateCodeOf(get(r, C.stcode)) || stateCodeOf(get(r, C.state));
@@ -2387,7 +2398,7 @@ function clientsFromCsv(rows){
       if (ex.tag && !c.tag) ex.tag = ''; for (const x of c.ships) if (!ex.ships.some(y => shipLabel(y) === shipLabel(x))) ex.ships.push(x); continue; }
     byKey.set(key, c); out.push(c);
   }
-  return {list: out, merged, skipped};
+  return {list: out, merged, skipped, noGst};
 }
 // Saves imported clients: a client already in the app (same GSTIN, else same name) only gets its empty details filled in.
 async function importClients(list, progress){
@@ -2441,7 +2452,8 @@ function clientEditor(c, done){
     d.name = cleanTxt(d.name); if (!d.name){ note.className = 'note warnline'; note.textContent = 'Type the client’s name.'; return; }
     d.gstin = String(d.gstin || '').toUpperCase();
     const other = clientMatch(d.name, d.gstin); if (other && (!c || other.id !== c.id)){ note.className = 'note warnline'; note.textContent = 'A client with this ' + (d.gstin && String(other.gstin).toUpperCase() === d.gstin ? 'GSTIN' : 'name') + ' is already saved: ' + other.name + '.'; return; }
-    const id = c ? c.id : (gstinInfo(d.gstin) ? d.gstin : 'c-' + uid()), doc = {...d, ships: d.ships.filter(x => cleanTxt(x.name) || cleanTxt(x.address)), updatedAt: Date.now()}; delete doc.id;
+    { const g = gstinInfo(d.gstin); if (!g || !g.ok){ note.className = 'note warnline'; note.textContent = 'A client needs a correct GSTIN to be kept here.'; return; } }
+    const id = c ? c.id : d.gstin, doc = {...d, ships: d.ships.filter(x => cleanTxt(x.name) || cleanTxt(x.address)), updatedAt: Date.now()}; delete doc.id;
     if (!c) doc.createdAt = Date.now();
     save.disabled = true; S.clients.set(id, {...doc, id}); await flush('clients/' + id, () => doc); done(id);
   }}, c ? 'Save client' : 'Add client');
@@ -2457,7 +2469,7 @@ function clientEditor(c, done){
 }
 function clientsList(box){
   const own = isOwnerRole(), use = clientUse(), all = realClients();
-  const search = h('input',{type:'search', placeholder:'Search name, GSTIN, city or PIN', value:S.billQ, style:'flex:1 1 240px'}), tbox = h('div',{class:'tablebox'});
+  S.clientQ = S.clientQ || ''; const search = h('input',{type:'search', placeholder:'Search name, GSTIN, city or PIN', value:S.clientQ, style:'flex:1 1 240px'}), tbox = h('div',{class:'tablebox'});
   const imp = h('div',{});
   const file = h('input',{type:'file', accept:'.csv,text/csv', hidden:true, onchange:async e => {
     const fl = e.target.files[0]; e.target.value = ''; if (!fl) return;
@@ -2475,24 +2487,27 @@ function clientsList(box){
       imp.replaceChildren(h('div',{class:'banner', style:'background:var(--accent-soft);color:var(--fg)'}, S.clientMsg)); draw(); }}, 'Import ' + res.list.length + ' clients');
     imp.replaceChildren(h('div',{class:'card', style:'display:grid;gap:8px;margin-bottom:12px'},
       h('b',{}, 'Ready to import “' + fl.name + '”'),
-      h('div',{}, res.list.length + ' clients found' + (res.merged ? ' (' + res.merged + ' repeated rows merged)' : '') + ': ' + res.list.filter(c => c.gstin).length + ' with GSTIN, ' + res.list.reduce((a, c) => a + c.ships.length, 0) + ' delivery addresses.'),
+      h('div',{}, res.list.length + ' clients with a GSTIN found' + (res.merged ? ' (' + res.merged + ' repeated rows merged)' : '') + ', with ' + res.list.reduce((a, c) => a + c.ships.length, 0) + ' delivery addresses.'),
+      res.noGst ? h('div',{class:'note'}, res.noGst + ' rows have no GSTIN (or a wrong one) and are left out: clients are only saved with a GSTIN.') : null,
       exist ? h('div',{class:'note'}, exist + ' of them are already in the app: only their empty details will be filled in, nothing is overwritten.') : null,
       pros ? h('label',{class:'row', style:'gap:8px'}, h('input',{type:'checkbox', checked:true, onchange:e => { withPros = e.target.checked; go2.textContent = 'Import ' + (withPros ? res.list.length : res.list.length - pros) + ' clients'; }}), 'Also import the ' + pros + ' prospects (marked “Prospect”)') : null,
       h('div',{class:'row'}, go2, h('button',{class:'btn', onclick:() => imp.replaceChildren()}, 'Cancel'))));
   }});
-  box.append(h('div',{class:'note', style:'margin-bottom:10px'}, 'Every client you make a proforma, tax invoice or challan for is saved here, so the GSTIN, address and state fill in by themselves next time. Pick them in “Billed To” on any bill.'),
+  box.append(h('div',{class:'note', style:'margin-bottom:10px'}, 'Clients are added only from a bill: when a client’s GSTIN is fetched on a proforma, tax invoice or challan, the client is saved here, so the GSTIN, address and state fill in by themselves next time. Clients without a GSTIN are not saved. Tap a client to correct details or add delivery addresses.'),
     h('div',{class:'row', style:'margin-bottom:10px'}, search,
-      h('button',{class:'btn primary', onclick:() => { S.clientOpen = '__new'; draw(); }}, '+ Add client'),
       h('button',{class:'btn', onclick:() => file.click()}, 'Import from CSV'), file),
     imp, tbox);
   if (S.clientMsg && Date.now() - S.clientMsgAt < 120000) imp.append(h('div',{class:'banner', style:'background:var(--accent-soft);color:var(--fg)'}, S.clientMsg));   // stays through the refreshes the import causes
   let shown = 50;
   const draw = () => {
-    const list = realClients(), q = normC(S.billQ);
+    const list = realClients(), q = normC(S.clientQ);
     const rows = list.filter(c => !q || normC([c.name, c.gstin, c.address, c.pin, GST_STATES[c.state], c.phone, c.notes, ...(c.ships || []).map(shipLabel)].join(' ')).includes(q)).sort((a, b) => String(a.name).localeCompare(String(b.name)));
     const kids = [h('div',{class:'note', style:'margin-bottom:8px'}, list.length + ' clients · ' + list.filter(c => c.gstin).length + ' with GSTIN' + (q ? ' · ' + rows.length + ' match' : ''))];
-    if (S.clientOpen === '__new') kids.push(clientEditor(null, id => { S.clientOpen = id || null; draw(); }));
-    if (!list.length) kids.push(h('div',{class:'empty'}, 'No clients yet. They are saved here as soon as you make a bill, or add / import them above.'));
+    const noG = list.filter(c => !gstinInfo(c.gstin));
+    if (noG.length && own) kids.push(h('div',{class:'banner'}, noG.length + (noG.length === 1 ? ' client was' : ' clients were') + ' saved earlier without a GSTIN. ',
+      h('button',{class:'linkbtn', onclick:async e => { const bt = e.currentTarget; if (!bt.dataset.sure){ bt.dataset.sure = '1'; bt.textContent = 'Tap again to remove ' + noG.length; return; }
+        bt.disabled = true; S.clientBusy = true; try { for (const c of noG){ S.clients.delete(c.id); await removeDoc('clients/' + c.id); } } finally { S.clientBusy = false; } draw(); }}, 'Remove them')));
+    if (!list.length) kids.push(h('div',{class:'empty'}, 'No clients yet. They are saved here as soon as a client’s GSTIN is fetched on a bill, or import your old list above.'));
     else if (!rows.length) kids.push(h('div',{class:'empty'}, 'Nothing matches.'));
     else {
       const tb = h('tbody',{});
@@ -2510,12 +2525,12 @@ function clientsList(box){
     }
     tbox.replaceChildren(...kids);
   };
-  search.addEventListener('input', e => { S.billQ = e.target.value; shown = 50; draw(); });
+  search.addEventListener('input', e => { S.clientQ = e.target.value; shown = 50; draw(); });
   draw();
 }
 
 // ----- Saved items: every item name used on an invoice is remembered with its HSN, unit, last rate and time -----
-// billItems/<id>: name, hsn, unit, rate, size, savedAt (first saved), updatedAt (last saved).
+// billItems/<id>: name, hsn, unit, rate, qty, desc, size (older), savedAt (first saved), updatedAt (last saved).
 const itemKey = name => 'i-' + normC(name).replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 80);
 const findItem = name => { const k = normC(name); if (!k) return null; return S.billItems.get(itemKey(name)) || [...S.billItems.values()].find(x => normC(x.name) === k) || null; };
 const itemTimers = {};
@@ -2525,8 +2540,9 @@ function rememberItem(it){
   clearTimeout(itemTimers[id]);
   itemTimers[id] = setTimeout(() => {
     const ex = S.billItems.get(id), now = Date.now();
-    const doc = {name, hsn: it.hsn || '', unit: it.unit || '', rate: it.rate ?? (ex ? ex.rate : null), size: it.size || (ex ? ex.size || '' : ''), savedAt: ex && ex.savedAt ? ex.savedAt : now, updatedAt: now};
-    if (ex && ex.name === doc.name && ex.hsn === doc.hsn && ex.unit === doc.unit && n0(ex.rate) === n0(doc.rate) && (ex.size || '') === doc.size && now - n0(ex.updatedAt) < 60000) return;
+    const keep = (k, v) => v != null && v !== '' ? v : (ex ? ex[k] ?? '' : '');
+    const doc = {name, hsn: keep('hsn', it.hsn), unit: it.unit || '', rate: it.rate ?? (ex ? ex.rate : null), qty: keep('qty', it.qty), desc: keep('desc', String(it.desc || '').trim()), size: it.size || (ex ? ex.size || '' : ''), savedAt: ex && ex.savedAt ? ex.savedAt : now, updatedAt: now};
+    if (ex && ex.name === doc.name && ex.hsn === doc.hsn && ex.unit === doc.unit && n0(ex.rate) === n0(doc.rate) && n0(ex.qty) === n0(doc.qty) && (ex.desc || '') === doc.desc && (ex.size || '') === doc.size && now - n0(ex.updatedAt) < 60000) return;
     S.billItems.set(id, {...doc, id}); flush('billItems/' + id, () => doc);
   }, 1500);
 }
@@ -2593,7 +2609,7 @@ function saveFolderBar(sub){
 }
 function renderBills(){
   const root = $('#view-bills'); root.replaceChildren();
-  const own = isOwnerRole(), cfg = billCfg(), tab = S.billTab || 'proforma';
+  const own = isOwnerRole(), cfg = billCfg(), tab = ['proforma','invoice','challan','payments'].includes(S.billTab) ? S.billTab : 'proforma';
   const mk = type => { const b = newBill(type); saveBill(b); go('bill', b.id); };
   const NEW = {proforma:'+ Create proforma', invoice:'+ Create invoice', challan:'+ Create delivery challan', payments:'+ Record payment'};
   root.append(h('div',{class:'head'},
@@ -2606,15 +2622,10 @@ function renderBills(){
     optTab('invoice', 'Tax invoices', 'GST bills for goods sold'),
     optTab('challan', 'Delivery challans', 'Goods sent, no prices'),
     optTab('payments', 'Payment receipts', 'Advances and payments received')));
-  root.append(h('div',{class:'row', style:'justify-content:flex-end;gap:16px;margin:-6px 0 10px'},
-    h('button',{class:'linkbtn', 'aria-current': tab === 'clients' ? 'page' : 'false', onclick:() => { S.billTab = 'clients'; S.billQ = ''; S.clientOpen = null; renderBills(); }}, 'Clients (' + realClients().length + ')'),
-    h('button',{class:'linkbtn', 'aria-current': tab === 'items' ? 'page' : 'false', onclick:() => { S.billTab = 'items'; S.billQ = ''; renderBills(); }}, 'Saved items (' + S.billItems.size + ')')));
   if (own && !cfg.gstin) root.append(h('div',{class:'banner'}, 'Fill in Firstbox’s GSTIN, address and bank details once in ', h('button',{class:'linkbtn', onclick:() => go('billing')}, '⚙ Billing details'), '. They print on every invoice.'));
   const box = h('div',{}); root.append(box);
   if (!S.db){ box.append(h('div',{class:'card empty'},'Saved data is not available here.')); return; }
   if (!S.loaded.bills){ box.append(h('div',{class:'card empty'},'Loading invoices…')); return; }
-  if (tab === 'items'){ savedItemsList(box); return; }
-  if (tab === 'clients'){ clientsList(box); return; }
   box.append(periodBar());
   if (tab === 'payments'){ paymentsList(box); return; }
   if (tab === 'challan'){ challanList(box); return; }
@@ -2652,26 +2663,38 @@ function renderBills(){
   search.addEventListener('input', e => { S.billQ = e.target.value; draw(); });
   draw();
 }
+// Settings › Clients and Settings › Saved items (Raj: owner/admin only, not under Billing).
+function renderClients(){
+  const root = $('#view-clients'); root.replaceChildren();
+  root.append(h('div',{class:'head'}, h('div',{}, h('h1',{}, 'Clients'), h('div',{class:'note'}, 'Settings · the client book used on every bill'))));
+  if (!S.loaded.bills && !S.clients.size){ root.append(h('div',{class:'empty'}, 'Loading…')); return; }
+  const box = h('div',{}); root.append(box); clientsList(box);
+}
+function renderItems(){
+  const root = $('#view-items'); root.replaceChildren();
+  root.append(h('div',{class:'head'}, h('div',{}, h('h1',{}, 'Saved items'), h('div',{class:'note'}, 'Settings · items used on bills'))));
+  const box = h('div',{}); root.append(box); savedItemsList(box);
+}
 function savedItemsList(box){
   const own = isOwnerRole();
   const used = {}; for (const b of S.bills.values()) for (const it of b.items || []){ const k = normC(it.name); if (!k) continue; const u = used[k] || (used[k] = {n:0, last:0}); u.n++; u.last = Math.max(u.last, n0(b.updatedAt || b.createdAt)); }
   const all = [...S.billItems.values()];
-  const search = h('input',{type:'search', placeholder:'Search items', value:S.billQ, style:'flex:1 1 240px'}), tbox = h('div',{class:'tablebox'});
-  box.append(h('div',{class:'note', style:'margin-bottom:10px'}, 'Every item you put on a proforma or tax invoice is saved here with the time. Start typing an item name on an invoice to pick it again: HSN, unit, size and last rate fill in.'),
+  S.itemQ = S.itemQ || ''; const search = h('input',{type:'search', placeholder:'Search items', value:S.itemQ, style:'flex:1 1 240px'}), tbox = h('div',{class:'tablebox'});
+  box.append(h('div',{class:'note', style:'margin-bottom:10px'}, 'Every item you put on a proforma or tax invoice is saved here with the time. Start typing an item name on a bill and pick it: HSN, unit, quantity, rate and description fill in by themselves.'),
     h('div',{class:'row', style:'margin-bottom:10px'}, search), tbox);
   const draw = () => {
     tbox.replaceChildren();
     if (!all.length){ tbox.append(h('div',{class:'empty'},'No items saved yet. They appear here as soon as you type an item on an invoice.')); return; }
-    const q = S.billQ.trim().toLowerCase();
+    const q = S.itemQ.trim().toLowerCase();
     const rows = all.filter(x => !q || String(x.name).toLowerCase().includes(q)).sort((a, b) => n0(b.updatedAt) - n0(a.updatedAt));
     tbox.append(h('table',{class:'jobs'},
       h('thead',{}, h('tr',{}, h('th',{},'Item'), h('th',{},'HSN/SAC'), h('th',{},'Unit'), h('th',{class:'n'},'Last rate'), h('th',{},'Saved on'), h('th',{},'Last used'), h('th',{class:'n'},'On invoices'), own ? h('th',{class:'act'}, h('span',{class:'sr'},'Delete')) : null)),
       h('tbody',{}, rows.map(x => { const u = used[normC(x.name)] || {n:0, last:0}; return h('tr',{},
-        h('td',{}, h('b',{}, x.name), x.size ? h('div',{class:'sub'}, x.size) : null), h('td',{}, x.hsn || '—'), h('td',{}, x.unit || '—'),
+        h('td',{}, h('b',{}, x.name), x.desc || x.size ? h('div',{class:'sub', style:'white-space:pre-line'}, x.desc || x.size) : null), h('td',{}, x.hsn || '—'), h('td',{}, x.unit || '—'),
         h('td',{class:'n'}, x.rate == null || x.rate === '' ? '—' : rs2(x.rate)), h('td',{}, fmtWhen(x.savedAt)), h('td',{}, fmtWhen(Math.max(u.last, n0(x.updatedAt)))), h('td',{class:'n'}, String(u.n)),
-        own ? h('td',{class:'act'}, rowDelete('saved item ' + x.name, async () => { S.billItems.delete(x.id); await removeDoc('billItems/' + x.id); renderBills(); })) : null); }))));
+        own ? h('td',{class:'act'}, rowDelete('saved item ' + x.name, async () => { S.billItems.delete(x.id); await removeDoc('billItems/' + x.id); renderItems(); })) : null); }))));
   };
-  search.addEventListener('input', e => { S.billQ = e.target.value; draw(); });
+  search.addEventListener('input', e => { S.itemQ = e.target.value; draw(); });
   draw();
 }
 
@@ -2920,7 +2943,7 @@ function renderBill(){
     };
     fetchBtn.onclick = doFetch;
     const check = () => { const g = gstinInfo(cl.gstin);
-      if (!cl.gstin){ note.className = 'note'; note.textContent = gstLookupReady() ? 'Type the GSTIN and the client’s name and address fill in from GST records.' : 'Type the GSTIN: state and PAN fill in by themselves, and a saved client fills in completely.'; return; }
+      if (!cl.gstin){ note.className = 'note'; note.textContent = (gstLookupReady() ? 'Type the GSTIN and the client’s name and address fill in from GST records.' : 'Type the GSTIN: state and PAN fill in by themselves, and a saved client fills in completely.') + ' A client without a GSTIN is used on this bill only, not saved in the client list.'; return; }
       note.className = 'note' + (!g || !g.ok ? ' warnline' : '');
       note.textContent = !g ? 'This doesn’t look like a GSTIN (15 characters, e.g. 07ABCDE1234F1Z5).' : !g.ok ? 'Check this GSTIN: the last character doesn’t match, so it may have a typing mistake.' : '✓ Valid GSTIN · ' + g.state; };
     f.gstin = h('input',{id:'cl-gstin', value: cl.gstin || '', placeholder:'15 characters', style:'text-transform:uppercase', oninput:e => {
@@ -2973,9 +2996,12 @@ function renderBill(){
       const set = (k, v) => { it[k] = v; upd(); touch(); if (it.name) rememberItem(it); };
       const name = h('input',{value: it.name || '', placeholder:'Item name', list:listId, 'aria-label':'Item ' + (i + 1) + ' name',
         oninput:e => set('name', e.target.value),
-        onchange:e => { const x = findItem(e.target.value); if (!x) return; let ch = false;
-          if (x.hsn && !it.hsnTouched){ it.hsn = x.hsn; ch = true; } if (x.unit){ it.unit = x.unit; ch = true; } if (x.size && !it.desc){ it.desc = 'Dimensions: ' + x.size; ch = true; } if (it.rate == null && x.rate != null && x.rate !== ''){ it.rate = n0(x.rate); ch = true; }
-          if (ch){ touch(); drawItems(); } }});
+        // Raj: picking a saved item fills every field of the line — HSN, unit, quantity, rate and description.
+        onchange:e => { const x = findItem(e.target.value); if (!x) return;
+          it.name = x.name; if (x.hsn) it.hsn = x.hsn; if (x.unit) it.unit = x.unit;
+          if (x.qty != null && x.qty !== '') it.qty = n0(x.qty); if (x.rate != null && x.rate !== '') it.rate = n0(x.rate);
+          const d = String(x.desc || '').trim() || (x.size ? 'Dimensions: ' + x.size : ''); if (d) it.desc = d;
+          touch(); drawItems(); }});
       const unitSel = sel([...new Set([...UNITS, it.unit || 'NOS'])].map(u => [u, u]), it.unit || 'NOS', {'aria-label':'Unit', onchange:e => set('unit', e.target.value)});
       // Raj: no separate Dimensions box — only a description. An older line's dimensions move into its description.
       if (it.size){ it.desc = 'Dimensions: ' + it.size + (it.desc ? '\n' + it.desc : ''); it.size = ''; }
@@ -2999,7 +3025,7 @@ function renderBill(){
           showDesc ? null : linkBtn('plus', 'Add description', () => { it._showDesc = true; drawItems(); })));
     });
     itemsBox.replaceChildren(
-      h('datalist',{id:listId}, [...S.billItems.values()].sort((a, c) => n0(c.updatedAt) - n0(a.updatedAt)).map(x => h('option',{value:x.name}, [x.hsn, x.unit, x.rate != null && x.rate !== '' ? '₹' + x.rate : ''].filter(Boolean).join(' · ')))),
+      h('datalist',{id:listId}, [...S.billItems.values()].sort((a, c) => n0(c.updatedAt) - n0(a.updatedAt)).map(x => h('option',{value:x.name}, [x.hsn, x.qty ? x.qty + ' ' + (x.unit || '') : x.unit, x.rate != null && x.rate !== '' ? '₹' + x.rate : ''].filter(Boolean).join(' · ')))),
       head, ...rows,
       h('div',{class:'inv-two', style:'margin-top:12px'},
         h('button',{type:'button', class:'inv-add', onclick:() => { b.items.push(blankItem()); touch(); drawItems(); const ins = itemsBox.querySelectorAll('.c-item input'); if (ins.length) ins[ins.length - 1].focus(); }}, icon('plus'), ' Add new line'),
@@ -3883,6 +3909,8 @@ const ICONS = {
   past:'<ellipse cx="12" cy="5.5" rx="7.5" ry="2.5"/><path d="M4.5 5.5v6c0 1.4 3.4 2.5 7.5 2.5s7.5-1.1 7.5-2.5v-6"/><path d="M4.5 11.5v6c0 1.4 3.4 2.5 7.5 2.5s7.5-1.1 7.5-2.5v-6"/>',
   bills:'<path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h6M9 16h3"/>',
   billing:'<path d="M3 7h18v12H3z"/><path d="M3 11h18"/><path d="M7 15h4"/>',
+  clients:'<path d="M3 5h18v14H3z"/><circle cx="9" cy="11" r="2.5"/><path d="M5.5 17c.5-2 1.9-3 3.5-3s3 1 3.5 3"/><path d="M15 10h4M15 14h3"/>',
+  items:'<path d="M3 12l9-9h8v8l-9 9z"/><circle cx="16" cy="8" r="1.5"/>',
   orders:'<path d="M9 4h6v3H9z"/><path d="M15 5h3v16H6V5h3"/><path d="M9 11h6M9 15h4"/>',
   crm:'<circle cx="9" cy="8" r="3.2"/><path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6"/><path d="M16 4.5h5M16 8.5h5M17.5 12.5h3.5"/>',
   past:'<ellipse cx="12" cy="5.5" rx="7.5" ry="2.8"/><path d="M4.5 5.5v13c0 1.6 3.4 2.8 7.5 2.8s7.5-1.2 7.5-2.8v-13"/><path d="M4.5 12c0 1.6 3.4 2.8 7.5 2.8s7.5-1.2 7.5-2.8"/>',
@@ -3910,11 +3938,11 @@ const SIDE = [
   {key:'orders', n:'Orders', icon: () => ICONS.orders, view:'orders', subs:[
     {n:'Running orders', view:'orders', on:() => S.view === 'orders'}, {n:'Client POs & dispatches', view:'pos', on:() => ['pos', 'order'].includes(S.view)}]},
   {key:'bills', n:'Billing', icon: () => ICONS.bills, view:'bills', subs:[
-    {n:'Proforma invoices', ...billSub('proforma')}, {n:'Tax invoices', ...billSub('invoice')}, {n:'Delivery challans', ...billSub('challan')}, {n:'Payment receipts', ...billSub('payments')}, {n:'Clients', ...billSub('clients')}, {n:'Saved items', ...billSub('items')}]},
+    {n:'Proforma invoices', ...billSub('proforma')}, {n:'Tax invoices', ...billSub('invoice')}, {n:'Delivery challans', ...billSub('challan')}, {n:'Payment receipts', ...billSub('payments')}]},
   {key:'stock', n:'Stock', icon: () => ICONS.stock, view:'stock'},
   {key:'db', n:'Database', icon: () => ICONS.past, view:'past', staffOnly:true},
   {key:'set', n:'Settings', icon: SIDE_ICONS.set, ownerOnly:true, subs:[
-    {n:'Rate list', view:'rates'}, {n:'Price history', view:'history'}, {n:'Database', view:'past'}, {n:'Billing details', view:'billing'}, {n:'Team & access', view:'team'}]}
+    {n:'Rate list', view:'rates'}, {n:'Price history', view:'history'}, {n:'Database', view:'past'}, {n:'Billing details', view:'billing'}, {n:'Clients', view:'clients'}, {n:'Saved items', view:'items'}, {n:'Team & access', view:'team'}]}
 ];
 S.sideOpen = S.sideOpen || {};
 function sideGo(it){
@@ -5203,6 +5231,8 @@ function renderHome(){
     tile('history', 'history', 'Price history', 'How raw material prices changed over time', '', false, true),
     tile('past', 'past', 'Database', 'Boxes made before and their selling prices', '', false, true),
     tile('billing', 'billing', 'Billing details', 'GSTIN, address, bank and invoice numbers', '', false, true),
+    tile('clients', 'clients', 'Clients', 'Every client billed, with GSTIN and addresses', '', false, true),
+    tile('items', 'items', 'Saved items', 'Items used on bills, filled in when picked again', '', false, true),
     tile('team', 'team', 'Team & access', 'Logins and roles for your team', S.team.size ? S.team.size + (S.team.size === 1 ? ' person' : ' people') : '', false, true)));
 }
 
@@ -7857,14 +7887,14 @@ async function boot(){
         for (const d of snap.docs){ const path = 'billItems/' + d.id; m.set(d.id, busy(path) && S.billItems.has(d.id) ? S.billItems.get(d.id) : {...d.data(), id:d.id}); }
         for (const [id, x] of S.billItems) if (!m.has(id) && busy('billItems/' + id)) m.set(id, x);
         S.billItems = m;
-        if (S.view === 'bills' && S.billTab === 'items' && !$('#view-bills').contains(document.activeElement)) renderBills();
+        if (S.view === 'items' && !$('#view-items').contains(document.activeElement)) renderItems();
       }, () => {});
       db.collection('clients').onSnapshot(snap => {
         const m = new Map();
         for (const d of snap.docs){ const path = 'clients/' + d.id; m.set(d.id, busy(path) && S.clients.has(d.id) ? S.clients.get(d.id) : {...d.data(), id:d.id}); }
         for (const [id, x] of S.clients) if (!m.has(id) && busy('clients/' + id)) m.set(id, x);
         S.clients = m;
-        if (S.view === 'bills' && S.billTab === 'clients' && !S.clientOpen && !S.clientBusy && !$('#view-bills').contains(document.activeElement)) renderBills();
+        if (S.view === 'clients' && !S.clientOpen && !S.clientBusy && !$('#view-clients').contains(document.activeElement)) renderClients();
       }, () => {});
     }
     if (S.role === 'owner' || canView('orders')) db.collection('orders').onSnapshot(snap => {
