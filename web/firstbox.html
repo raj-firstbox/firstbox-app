@@ -2246,13 +2246,19 @@ function findClient(name, gstin){
   const all = realClients();
   return (g && all.find(c => String(c.gstin || '').toUpperCase() === g)) || (n && all.find(c => normC(c.name) === n)) || null;
 }
+// The saved client this one is: same GSTIN; else same name, unless both have different GSTINs (one firm registered in two states = two clients).
+function clientMatch(name, gstin){
+  const g = String(gstin || '').trim().toUpperCase(), n = normC(name), all = realClients();
+  return (g && all.find(c => String(c.gstin || '').toUpperCase() === g)) || (n && all.find(c => normC(c.name) === n && (!g || !c.gstin || String(c.gstin).toUpperCase() === g))) || null;
+}
 let clientT = null;
 function rememberClient(cl){
   clearTimeout(clientT);
   clientT = setTimeout(() => {
     if (!String(cl.name || '').trim()) return;
-    const ex = findClient(cl.name, cl.gstin), id = ex ? ex.id : (cl.gstin ? String(cl.gstin).toUpperCase() : 'c-' + uid());
-    const doc = {name: String(cl.name).trim(), address: cl.address || '', state: cl.state || '', pin: cl.pin || '', gstin: String(cl.gstin || '').trim().toUpperCase(), pan: cl.pan || '', email: cl.email || '', phone: cl.phone || '', updatedAt: Date.now()};
+    const ex = clientMatch(cl.name, gstinInfo(cl.gstin) ? cl.gstin : ''), id = ex ? ex.id : (cl.gstin ? String(cl.gstin).toUpperCase() : 'c-' + uid());
+    const keep = ex ? Object.fromEntries(Object.entries(ex).filter(([k]) => k !== 'id')) : {createdAt: Date.now()};   // keeps delivery addresses, notes, tag
+    const doc = {...keep, name: String(cl.name).trim(), address: cl.address || '', state: cl.state || '', pin: cl.pin || '', gstin: String(cl.gstin || '').trim().toUpperCase(), pan: cl.pan || '', email: cl.email || '', phone: cl.phone || '', tag: '', updatedAt: Date.now()};   // billed → no longer a prospect
     if (ex && stable({...ex, id: undefined, updatedAt: undefined}) === stable({...doc, updatedAt: undefined})) return;
     S.clients.set(id, {...doc, id}); flush('clients/' + id, () => doc);
   }, 1200);
@@ -2298,6 +2304,195 @@ function convertToInvoice(p){
   if (p.toId && S.bills.has(p.toId)){ go('bill', p.toId); return; }
   const b = newBill('invoice', {client: clone(p.client || {}), items: clone(p.items || []).map(it => ({...it, id: uid()})), roundOff: !!p.roundOff, fromId: p.id, orderIds: p.orderIds || []});
   saveBill(b); p.toId = b.id; saveBill(p); go('bill', b.id);
+}
+
+// ----- Client book (Raj): Billing › Clients. Every client a proforma / invoice / challan is made for is saved here
+// (rememberClient), so nobody has to fetch the GSTIN again; clients can also be added, edited and imported from a CSV
+// (Refrens' "Clients" export). clients/<id> {name, address, state, pin, gstin, pan, email, phone, ships:[{name, gstin, address, state, pin, phone}],
+// tag ''|'prospect', notes, source, createdAt, updatedAt}; id = GSTIN when there is one, else c-<uid>.
+function parseCsv(text){
+  const rows = []; let row = [], cur = '', q = false;
+  text = String(text || '').replace(/^﻿/, '');
+  for (let i = 0; i < text.length; i++){
+    const ch = text[i];
+    if (q){ if (ch === '"'){ if (text[i + 1] === '"'){ cur += '"'; i++; } else q = false; } else cur += ch; }
+    else if (ch === '"') q = true;
+    else if (ch === ','){ row.push(cur); cur = ''; }
+    else if (ch === '\n' || ch === '\r'){ if (ch === '\r' && text[i + 1] === '\n') i++; row.push(cur); rows.push(row); row = []; cur = ''; }
+    else cur += ch;
+  }
+  if (cur !== '' || row.length){ row.push(cur); rows.push(row); }
+  return rows.filter(r => r.some(c => String(c).trim() !== ''));
+}
+const STATE_ALIAS = {'orissa':'21', 'pondicherry':'34', 'jammu & kashmir':'01', 'j&k':'01', 'new delhi':'07', 'nct of delhi':'07', 'delhi ncr':'07', 'daman and diu':'26', 'dadra and nagar haveli':'26', 'andaman & nicobar':'35', 'telengana':'36', 'chattisgarh':'22', 'uttaranchal':'05'};
+function stateCodeOf(name){
+  const n = normC(name).replace(/\.$/, ''); if (!n) return '';
+  if (/^\d{1,2}$/.test(n) && GST_STATES[n.padStart(2, '0')]) return n.padStart(2, '0');
+  for (const [c, nm] of Object.entries(GST_STATES)) if (normC(nm) === n) return c;
+  return STATE_ALIAS[n] || '';
+}
+const cleanTxt = v => { const t = String(v == null ? '' : v).replace(/\s+/g, ' ').trim(); return t === '-' ? '' : t; };
+// "Name, [GSTIN], street…, city, State, 110001, India" → {name, gstin, address, state, pin}
+function parseShipLine(line){
+  let parts = String(line || '').split(',').map(cleanTxt).filter(Boolean);
+  if (parts.length && /^india$/i.test(parts[parts.length - 1])) parts.pop();
+  const out = {name:'', gstin:'', address:'', state:'', pin:'', phone:''};
+  if (parts.length && /^\d{6}$/.test(parts[parts.length - 1].replace(/[\s.]/g, ''))) out.pin = parts.pop().replace(/[\s.]/g, '');
+  if (parts.length && stateCodeOf(parts[parts.length - 1])) out.state = stateCodeOf(parts.pop());
+  const gi = parts.findIndex(x => gstinInfo(x)); if (gi >= 0){ out.gstin = parts[gi].toUpperCase(); parts.splice(gi, 1); if (!out.state) out.state = gstinInfo(out.gstin).code; }
+  out.name = parts.shift() || ''; out.address = parts.join(', ');
+  return out;
+}
+const shipLabel = x => [x.name, x.address, [GST_STATES[x.state], x.pin].filter(Boolean).join(' - ')].filter(Boolean).join(', ');
+// Rows of Refrens' client export (or any CSV with Name / GSTIN / Street / City / State / Postal Code columns) → client docs, duplicates merged.
+function clientsFromCsv(rows){
+  const head = (rows[0] || []).map(x => normC(x)), col = (...names) => { for (const n of names){ const i = head.indexOf(n); if (i >= 0) return i; } return -1; };
+  const C = {name: col('name', 'client name', 'company name', 'business name'), gstin: col('gstin', 'gst no', 'gst number', 'gstin/uin'), pan: col('pan'), street: col('street', 'address', 'billing address'),
+    city: col('city'), stcode: col('gst state code', 'state code'), state: col('state'), pin: col('postal code', 'pin', 'pin code', 'pincode', 'zip'), phone: col('phone', 'mobile', 'phone number'),
+    email: col('email', 'email id'), type: col('select clients/prospects', 'type'), created: col('created on')};
+  if (C.name < 0) return {error: 'This file has no "Name" column. Export the client list as CSV and try again.'};
+  const ships = head.map((hd, i) => /^shipping details/.test(hd) ? i : -1).filter(i => i >= 0);
+  const get = (r, i) => i >= 0 ? cleanTxt(r[i]) : '';
+  const out = [], byKey = new Map(); let merged = 0, skipped = 0;
+  for (const r of rows.slice(1)){
+    const name = get(r, C.name); if (!name){ skipped++; continue; }
+    let gstin = get(r, C.gstin).toUpperCase().replace(/\s/g, ''); const g = gstinInfo(gstin); if (!g) gstin = '';
+    const street = get(r, C.street), city = get(r, C.city);
+    const address = [street, city && !normC(street).includes(normC(city)) ? city : ''].filter(Boolean).join(', ');
+    const state = (g && g.code) || stateCodeOf(get(r, C.stcode)) || stateCodeOf(get(r, C.state));
+    const pin = get(r, C.pin).replace(/[\s.]/g, ''), created = Date.parse(get(r, C.created));
+    const c = {name, gstin, pan: get(r, C.pan).toUpperCase() || (g ? g.pan : ''), address, state, pin: /^\d{6}$/.test(pin) ? pin : '', phone: get(r, C.phone), email: get(r, C.email),
+      tag: /prospect/i.test(get(r, C.type)) ? 'prospect' : '', ships: ships.map(i => get(r, i)).filter(Boolean).map(parseShipLine).filter(x => x.name || x.address), source: 'import', createdAt: isNaN(created) ? Date.now() : created};
+    const key = gstin || 'n:' + normC(name), ex = byKey.get(key);
+    if (ex){ merged++; for (const k of ['address','state','pin','pan','phone','email']) if (!ex[k] && c[k]) ex[k] = c[k];
+      if (ex.tag && !c.tag) ex.tag = ''; for (const x of c.ships) if (!ex.ships.some(y => shipLabel(y) === shipLabel(x))) ex.ships.push(x); continue; }
+    byKey.set(key, c); out.push(c);
+  }
+  return {list: out, merged, skipped};
+}
+// Saves imported clients: a client already in the app (same GSTIN, else same name) only gets its empty details filled in.
+async function importClients(list, progress){
+  let added = 0, updated = 0, same = 0, n = 0;
+  for (const c of list){
+    const ex = clientMatch(c.name, c.gstin);
+    let id, doc;
+    if (ex){
+      id = ex.id; doc = Object.fromEntries(Object.entries(ex).filter(([k]) => k !== 'id')); let ch = false;
+      for (const k of ['address','state','pin','pan','phone','email','gstin']) if (!doc[k] && c[k]){ doc[k] = c[k]; ch = true; }
+      const sh = doc.ships || []; for (const x of c.ships || []) if (!sh.some(y => shipLabel(y) === shipLabel(x))){ sh.push(x); ch = true; } doc.ships = sh;
+      if (!ch){ same++; n++; continue; } doc.updatedAt = Date.now(); updated++;
+    } else { id = c.gstin || 'c-' + uid(); doc = {...c, updatedAt: Date.now()}; added++; }
+    S.clients.set(id, {...doc, id}); await flush('clients/' + id, () => doc);
+    if (++n % 10 === 0 && progress) progress(n, list.length);
+  }
+  return {added, updated, same};
+}
+function clientUse(){   // how many bills each client has, and the latest one
+  const m = new Map();
+  for (const b of S.bills.values()){ const cl = b.client || {}; if (!cl.name) continue;
+    const k = String(cl.gstin || '').toUpperCase() || 'n:' + normC(cl.name), u = m.get(k) || {n:0, last:'', lastNo:''};
+    u.n++; if (String(b.date || '') > u.last){ u.last = String(b.date || ''); u.lastNo = b.no || ''; } m.set(k, u); }
+  return c => m.get(String(c.gstin || '').toUpperCase() || 'n:' + normC(c.name)) || (c.gstin ? m.get('n:' + normC(c.name)) : null) || {n:0, last:'', lastNo:''};
+}
+function clientEditor(c, done){
+  const d = clone(c || {name:'', address:'', state:'', pin:'', gstin:'', pan:'', email:'', phone:'', ships:[], tag:'', notes:''}); d.ships = d.ships || [];
+  const f = {}, note = h('div',{class:'note', role:'status'});
+  const inp = (k, ph, extra) => (f[k] = h('input',{value: d[k] || '', placeholder: ph || '', ...(extra || {}), oninput:e => { d[k] = e.target.value; }}));
+  const fillIn = x => { for (const k of ['name','address','state','pin','pan']) if (x[k]){ d[k] = x[k]; if (f[k]) f[k].value = x[k]; } };
+  f.gstin = h('input',{value: d.gstin || '', placeholder:'', style:'text-transform:uppercase', oninput:async e => {
+    d.gstin = e.target.value.trim().toUpperCase(); const g = gstinInfo(d.gstin);
+    if (!d.gstin){ note.textContent = ''; return; }
+    note.className = 'note' + (!g || !g.ok ? ' warnline' : ''); note.textContent = !g ? 'This doesn’t look like a GSTIN (15 characters).' : !g.ok ? 'Check this GSTIN: the last character doesn’t match.' : '✓ Valid GSTIN · ' + g.state;
+    if (g){ d.state = g.code; f.state.value = g.code; d.pan = g.pan; f.pan.value = g.pan; }
+    if (g && g.ok && gstLookupReady()){ try { note.textContent = 'Fetching details from GST records…'; const x = clientFromTaxpayer(await window.firstboxGst.lookup(d.gstin) || {}, d.gstin); if (x.name){ fillIn(x); note.textContent = '✓ Filled from GST records. Check and edit if needed.'; } } catch(err){ note.textContent = '✓ Valid GSTIN · ' + g.state; } }
+  }});
+  f.address = h('textarea',{rows:'2', placeholder:'Street, area, city', oninput:e => { d.address = e.target.value; }}, d.address || '');
+  f.state = sel(stateOptions(), d.state || '', {onchange:e => { d.state = e.target.value; }});
+  f.notes = h('textarea',{rows:'2', placeholder:'Anything the accounts team should know', oninput:e => { d.notes = e.target.value; }}, d.notes || '');
+  const shipsBox = h('div',{style:'display:grid;gap:8px'});
+  const drawShips = () => shipsBox.replaceChildren(...d.ships.map((x, i) => { const sf = {};
+    const si = (k, ph, extra) => (sf[k] = h('input',{value: x[k] || '', placeholder: ph || '', ...(extra || {}), oninput:e => { x[k] = e.target.value; }}));
+    return h('div',{class:'inv-pbox', style:'gap:8px'},
+      h('div',{class:'row', style:'justify-content:space-between'}, h('b',{}, 'Delivery address ' + (i + 1)), h('button',{type:'button', class:'linkbtn', onclick:() => { d.ships.splice(i, 1); drawShips(); }}, 'Remove')),
+      h('div',{class:'grid'}, fld('Name', si('name', 'Business or person'), 'wide'), fld('GSTIN (optional)', si('gstin', '', {style:'text-transform:uppercase'}))),
+      fld('Address', h('textarea',{rows:'2', oninput:e => { x.address = e.target.value; }}, x.address || '')),
+      h('div',{class:'grid'}, fld('State', sel(stateOptions(), x.state || '', {onchange:e => { x.state = e.target.value; }})), fld('PIN code', si('pin', '', {inputmode:'numeric'})), fld('Phone', si('phone', 'Optional', {type:'tel'})))); }));
+  drawShips();
+  const save = h('button',{class:'btn primary', onclick:async () => {
+    d.name = cleanTxt(d.name); if (!d.name){ note.className = 'note warnline'; note.textContent = 'Type the client’s name.'; return; }
+    d.gstin = String(d.gstin || '').toUpperCase();
+    const other = clientMatch(d.name, d.gstin); if (other && (!c || other.id !== c.id)){ note.className = 'note warnline'; note.textContent = 'A client with this ' + (d.gstin && String(other.gstin).toUpperCase() === d.gstin ? 'GSTIN' : 'name') + ' is already saved: ' + other.name + '.'; return; }
+    const id = c ? c.id : (gstinInfo(d.gstin) ? d.gstin : 'c-' + uid()), doc = {...d, ships: d.ships.filter(x => cleanTxt(x.name) || cleanTxt(x.address)), updatedAt: Date.now()}; delete doc.id;
+    if (!c) doc.createdAt = Date.now();
+    save.disabled = true; S.clients.set(id, {...doc, id}); await flush('clients/' + id, () => doc); done(id);
+  }}, c ? 'Save client' : 'Add client');
+  return h('div',{class:'inv-pbox', style:'gap:10px;margin:6px 0 12px'},
+    h('div',{class:'grid'}, fld('GSTIN (optional)', f.gstin), fld('Client / business name', inp('name', 'Company name'), 'wide')),
+    fld('Address', f.address),
+    h('div',{class:'grid'}, fld('State', f.state), fld('PIN code', inp('pin', 'e.g. 110001', {inputmode:'numeric'})), fld('PAN', inp('pan', 'Fills from GSTIN')), fld('Phone', inp('phone', 'Optional', {type:'tel'})), fld('Email', inp('email', 'Optional', {type:'email'}))),
+    h('label',{class:'row', style:'gap:8px'}, h('input',{type:'checkbox', checked: d.tag === 'prospect' ? true : null, onchange:e => { d.tag = e.target.checked ? 'prospect' : ''; }}), 'Prospect (not billed yet)'),
+    fld('Notes', f.notes),
+    h('b',{}, 'Delivery addresses'), h('div',{class:'note'}, 'Saved delivery addresses can be picked in “Shipped To” on a tax invoice or challan.'), shipsBox,
+    h('div',{}, h('button',{type:'button', class:'btn', onclick:() => { d.ships.push({name:'', gstin:'', address:'', state:'', pin:'', phone:''}); drawShips(); }}, '+ Add delivery address')),
+    note, h('div',{class:'row'}, save, h('button',{type:'button', class:'btn', onclick:() => done(null)}, 'Cancel')));
+}
+function clientsList(box){
+  const own = isOwnerRole(), use = clientUse(), all = realClients();
+  const search = h('input',{type:'search', placeholder:'Search name, GSTIN, city or PIN', value:S.billQ, style:'flex:1 1 240px'}), tbox = h('div',{class:'tablebox'});
+  const imp = h('div',{});
+  const file = h('input',{type:'file', accept:'.csv,text/csv', hidden:true, onchange:async e => {
+    const fl = e.target.files[0]; e.target.value = ''; if (!fl) return;
+    const res = clientsFromCsv(parseCsv(await fl.text()));
+    if (res.error){ imp.replaceChildren(h('div',{class:'banner'}, res.error)); return; }
+    const exist = res.list.filter(c => clientMatch(c.name, c.gstin)).length, pros = res.list.filter(c => c.tag === 'prospect').length;
+    let withPros = true;
+    const go2 = h('button',{class:'btn primary', onclick:async () => {
+      go2.disabled = true; const list = withPros ? res.list : res.list.filter(c => c.tag !== 'prospect');
+      const st = h('div',{class:'note'}, 'Importing… keep this page open.'); imp.append(st);
+      S.clientBusy = true; let r;
+      try { r = await importClients(list, (i, t) => { st.textContent = 'Importing… ' + i + ' of ' + t + ' · keep this page open.'; }); }
+      finally { S.clientBusy = false; }
+      S.clientMsg = '✓ Import done: ' + r.added + ' new clients added' + (r.updated ? ', ' + r.updated + ' existing clients got missing details filled in' : '') + (r.same ? ', ' + r.same + ' were already up to date' : '') + '.'; S.clientMsgAt = Date.now();
+      imp.replaceChildren(h('div',{class:'banner', style:'background:var(--accent-soft);color:var(--fg)'}, S.clientMsg)); draw(); }}, 'Import ' + res.list.length + ' clients');
+    imp.replaceChildren(h('div',{class:'card', style:'display:grid;gap:8px;margin-bottom:12px'},
+      h('b',{}, 'Ready to import “' + fl.name + '”'),
+      h('div',{}, res.list.length + ' clients found' + (res.merged ? ' (' + res.merged + ' repeated rows merged)' : '') + ': ' + res.list.filter(c => c.gstin).length + ' with GSTIN, ' + res.list.reduce((a, c) => a + c.ships.length, 0) + ' delivery addresses.'),
+      exist ? h('div',{class:'note'}, exist + ' of them are already in the app: only their empty details will be filled in, nothing is overwritten.') : null,
+      pros ? h('label',{class:'row', style:'gap:8px'}, h('input',{type:'checkbox', checked:true, onchange:e => { withPros = e.target.checked; go2.textContent = 'Import ' + (withPros ? res.list.length : res.list.length - pros) + ' clients'; }}), 'Also import the ' + pros + ' prospects (marked “Prospect”)') : null,
+      h('div',{class:'row'}, go2, h('button',{class:'btn', onclick:() => imp.replaceChildren()}, 'Cancel'))));
+  }});
+  box.append(h('div',{class:'note', style:'margin-bottom:10px'}, 'Every client you make a proforma, tax invoice or challan for is saved here, so the GSTIN, address and state fill in by themselves next time. Pick them in “Billed To” on any bill.'),
+    h('div',{class:'row', style:'margin-bottom:10px'}, search,
+      h('button',{class:'btn primary', onclick:() => { S.clientOpen = '__new'; draw(); }}, '+ Add client'),
+      h('button',{class:'btn', onclick:() => file.click()}, 'Import from CSV'), file),
+    imp, tbox);
+  if (S.clientMsg && Date.now() - S.clientMsgAt < 120000) imp.append(h('div',{class:'banner', style:'background:var(--accent-soft);color:var(--fg)'}, S.clientMsg));   // stays through the refreshes the import causes
+  let shown = 50;
+  const draw = () => {
+    const list = realClients(), q = normC(S.billQ);
+    const rows = list.filter(c => !q || normC([c.name, c.gstin, c.address, c.pin, GST_STATES[c.state], c.phone, c.notes, ...(c.ships || []).map(shipLabel)].join(' ')).includes(q)).sort((a, b) => String(a.name).localeCompare(String(b.name)));
+    const kids = [h('div',{class:'note', style:'margin-bottom:8px'}, list.length + ' clients · ' + list.filter(c => c.gstin).length + ' with GSTIN' + (q ? ' · ' + rows.length + ' match' : ''))];
+    if (S.clientOpen === '__new') kids.push(clientEditor(null, id => { S.clientOpen = id || null; draw(); }));
+    if (!list.length) kids.push(h('div',{class:'empty'}, 'No clients yet. They are saved here as soon as you make a bill, or add / import them above.'));
+    else if (!rows.length) kids.push(h('div',{class:'empty'}, 'Nothing matches.'));
+    else {
+      const tb = h('tbody',{});
+      for (const c of rows.slice(0, shown)){ const u = use(c), open = S.clientOpen === c.id;
+        tb.append(h('tr',{tabindex:'0', onclick:() => { S.clientOpen = open ? null : c.id; draw(); }, onkeydown:e => { if (e.key === 'Enter'){ S.clientOpen = open ? null : c.id; draw(); } }},
+          h('td',{}, h('div',{class:'jobno'}, c.name, c.tag === 'prospect' ? h('span',{class:'pill', style:'margin-left:6px'}, 'Prospect') : null),
+            h('div',{class:'sub'}, [c.address, (c.ships || []).length ? (c.ships.length === 1 ? '1 delivery address' : c.ships.length + ' delivery addresses') : ''].filter(Boolean).join(' · '))),
+          h('td',{}, c.gstin || '—'), h('td',{}, [GST_STATES[c.state], c.pin].filter(Boolean).join(' - ') || '—'), h('td',{}, c.phone || '—'),
+          h('td',{class:'n'}, u.n ? String(u.n) : '—'), h('td',{}, u.last ? fmtDate(u.last) + (u.lastNo ? ' · ' + u.lastNo : '') : '—'),
+          own ? h('td',{class:'act', onclick:e => e.stopPropagation()}, rowDelete('client ' + c.name, async () => { S.clients.delete(c.id); await removeDoc('clients/' + c.id); draw(); })) : null));
+        if (open) tb.append(h('tr',{class:'detailrow'}, h('td',{colspan: own ? '7' : '6'}, clientEditor(c, () => { S.clientOpen = null; draw(); }))));
+      }
+      kids.push(h('table',{class:'jobs'}, h('thead',{}, h('tr',{}, h('th',{},'Client'), h('th',{},'GSTIN'), h('th',{},'State / PIN'), h('th',{},'Phone'), h('th',{class:'n'},'Bills'), h('th',{},'Last bill'), own ? h('th',{class:'act'}, h('span',{class:'sr'},'Delete')) : null)), tb));
+      if (rows.length > shown) kids.push(h('div',{class:'row', style:'justify-content:center;margin-top:10px'}, h('button',{class:'btn', onclick:() => { shown += 50; draw(); }}, 'Show 50 more (' + (rows.length - shown) + ' left)')));
+    }
+    tbox.replaceChildren(...kids);
+  };
+  search.addEventListener('input', e => { S.billQ = e.target.value; shown = 50; draw(); });
+  draw();
 }
 
 // ----- Saved items: every item name used on an invoice is remembered with its HSN, unit, last rate and time -----
@@ -2392,12 +2587,15 @@ function renderBills(){
     optTab('invoice', 'Tax invoices', 'GST bills for goods sold'),
     optTab('challan', 'Delivery challans', 'Goods sent, no prices'),
     optTab('payments', 'Payment receipts', 'Advances and payments received')));
-  root.append(h('div',{class:'row', style:'justify-content:flex-end;margin:-6px 0 10px'}, h('button',{class:'linkbtn', 'aria-current': tab === 'items' ? 'page' : 'false', onclick:() => { S.billTab = 'items'; S.billQ = ''; renderBills(); }}, 'Saved items (' + S.billItems.size + ')')));
+  root.append(h('div',{class:'row', style:'justify-content:flex-end;gap:16px;margin:-6px 0 10px'},
+    h('button',{class:'linkbtn', 'aria-current': tab === 'clients' ? 'page' : 'false', onclick:() => { S.billTab = 'clients'; S.billQ = ''; S.clientOpen = null; renderBills(); }}, 'Clients (' + realClients().length + ')'),
+    h('button',{class:'linkbtn', 'aria-current': tab === 'items' ? 'page' : 'false', onclick:() => { S.billTab = 'items'; S.billQ = ''; renderBills(); }}, 'Saved items (' + S.billItems.size + ')')));
   if (own && !cfg.gstin) root.append(h('div',{class:'banner'}, 'Fill in Firstbox’s GSTIN, address and bank details once in ', h('button',{class:'linkbtn', onclick:() => go('billing')}, '⚙ Billing details'), '. They print on every invoice.'));
   const box = h('div',{}); root.append(box);
   if (!S.db){ box.append(h('div',{class:'card empty'},'Saved data is not available here.')); return; }
   if (!S.loaded.bills){ box.append(h('div',{class:'card empty'},'Loading invoices…')); return; }
   if (tab === 'items'){ savedItemsList(box); return; }
+  if (tab === 'clients'){ clientsList(box); return; }
   box.append(periodBar());
   if (tab === 'payments'){ paymentsList(box); return; }
   if (tab === 'challan'){ challanList(box); return; }
@@ -2660,11 +2858,14 @@ function renderBill(){
   const drawParty = () => {
     const edit = !!S.clientEdit;
     const opts = realClients().sort((a, c) => String(a.name).localeCompare(String(c.name)));
-    const curId = (findClient(cl.name, cl.gstin) || {}).id || '', curOpt = !curId && String(cl.name || '').trim() ? [['__cur', cl.name + (cl.gstin ? ' · ' + cl.gstin : '')]] : [];
-    const pick = sel([['', 'Select a client'], ...curOpt, ...opts.map(c => [c.id, c.name + (c.gstin ? ' · ' + c.gstin : '')])], curId || (curOpt.length ? '__cur' : ''), {'aria-label':'Select a client', onchange:e => {
-      const c = S.clients.get(e.target.value); if (!c) return;
-      Object.assign(cl, {name:c.name, address:c.address || '', state:c.state || '', pin:c.pin || '', gstin:c.gstin || '', pan:c.pan || '', email:c.email || '', phone:c.phone || ''});
-      S.clientEdit = false; touch(); drawParty(); }});
+    // Raj: hundreds of saved clients — type to search (name or GSTIN) instead of scrolling a drop-down.
+    const lab = c => c.name + (c.gstin ? ' · ' + c.gstin : ''), dlId = 'cl-pick-' + b.id;
+    const choose = c => { Object.assign(cl, {name:c.name, address:c.address || '', state:c.state || '', pin:c.pin || '', gstin:c.gstin || '', pan:c.pan || '', email:c.email || '', phone:c.phone || ''});
+      S.clientEdit = false; touch(); drawParty(); };
+    const pick = h('div',{},
+      h('input',{type:'search', list: dlId, 'aria-label':'Select a client', placeholder: opts.length ? 'Search ' + opts.length + ' saved clients by name or GSTIN' : 'No saved clients yet', onchange:e => {
+        const v = e.target.value.trim(), c = opts.find(x => lab(x) === v) || opts.find(x => normC(x.name) === normC(v)) || opts.find(x => x.gstin && x.gstin === v.toUpperCase()); if (c) choose(c); }}),
+      h('datalist',{id: dlId}, opts.map(c => h('option',{value: lab(c)}, [GST_STATES[c.state], c.tag === 'prospect' ? 'prospect' : ''].filter(Boolean).join(' · ')))));
     const kids = [h('h2',{}, 'Billed To ', h('span',{}, '(Client’s Details)')), pick];
     if (edit) kids.push(clientForm());
     else if (!String(cl.name || '').trim()) kids.push(h('div',{class:'inv-pbox', style:'text-align:center;padding:26px'},
@@ -3166,8 +3367,11 @@ function shipCard(b, touch){
         const f = {};
         const inp = (k, ph, extra) => (f[k] = h('input',{value: sp[k] || '', placeholder: ph || '', ...(extra || {}), oninput:e => { sp[k] = e.target.value; if (k === 'gstin'){ sp.gstin = sp.gstin.trim().toUpperCase(); const g = gstinInfo(sp.gstin); if (g){ sp.state = g.code; f.state.value = g.code; } } touch(); }}));
         f.state = sel(stateOptions(), sp.state || '', {onchange:e => { sp.state = e.target.value; touch(); }});
-        const pick = sel([['', 'Pick a saved client or address'], ...realClients().sort((a, c) => String(a.name).localeCompare(String(c.name))).map(c => [c.id, c.name])], '', {'aria-label':'Pick a saved client for the delivery address', onchange:e => {
-          const c = S.clients.get(e.target.value); if (!c) return; Object.assign(sp, {name:c.name, address:c.address || '', state:c.state || '', pin:c.pin || '', gstin:c.gstin || '', phone:c.phone || ''}); touch(); draw(); }});
+        const bc = clientMatch((b.client || {}).name, (b.client || {}).gstin), saved = (bc && bc.ships) || [];
+        const pick = sel([['', 'Pick a saved delivery address or client'], ...saved.map((x, i) => ['s:' + i, '📦 ' + shipLabel(x)]),
+          ...realClients().sort((a, c) => String(a.name).localeCompare(String(c.name))).map(c => [c.id, c.name])], '', {'aria-label':'Pick a saved client for the delivery address', onchange:e => {
+          const v = e.target.value, x = v.startsWith('s:') ? saved[+v.slice(2)] : S.clients.get(v); if (!x) return;
+          Object.assign(sp, {name:x.name || '', address:x.address || '', state:x.state || '', pin:x.pin || '', gstin:x.gstin || '', phone:x.phone || ''}); touch(); draw(); }});
         kids.push(pick, h('div',{class:'inv-pbox', style:'gap:10px'},
           h('div',{class:'grid'}, fld('Name', inp('name', 'Business or person'), 'wide'), fld('GSTIN (optional)', inp('gstin', '15 characters', {style:'text-transform:uppercase'}))),
           fld('Address', h('textarea',{rows:'2', placeholder:'Street, area, city', oninput:e => { sp.address = e.target.value; touch(); }}, sp.address || '')),
@@ -3687,7 +3891,7 @@ const SIDE = [
   {key:'orders', n:'Orders', icon: () => ICONS.orders, view:'orders', subs:[
     {n:'Running orders', view:'orders', on:() => S.view === 'orders'}, {n:'Client POs & dispatches', view:'pos', on:() => ['pos', 'order'].includes(S.view)}]},
   {key:'bills', n:'Billing', icon: () => ICONS.bills, view:'bills', subs:[
-    {n:'Proforma invoices', ...billSub('proforma')}, {n:'Tax invoices', ...billSub('invoice')}, {n:'Delivery challans', ...billSub('challan')}, {n:'Payment receipts', ...billSub('payments')}, {n:'Saved items', ...billSub('items')}]},
+    {n:'Proforma invoices', ...billSub('proforma')}, {n:'Tax invoices', ...billSub('invoice')}, {n:'Delivery challans', ...billSub('challan')}, {n:'Payment receipts', ...billSub('payments')}, {n:'Clients', ...billSub('clients')}, {n:'Saved items', ...billSub('items')}]},
   {key:'stock', n:'Stock', icon: () => ICONS.stock, view:'stock'},
   {key:'db', n:'Database', icon: () => ICONS.past, view:'past', staffOnly:true},
   {key:'set', n:'Settings', icon: SIDE_ICONS.set, ownerOnly:true, subs:[
@@ -7641,6 +7845,7 @@ async function boot(){
         for (const d of snap.docs){ const path = 'clients/' + d.id; m.set(d.id, busy(path) && S.clients.has(d.id) ? S.clients.get(d.id) : {...d.data(), id:d.id}); }
         for (const [id, x] of S.clients) if (!m.has(id) && busy('clients/' + id)) m.set(id, x);
         S.clients = m;
+        if (S.view === 'bills' && S.billTab === 'clients' && !S.clientOpen && !S.clientBusy && !$('#view-bills').contains(document.activeElement)) renderBills();
       }, () => {});
     }
     if (S.role === 'owner' || canView('orders')) db.collection('orders').onSnapshot(snap => {
