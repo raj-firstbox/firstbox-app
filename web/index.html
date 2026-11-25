@@ -3116,7 +3116,7 @@ async function buildBillPdf(b, opt){
   let ly = y - words.length * 13 - 16;
   // Bank details
   const bankRows = [['Account Name', cfg.accName], ['Account Number', cfg.accNo], ['IFSC', cfg.ifsc], ['Account Type', cfg.accType], ['Bank', cfg.bank]].filter(r => r[1]);
-  if (cfg.accNo && bankRows.length){   // always shown (Raj)
+  if (!rc && cfg.accNo && bankRows.length){   // always shown (Raj), except on the receiving copy
     const bh = 30 + bankRows.length * 15 + 8, bw = sumX - M - 24;
     rrect(M, ly, bw, bh, SOFT);
     text('Bank Details', M + 18, ly - 20, F, 11, BLUE);
