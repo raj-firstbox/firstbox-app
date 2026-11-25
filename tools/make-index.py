@@ -6,18 +6,20 @@ outside Claude: the Supabase library, pdf-lib, the database settings and the clo
 
 Usage: python3 tools/make-index.py
 """
-import os, re
+import os, re, hashlib
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 src = open(os.path.join(ROOT, 'web', 'firstbox.html'), encoding='utf-8').read()
 
 cut = src.index('<header')
 head, body = src[:cut], src[cut:]
+# ?v=<content hash> on our own scripts, so a changed file is never taken from a stale browser/app cache.
+ver = lambda f: hashlib.sha1(open(os.path.join(ROOT, 'web', f), 'rb').read()).hexdigest()[:10]
 loaders = '\n'.join([
     '<script src="vendor/supabase.js"></script>',
     '<script src="vendor/pdf-lib.min.js"></script>',
-    '<script src="config.js"></script>',
-    '<script src="firstbox-cloud.js"></script>',
+    '<script src="config.js?v=' + ver('config.js') + '"></script>',
+    '<script src="firstbox-cloud.js?v=' + ver('firstbox-cloud.js') + '"></script>',
 ])
 i = body.index('<script>')
 body = body[:i] + loaders + '\n' + body[i:]
