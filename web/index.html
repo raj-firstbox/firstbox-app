@@ -2878,6 +2878,8 @@ function renderBilling(){
       h('label',{class:'row', style:'gap:8px'}, et, 'Test mode: check everything without filing (free). Untick when you are ready for real e-way bills.'),
       h('div',{class:'row'}, eb), est));
     ewb.status().then(show).catch(() => {});
+  } else if (window.firstboxGst){   // app running, but an older copy of firstbox-cloud.js is still loaded
+    root.append(card('E-way bill connection (gstinapi.in)', h('div',{class:'warnline'}, 'Your app is still using an older copy. Quit the app (⌘Q) and open it again; in a browser, reload the page.')));
   }
   root.append(saveFoot());   // Save button at the bottom too
 }
