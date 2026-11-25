@@ -2448,8 +2448,7 @@ function renderBills(){
           h('td',{}, h('div',{class:'jobno'}, (b.client || {}).name || '(no client)'), h('div',{class:'sub'}, (b.items || []).map(i => i.name).filter(Boolean).join(', '))),
           h('td',{class:'n'}, rs2(c.amount)), h('td',{class:'n'}, rs2(c.tax)), h('td',{class:'n'}, h('b',{}, rs2(c.total))),
           h('td',{}, b.type === 'proforma' ? (to ? h('span',{class:'pill Completed'}, 'Invoiced · ' + to.no) : h('span',{class:'pill Quoted'}, 'Open')) : from ? h('span',{class:'sub'}, 'From proforma ' + from.no) : b.lot ? h('span',{class:'sub'}, 'From a dispatch') : ''),
-          h('td',{}, (() => { const st = billPaid(b); return [paidPill(b, st) || '—', b.type === 'invoice' && st.status === 'part' ? h('div',{class:'sub'}, 'Balance ' + rs(st.bal)) : null,
-            b.type === 'invoice' ? h('div',{class:'sub'}, podState(b) === 'delivered' ? '✓ Delivered' : 'Not delivered yet') : null]; })()),
+          h('td',{}, (() => { const st = billPaid(b); return [paidPill(b, st) || '—', b.type === 'invoice' && st.status === 'part' ? h('div',{class:'sub'}, 'Balance ' + rs(st.bal)) : null]; })()),
           own ? h('td',{class:'act'}, rowDelete((tab === 'proforma' ? 'proforma ' : 'tax invoice ') + (b.no || ''), async () => { await deleteBill(b); renderBills(); })) : null); }))));
   };
   search.addEventListener('input', e => { S.billQ = e.target.value; draw(); });
@@ -2843,7 +2842,6 @@ function renderBill(){
       : h('div',{class:'note'}, own ? ['No bank account saved yet. ', h('button',{class:'linkbtn', onclick:() => go('billing')}, 'Add it in Billing details'), '.'] : 'No bank account saved yet.'));
   paper.append(h('div',{class:'inv-two'}, dc ? h('div',{}) : bank, totBox));
   if (!dc) paper.append(paymentsPanel(b));
-  if (b.type === 'invoice' || dc) paper.append(deliveryPanel(b, touch));
 
   // Terms and conditions, payment terms / additional info: one line each
   paper.append(termsBox('Terms and Conditions', b.terms, v => { b.terms = v; touch(); }, 'Write a term'));
@@ -3377,7 +3375,7 @@ function challanList(box){
         h('td',{}, h('div',{class:'jobno'}, (b.client || {}).name || '(no client)'), h('div',{class:'sub'}, (b.items || []).map(i => i.name).filter(Boolean).join(', '))),
         h('td',{class:'n'}, fmtN((b.items || []).reduce((a, it) => a + n0(it.qty), 0), 3)),
         h('td',{}, String(((b.transport || {}).on && (b.transport || {}).vehicle) || '—').toUpperCase()),
-        h('td',{}, from ? 'Tax invoice ' + from.no : b.lot ? 'A dispatch' : '—', h('div',{class:'sub'}, podState(b) === 'delivered' ? '✓ Delivered' : 'Not delivered yet')),
+        h('td',{}, from ? 'Tax invoice ' + from.no : b.lot ? 'A dispatch' : '—'),
         own ? h('td',{class:'act'}, rowDelete('delivery challan ' + (b.no || ''), async () => { await deleteBill(b); renderBills(); })) : null); }))));
   };
   search.addEventListener('input', e => { S.billQ = e.target.value; draw(); });
@@ -3443,52 +3441,6 @@ function newPaymentFor(b){
   const p = {id: uid(), no: nb.no, num: nb.num, date: today(), client: b ? clone(b.client || {}) : {name:''}, amount: st && st.bal > 0 ? st.bal : null, tds: null,
     mode: PAY_MODES[0], ref: '', bank: '', kind: !b || b.type === 'proforma' ? 'advance' : 'full', billId: b ? b.id : '', note: '', by: S.myName || '', createdAt: Date.now()};
   savePayment(p); go('pay', p.id);
-}
-// Proof of delivery (Raj): the transporter / delivery person sends a photo of the signed, stamped receiving copy;
-// the accounts team adds it here and marks the delivery done. Photos live apart in podPics/<id> {bill, data, at, by};
-// the bill keeps b.pod {picIds, delivered:{date, receiver, by, at}}.
-const POD_MAX_PICS = 3;
-function podState(b){ const p = b.pod || {}; return p.delivered ? 'delivered' : 'open'; }
-function deliveryPanel(b, touch){
-  const box = h('section',{class:'inv-tot', style:'gap:12px;margin-top:16px'});
-  const dc = b.type === 'challan', msg = h('div',{class:'note', role:'status'});
-  const persist = async () => { b.updatedAt = Date.now(); touch(); await saveAll(); };
-  const draw = () => {
-    const p = b.pod = b.pod || {picIds: []}, ids = p.picIds || (p.picIds = []), done = p.delivered;
-    const file = h('input',{type:'file', accept:'image/*', multiple:true, hidden:true, onchange:async e => {
-      const files = [...e.target.files].slice(0, POD_MAX_PICS - ids.length); e.target.value = '';
-      if (!files.length){ msg.textContent = 'Up to ' + POD_MAX_PICS + ' photos.'; return; }
-      msg.className = 'note'; msg.textContent = 'Adding the photo…';
-      try {
-        for (const f of files){ const data = await shrinkPhoto(f), id = 'POD-' + b.id + '-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
-          picCache.set('podPics/' + id, Promise.resolve(data)); await flush('podPics/' + id, () => ({bill: b.id, data, at: Date.now(), by: S.myName || ''})); ids.push(id); }
-        await persist(); msg.textContent = done ? '✓ Photo added.' : '✓ Photo added. Now check the details and press “Mark delivered”.'; draw();
-      } catch(err){ msg.className = 'note warnline'; msg.textContent = 'That file isn’t a picture the app can read. Try a JPEG or PNG photo.'; }
-    }});
-    const addBtn = ids.length < POD_MAX_PICS ? h('button',{type:'button', class:'btn', onclick:() => file.click()}, icon('plus'), ids.length ? ' Add another photo' : ' Add photo of signed receiving copy') : null;
-    const thumbs = ids.length ? picThumbs(ids.map(id => ({id, col:'podPics'})), done ? null : it => {
-      p.picIds = ids.filter(x => x !== it.id); picCache.delete('podPics/' + it.id); removeDoc('podPics/' + it.id); persist(); draw(); }) : null;
-    let body;
-    if (done){
-      body = [h('div',{class:'row', style:'gap:10px;flex-wrap:wrap'}, h('span',{class:'pill Completed'}, '✓ Delivered'),
-          h('span',{}, [done.date ? fmtD(done.date) : '', done.receiver ? 'received by ' + done.receiver : '', done.by ? 'marked by ' + done.by : ''].filter(Boolean).join(' · '))),
-        thumbs, h('div',{class:'row'}, addBtn,
-          h('button',{type:'button', class:'btn', onclick:async () => { delete p.delivered; await persist(); draw(); }}, 'Not delivered yet'))];
-    } else {
-      const dt = h('input',{type:'date', value: today()}), rcv = h('input',{placeholder:'Name on the receiving copy (optional)'});
-      const mark = h('button',{type:'button', class:'btn primary', disabled: ids.length ? null : true, onclick:async () => {
-        p.delivered = {date: dt.value || today(), receiver: rcv.value.trim(), by: S.myName || '', at: Date.now()}; await persist(); msg.textContent = '✓ Marked delivered.'; draw(); }}, 'Mark delivered');
-      body = [h('div',{class:'note'}, ids.length ? 'Photo added. Check the date and press “Mark delivered”.'
-          : 'When the transporter or delivery person sends the photo of the signed and stamped receiving copy' + (dc ? ' (this challan)' : ' (last page of the invoice PDF)') + ', add it here.'),
-        thumbs, h('div',{class:'row'}, addBtn),
-        ids.length ? h('div',{class:'grid'}, fld('Delivered on', dt), fld('Received by', rcv)) : null,
-        ids.length ? h('div',{class:'row'}, mark) : null];
-    }
-    box.replaceChildren(h('div',{class:'row', style:'justify-content:space-between'}, h('h2',{style:'margin:0'}, 'Delivery'), done ? null : h('span',{class:'pill Quoted'}, 'Not delivered yet')),
-      ...body.filter(Boolean), file, msg);
-  };
-  draw();
-  return box;
 }
 function paymentsPanel(b){
   const st = billPaid(b), box = h('section',{class:'inv-tot', style:'gap:12px'});
