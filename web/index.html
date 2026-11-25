@@ -2653,7 +2653,7 @@ function renderBill(){
   const refreshTotals = () => {
     { const c = billCalc(b), st = dc ? null : billPaid(b), q = b.items.reduce((a, it) => a + n0(it.qty), 0);
       topSum.replaceChildren(h('span',{class:'inv-sum-l'}, dc ? 'Total quantity' : 'Total (INR)'), h('span',{class:'inv-sum-v'}, dc ? fmtN(q, 3) : rs2(c.total)),
-        h('span',{class:'inv-sum-s'}, dc ? (b.items.length + (b.items.length === 1 ? ' item' : ' items')) : pf ? (st.got > 0 ? 'Advance received ' + rs(st.got) : 'No advance yet') : st.status === 'paid' ? 'Fully paid' : st.got > 0 ? 'Balance due ' + rs(st.bal) : 'Not paid yet'),
+        h('span',{class:'inv-sum-s'}, dc ? (b.items.length + (b.items.length === 1 ? ' item' : ' items')) : pf ? (st.got > 0 ? 'Advance ' + rs(st.got) + ' · balance ' + rs(Math.max(0, st.bal)) : 'No advance yet') : st.status === 'paid' ? 'Fully paid' : st.got > 0 ? 'Balance due ' + rs(st.bal) : 'Not paid yet'),
         (b.client || {}).name ? h('span',{class:'inv-sum-c'}, b.client.name) : null); }
     if (dc){ const q = b.items.reduce((a, it) => a + n0(it.qty), 0); totBox.replaceChildren(h('div',{class:'row inv-tline big', style:'justify-content:space-between;border:0;padding:0'}, h('span',{}, 'Total quantity'), h('span',{}, fmtN(q, 3)))); return; }
     const c = billCalc(b), half = r => r2(r / 2);
@@ -2666,6 +2666,12 @@ function renderBill(){
       h('label',{class:'row', style:'gap:8px'}, h('input',{type:'checkbox', checked: b.roundOff ? true : null, onchange:e => { b.roundOff = e.target.checked; touch(); }}), 'Round off to the nearest rupee'),
       line('Total (INR)', rs2(c.total), 'big'),
       h('div',{class:'note'}, 'Total in words: ' + amountWords(c.total)),
+      ...(() => { const st = billPaid(b); if (st.got <= 0) return [];
+        const ps = st.ps.length > 3 ? [{sum: true}] : st.ps;
+        return [...ps.map(p => line(h('span',{}, p.sum || pf || p.kind === 'advance' ? 'Advance received' : 'Amount received',
+            p.sum ? null : h('span',{class:'note', style:'display:block'}, [p.date ? fmtD(p.date) : '', p.mode || ''].filter(Boolean).join(' · '))),
+            '− ' + rs2(p.sum ? st.got : paySettled(p)), 'sub2')),
+          line('Balance payable (INR)', rs2(Math.max(0, st.bal)), 'big')]; })(),
       noRate ? h('div',{class:'warnline'}, noRate === 1 ? 'One item has no rate yet.' : noRate + ' items have no rate yet.') : null].filter(Boolean));
   };
   refreshTotals();
@@ -2887,7 +2893,9 @@ async function buildBillPdf(b){
     y -= 32;
   } else {
   // Words on the left, sums on the right.
-  if (y < 230){ newPage(); }
+  // Payments received so far (Raj): shown under the total, taken off, and the balance payable.
+  const paid = billPaid(b), pays = paid.ps.length > 3 ? [{sum: true}] : paid.ps;
+  if (y < 230 + (paid.got > 0 ? pays.length * 28 + 44 : 0)){ newPage(); }
   const sumX = W - M - 200, sumR = W - M - 12;
   const words = wrap('Total (in words) : ' + amountWords(calc.total), FB, 9, sumX - M - 20);
   words.forEach((l, j) => text(l, M, y - j * 13, FB, 9));
@@ -2903,6 +2911,23 @@ async function buildBillPdf(b){
   page.drawLine({start: {x: sumX, y: sy}, end: {x: W - M, y: sy}, thickness: 1, color: INK});
   text('Total (INR)', sumX, sy - 22, FB, 14); textR(money(calc.total), sumR, sy - 22, FB, 14);
   page.drawLine({start: {x: sumX, y: sy - 32}, end: {x: W - M, y: sy - 32}, thickness: 1, color: INK});
+  let py = sy - 32;
+  if (paid.got > 0){
+    py -= 16;
+    pays.forEach(p => {
+      const lab = p.sum ? (pf ? 'Advance received' : 'Amount received') : (pf || p.kind === 'advance' ? 'Advance received' : 'Amount received');
+      text(lab, sumX, py, F, 9.5); textR('- ' + money(p.sum ? paid.got : paySettled(p)), sumR, py, F, 9.5);
+      const sub = p.sum ? paid.ps.length + ' payments' : [p.date ? fmtD(p.date) : '', p.mode || ''].filter(Boolean).join(' · ');
+      if (sub) text(sub, sumX, py - 11, F, 7.5, GREY);
+      py -= 28;
+    });
+    py += 6;
+    page.drawLine({start: {x: sumX, y: py}, end: {x: W - M, y: py}, thickness: 1, color: INK});
+    const bal = Math.max(0, paid.bal);
+    text('Balance Payable', sumX, py - 20, FB, 11.5, BLUE); textR(money(bal), sumR, py - 20, FB, 12, BLUE);
+    page.drawLine({start: {x: sumX, y: py - 30}, end: {x: W - M, y: py - 30}, thickness: 1, color: INK});
+    py -= 30;
+  }
   let ly = y - words.length * 13 - 16;
   // Bank details
   const bankRows = [['Account Name', cfg.accName], ['Account Number', cfg.accNo], ['IFSC', cfg.ifsc], ['Account Type', cfg.accType], ['Bank', cfg.bank]].filter(r => r[1]);
@@ -2913,7 +2938,7 @@ async function buildBillPdf(b){
     bankRows.forEach(([k, v], j) => { text(k, M + 18, ly - 35 - j * 15, FB, 9); text(v, M + 18 + bw * 0.42, ly - 35 - j * 15, F, 9); });
     ly -= bh + 18;
   }
-  y = Math.min(ly, sy - 46);
+  y = Math.min(ly, py - 14);
   }
   // Terms and payment terms
   const list = (title, body) => {
