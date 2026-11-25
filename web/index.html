@@ -2677,9 +2677,7 @@ function renderBill(){
   refreshTotals();
   const bankRows = [['Bank', cfg.bank], ['Acc. No', cfg.accNo], ['IFSC', cfg.ifsc]].filter(r => r[1]);
   const bank = h('section',{class:'inv-tot', style:'gap:12px'},
-    h('div',{class:'row', style:'justify-content:space-between;gap:12px;flex-wrap:nowrap'},
-      h('div',{class:'row', style:'gap:12px;flex-wrap:nowrap'}, h('span',{class:'hicon', style:'width:44px;height:44px'}, icon('bank')), h('div',{}, h('b',{}, 'Show bank account details'), h('div',{class:'note'}, 'NEFT, IMPS, RTGS'))),
-      h('label',{class:'switch'}, h('input',{type:'checkbox', role:'switch', 'aria-label':'Show bank account details on the PDF', checked: b.showBank ? true : null, onchange:e => { b.showBank = e.target.checked; touch(); }}), h('span',{}))),
+    h('div',{class:'row', style:'gap:12px;flex-wrap:nowrap'}, h('span',{class:'hicon', style:'width:44px;height:44px'}, icon('bank')), h('div',{}, h('b',{}, 'Bank account details'), h('div',{class:'note'}, 'NEFT, IMPS, RTGS · always printed on the PDF'))),
     cfg.accNo ? h('div',{class:'inv-pbox'},
       h('div',{class:'row', style:'justify-content:space-between'}, h('b',{}, cfg.accName || cfg.name || 'Bank account'), own ? linkBtn('edit', 'Edit', () => go('billing')) : null),
       h('div',{class:'row', style:'gap:18px'}, bankRows.map(([k, v]) => h('span',{}, h('b',{}, k + ': '), v))))
@@ -2931,7 +2929,7 @@ async function buildBillPdf(b){
   let ly = y - words.length * 13 - 16;
   // Bank details
   const bankRows = [['Account Name', cfg.accName], ['Account Number', cfg.accNo], ['IFSC', cfg.ifsc], ['Account Type', cfg.accType], ['Bank', cfg.bank]].filter(r => r[1]);
-  if (b.showBank !== false && cfg.accNo && bankRows.length){
+  if (cfg.accNo && bankRows.length){   // always shown (Raj)
     const bh = 30 + bankRows.length * 15 + 8, bw = sumX - M - 24;
     rrect(M, ly, bw, bh, SOFT);
     text('Bank Details', M + 18, ly - 20, F, 11, BLUE);
