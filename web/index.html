@@ -661,6 +661,12 @@ body.has-side .side{display:flex}
   .hdesc{font-size:12px}
   .hgrid.set .hdesc{display:none}
   .hlogo{width:min(200px,56vw);margin-bottom:10px}
+  /* Raj: logo and Sign out on one line, both centred on it (logo in the middle, Sign out at the right edge) */
+  .hhero{grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);align-items:center;padding-top:10px}
+  .hhero .hlogo{grid-column:2;grid-row:1;width:min(150px,42vw);margin:0}
+  .hhero .hsignout{position:static;grid-column:3;grid-row:1;justify-self:end;align-self:center}
+  .hhero>h1,.hhero>.note{grid-column:1/-1}
+  .hhero>h1{margin-top:16px}
 }
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
 @media (max-width:420px){.bar nav{gap:0!important}.bar nav .tab{padding:6px 0 5px;font-size:10.5px;letter-spacing:-.01em}}
