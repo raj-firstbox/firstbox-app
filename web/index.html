@@ -2594,7 +2594,19 @@ function renderBill(){
     return wrap;
   };
   drawParty();
-  paper.append(h('div',{class:'inv-two'}, party, pf ? h('div',{}) : shipCard(b, touch)));
+  // Billed By (Raj): fixed, from ⚙ Billing details, shown just as the PDF prints it.
+  const byBox = h('section',{class:'inv-party'},
+    h('h2',{}, dc ? 'Consignor ' : 'Billed By ', h('span',{}, '(Your Details)')),
+    cfg.name || cfg.address || cfg.gstin ? h('div',{class:'inv-pbox'},
+      h('div',{class:'row', style:'justify-content:space-between;align-items:flex-start'}, h('b',{}, cfg.name || 'Firstbox'), own ? linkBtn('edit', 'Edit', () => go('billing')) : null),
+      cfg.address || cfg.state || cfg.pin ? h('div',{}, [cfg.address, [GST_STATES[cfg.state], 'India'].filter(Boolean).join(', ') + (cfg.pin ? ' - ' + cfg.pin : '')].filter(Boolean).join(', ')) : null,
+      h('div',{class:'inv-kv'},
+        cfg.gstin ? [h('span',{class:'note'},'GSTIN'), h('span',{}, String(cfg.gstin).toUpperCase())] : null,
+        cfg.pan ? [h('span',{class:'note'},'PAN'), h('span',{}, cfg.pan)] : null,
+        cfg.email ? [h('span',{class:'note'},'Email'), h('span',{}, cfg.email)] : null))
+      : h('div',{class:'note'}, own ? ['Your business details aren’t saved yet. ', h('button',{class:'linkbtn', onclick:() => go('billing')}, 'Add them in Billing details'), '.'] : 'Business details aren’t saved yet.'));
+  paper.append(h('div',{class:'inv-two'}, byBox, party));
+  if (!pf) paper.append(h('div',{class:'inv-two'}, shipCard(b, touch), h('div',{})));
   if (!pf) paper.append(transportCard(b, touch));
 
   // Items
