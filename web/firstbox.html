@@ -3148,7 +3148,7 @@ function ewbProblems(b){
   else {
     if (!(n0(tr.distance) >= 1 && n0(tr.distance) <= 4000)) out.push('Distance in km (Transport details)');
     if ((tr.mode || 'Road') === 'Road'){ if (!ewbVehicle(tr.vehicle) && !String(tr.id || '').trim()) out.push('Vehicle no. or transporter ID (Transport details)'); }
-    else if (!String(tr.docNo || '').trim() || !tr.docDate) out.push('LR / doc no. and date for ' + tr.mode + ' (Transport details)');
+    else if (!String(tr.docNo || '').trim()) out.push('LR / doc no. for ' + tr.mode + ' (Transport details)');
   }
   return out;
 }
@@ -3172,7 +3172,7 @@ function ewbBill(b){
     totalValue: taxable, cgstValue: inter ? 0 : cg, sgstValue: inter ? 0 : r2(tax - cg), igstValue: inter ? tax : 0, cessValue: 0,
     cessNonAdvolValue: 0, otherValue: other, totInvValue: calc.total,
     transMode: mode, transDistance: Math.round(n0(tr.distance)), transporterId: String(tr.id || '').trim().toUpperCase(), transporterName: ewbTxt(tr.name, '@#/,&. -', 100),
-    transDocNo: ewbTxt(tr.docNo, '/. -', 15), transDocDate: ewbDate(tr.docDate),
+    transDocNo: ewbTxt(tr.docNo, '/. -', 15), transDocDate: String(tr.docNo || '').trim() ? ewbDate(b.date) : '',   // LR date = invoice date (Raj)
     itemList: goods.map((r, i) => ({itemNo: i + 1, productName: '', productDesc: ewbTxt(r.it.name, '/. -&,', 100), hsnCode: +String(r.it.hsn).trim(),
       qtyUnit: EWB_UQC[String(r.it.unit || '').toUpperCase()] || 'OTH', quantity: n0(r.it.qty), taxableAmount: r.amt,
       sgstRate: inter ? 0 : n0(r.it.gst) / 2, cgstRate: inter ? 0 : n0(r.it.gst) / 2, igstRate: inter ? n0(r.it.gst) : 0, cessRate: 0, cessNonAdvol: 0})),
@@ -3229,9 +3229,8 @@ function transportCard(b, touch){
           fld('Mode', sel(TRANSPORT_MODES.map(m => [m, m]), tr.mode || 'Road', {onchange:e => { tr.mode = e.target.value; touch(); }})),
           fld('Vehicle no.', inp('vehicle', 'e.g. DL01AB1234', {style:'text-transform:uppercase'})),
           fld('LR / GR / Doc no.', inp('docNo', 'Lorry receipt no.')),
-          fld('LR date', h('input',{type:'date', value: String(tr.docDate || '').slice(0, 10), onchange:e => { tr.docDate = e.target.value; touch(); }})),
-          fld('E-way bill no.', inp('eway', '12 digits', {inputmode:'numeric'})),
           fld('Distance (km)', inp('distance', 'Needed for e-way bill', {inputmode:'numeric'}))),
+        h('div',{class:'note'}, 'LR date is the invoice date. ' + (tr.eway ? 'E-way bill no. ' + tr.eway + ' (added by the Generate e-way bill button).' : 'The e-way bill no. is added by the Generate e-way bill button.')),
         note));
       idNote();
     }
@@ -3248,7 +3247,7 @@ function shipTo(b){
 function transportLines(b){
   const tr = b.transport || {}; if (b.type === 'proforma' || !tr.on) return [];
   return [['Transporter', tr.name], ['Transporter ID', String(tr.id || '').toUpperCase()], ['Mode', tr.mode], ['Vehicle No', String(tr.vehicle || '').toUpperCase()],
-    ['LR / GR No', tr.docNo], ['LR Date', tr.docDate ? billDate(tr.docDate) : ''], ['E-Way Bill No', tr.eway], ['Distance', tr.distance ? tr.distance + ' km' : '']].filter(r => String(r[1] || '').trim());
+    ['LR / GR No', tr.docNo], ['LR Date', String(tr.docNo || '').trim() ? billDate(b.date) : ''], ['E-Way Bill No', tr.eway], ['Distance', tr.distance ? tr.distance + ' km' : '']].filter(r => String(r[1] || '').trim());
 }
 
 function challanList(box){
