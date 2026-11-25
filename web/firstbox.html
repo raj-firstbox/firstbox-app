@@ -2972,7 +2972,7 @@ async function buildBillPdf(b, opt){
       const hh = 44, ww = Math.min(170, img.width * hh / img.height), hh2 = ww * img.height / img.width;
       page.drawImage(img, {x: W - M - ww, y: H - 34 - hh2, width: ww, height: hh2});
       // Raj: Firstbox is the trade name of Vintage Offset — shown under the logo on the proforma.
-      if (pf) textC('Powered by Vintage Offset', W - M - ww / 2, H - 34 - hh2 - 13, F, 9, GREY);
+      textC('Powered by Vintage Offset', W - M - ww / 2, H - 34 - hh2 - 13, F, 9, GREY);   // every bill PDF (Raj)
     }
   } catch(e){}
 
