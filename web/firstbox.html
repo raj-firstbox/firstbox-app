@@ -2933,7 +2933,8 @@ async function downloadBill(b, btn){
 }
 
 // ----- PDF, laid out like the Refrens invoices -----
-async function buildBillPdf(b){
+async function buildBillPdf(b, opt){
+  const rc = !!(opt && opt.receiving);   // Raj: the receiving copy is the same invoice, marked RECEIVING COPY, with a sign/stamp line at the end
   const {PDFDocument, StandardFonts, rgb} = await loadPdfLib();
   const cfg = billCfg(), calc = billCalc(b), pf = b.type === 'proforma', dc = b.type === 'challan', inter = calc.inter, cl = b.client || {};
   const doc = await PDFDocument.create();
@@ -2956,19 +2957,19 @@ async function buildBillPdf(b){
 
   // Header: title, number, date; logo on the right.
   text(pf ? 'Proforma Invoice' : dc ? 'DELIVERY CHALLAN' : 'TAX INVOICE', M, H - 60, F, 24, BLUE);
+  if (rc){ const tx = M + tw('TAX INVOICE', F, 24) + 14, lab = 'RECEIVING COPY', lw = tw(lab, FB, 10) + 16;
+    page.drawRectangle({x: tx, y: H - 63, width: lw, height: 20, borderColor: BLUE, borderWidth: 1.2}); text(lab, tx + 8, H - 56, FB, 10, BLUE); }
   text(dc ? 'Challan No' : 'Invoice No', M + 1, H - 90, F, 9, GREY); text(b.no || '', M + 70, H - 90, FB, 9);
   text(dc ? 'Challan Date' : 'Invoice Date', M + 1, H - 108, F, 9, GREY); text(billDate(b.date), M + 70, H - 108, FB, 9);
   const pos = GST_STATES[cl.state] ? GST_STATES[cl.state] + ' (' + cl.state + ')' : '';
   const ewb = !pf && b.transport && b.transport.on ? String(b.transport.eway || '').trim() : '';
   if (pos) { text('Place of Supply', M + 190, H - 90, F, 9, GREY); text(pos, M + 270, H - 90, FB, 9); }
   if (ewb) { text('E-Way Bill No', M + 190, H - 108, F, 9, GREY); text(ewb, M + 270, H - 108, FB, 9); }
-  let logoImg = null;
   try {
     const src = ($('#logo') || {}).src || '';
     if (src.startsWith('data:image/')){
       const bytes = Uint8Array.from(atob(src.split(',')[1]), ch => ch.charCodeAt(0));
       const img = /^data:image\/png/.test(src) ? await doc.embedPng(bytes) : await doc.embedJpg(bytes);
-      logoImg = img;
       const hh = 44, ww = Math.min(170, img.width * hh / img.height), hh2 = ww * img.height / img.width;
       page.drawImage(img, {x: W - M - ww, y: H - 34 - hh2, width: ww, height: hh2});
       // Raj: Firstbox is the trade name of Vintage Offset — shown under the logo on the proforma.
@@ -3134,56 +3135,18 @@ async function buildBillPdf(b){
     const tot = parts.reduce((a, [t, f]) => a + tw(t, f, 9), 0); let cx = W / 2 - tot / 2;
     parts.forEach(([t, f]) => { cx = text(t, cx, y - 6, f, 9); });
   }
-  if (b.type === 'invoice'){ const pages = doc.getPages(); const lp = pages[pages.length - 1]; const s = 'This is an electronically generated document, no signature is required.'; lp.drawText(s, {x: W / 2 - F.widthOfTextAtSize(s, 6) / 2, y: 22, size: 6, font: F, color: INK}); }
-  // Receiving copy (Raj): a last page the delivery person gets signed and stamped at the client; its photo marks the delivery done.
-  if (b.type === 'invoice'){
-    page = doc.addPage([W, H]);
-    const sh = shipTo(b) || cl, tr = b.transport || {};
-    text('RECEIVING COPY', M, H - 60, F, 24, BLUE);
-    text('Please sign, stamp and return / send a photo of this page', M + 1, H - 78, F, 9, GREY);
-    if (logoImg){ const ww = Math.min(150, logoImg.width * 40 / logoImg.height), hh2 = ww * logoImg.height / logoImg.width; page.drawImage(logoImg, {x: W - M - ww, y: H - 34 - hh2, width: ww, height: hh2}); }
-    let ry = H - 110;
-    const facts = [['Invoice No', b.no || ''], ['Invoice Date', billDate(b.date)], ['E-Way Bill No', tr.on ? String(tr.eway || '') : ''],
-      ['Transporter', tr.on ? String(tr.name || '') : ''], ['Vehicle No', tr.on ? String(tr.vehicle || '').toUpperCase() : '']].filter(r => String(r[1]).trim());
-    facts.forEach(([k, v], i) => { const x = M + (i % 3) * (BW / 3); if (i && i % 3 === 0) ry -= 16; text(k, x, ry, F, 8.5, GREY); text(v, x + 68, ry, FB, 8.5); });
-    ry -= 18;
-    const bw3 = (BW - 10) / 2, fromL = partyLines({name: cfg.name, address: cfg.address, state: cfg.state, pin: cfg.pin, gstin: cfg.gstin}, true),
-      toL = partyLines({...sh, name: String(sh.name || cl.name || '').toUpperCase(), pan: '', email: ''}, false);
-    const bh3 = 40 + Math.max(fromL.length, toL.length) * lh + 6;
-    [[fromL, 'From', M], [toL, 'Deliver To', M + bw3 + 10]].forEach(([L, title, x]) => {
-      rrect(x, ry, bw3, bh3, SOFT); text(title, x + pad, ry - 26, F, 14, BLUE);
-      L.forEach((ln, i) => { const yy = ry - 43 - i * lh; let cx = x + pad; if (ln.k) cx = text(ln.k + ' ', cx, yy, FB, 9); text(ln.t, cx, yy, ln.f || F, 9); });
-    });
-    ry -= bh3 + 16;
-    // Goods: item and quantity only, no prices.
-    const cx2 = [M, M + 28, W - M - 150, W - M - 75], head = () => { page.drawRectangle({x: M, y: ry - 22, width: BW, height: 22, color: HEAD});
-      [['#', 0], ['Item', 1], ['Quantity', 2], ['Unit', 3]].forEach(([t, k]) => text(t, cx2[k] + 8, ry - 15, FB, 9, WHITE)); ry -= 22; };
-    head();
-    const goods = (b.items || []).filter(it => (it.name || n0(it.qty)) && !/^99/.test(String(it.hsn || '').trim()));   // goods only, no freight / services
-    goods.forEach((it, i) => {
-      const nm = wrap((it.name || '') + (it.size ? ' (' + it.size + ')' : ''), F, 9, cx2[2] - cx2[1] - 16), rh = 10 + nm.length * 12;
-      if (ry - rh < 250){ page = doc.addPage([W, H]); ry = H - M; head(); }
-      page.drawRectangle({x: M, y: ry - rh, width: BW, height: rh, color: i % 2 ? SOFT : ROWA});
-      text((i + 1) + '.', cx2[0] + 8, ry - 15, F, 9); nm.forEach((l, j) => text(l, cx2[1] + 8, ry - 15 - j * 12, F, 9));
-      text(fmtN(it.qty, 3), cx2[2] + 8, ry - 15, F, 9); text(it.unit || '', cx2[3] + 8, ry - 15, F, 9);
-      ry -= rh;
-    });
-    ry -= 18;
-    text('Total quantity: ' + fmtN(goods.reduce((a, it) => a + n0(it.qty), 0), 3), M, ry, FB, 10);
-    text('No. of boxes / packages: ______________', W - M - 230, ry, F, 10);
-    ry -= 30;
-    // Receiver's acknowledgement
-    const ah = 190;
-    page.drawRectangle({x: M, y: ry - ah, width: BW, height: ah, borderColor: BLUE, borderWidth: 1.2});
-    text('Received the above goods in good condition and in the correct quantity.', M + 14, ry - 22, FB, 10.5);
-    const lx = M + 14, lw = BW - 200, fld2 = (label, yy) => { text(label, lx, yy, F, 9.5, GREY); page.drawLine({start: {x: lx + 120, y: yy - 2}, end: {x: lx + lw, y: yy - 2}, thickness: 0.7, color: INK}); };
-    fld2('Receiver’s name', ry - 52); fld2('Mobile no.', ry - 80); fld2('Date & time', ry - 108); fld2('Signature', ry - 146);
-    const sx = W - M - 165, sy = ry - 40;
-    page.drawRectangle({x: sx, y: sy - 130, width: 150, height: 130, borderColor: GREY, borderWidth: 0.8, borderDashArray: [4, 3]});
-    textC('Company stamp', sx + 75, sy - 70, F, 9, GREY);
-    ry -= ah + 18;
-    const back = 'Delivery person: after signing, send a clear photo of this page to ' + (cfg.name || 'Firstbox') + (cfg.phone ? ' on WhatsApp ' + cfg.phone : '') + '.';
-    wrap(back, F, 9, BW).forEach((l, j) => text(l, M, ry - j * 12, F, 9, GREY));
+  if (rc){
+    // Receiver signs and stamps here; a photo of this page marks the delivery done (Delivery box on the invoice).
+    if (y < 75) newPage();
+    const sx = W - M - 210, sy = y - 46;
+    text('Received the above goods in good condition.', M, y - 14, F, 9.5);
+    page.drawLine({start: {x: sx, y: sy}, end: {x: W - M, y: sy}, thickness: 0.8, color: INK});
+    textC('Receiver’s signature & company stamp', sx + 105, sy - 13, F, 9, GREY);
+  } else if (b.type === 'invoice'){ const pages = doc.getPages(); const lp = pages[pages.length - 1]; const s = 'This is an electronically generated document, no signature is required.'; lp.drawText(s, {x: W / 2 - F.widthOfTextAtSize(s, 6) / 2, y: 22, size: 6, font: F, color: INK}); }
+  // Raj: every tax invoice PDF carries its receiving copy as the following page(s).
+  if (b.type === 'invoice' && !rc){
+    const rd = await PDFDocument.load(await buildBillPdf(b, {receiving: true}));
+    for (const pg of await doc.copyPages(rd, rd.getPageIndices())) doc.addPage(pg);
   }
   return await doc.save();
 }
