@@ -2513,19 +2513,21 @@ function renderBill(){
       pf ? h('button',{class:'btn', onclick:() => convertToInvoice(b)}, to ? 'Open tax invoice ' + to.no : 'Convert to Tax Invoice') : null,
       b.type === 'invoice' ? (b.challanId && S.bills.has(b.challanId) ? h('button',{class:'btn', onclick:() => go('bill', b.challanId)}, 'Open challan ' + S.bills.get(b.challanId).no) : h('button',{class:'btn', onclick:() => challanFromInvoice(b)}, 'Make delivery challan')) : null,
       !dc ? h('button',{class:'btn', onclick:() => newPaymentFor(b)}, '+ Record payment') : null,
-      b.type === 'invoice' ? h('button',{class:'btn', id:'ewb-btn', onclick:() => { S.ewbOpen = S.ewbOpen === b.id ? null : b.id; drawEwb(); if (S.ewbOpen) ewbBox.scrollIntoView({block:'nearest'}); }}, (b.transport || {}).eway ? 'E-way bill ' + b.transport.eway : 'Generate e-way bill') : null,
+      b.type === 'invoice' || dc ? h('button',{class:'btn', id:'ewb-btn', onclick:() => { S.ewbOpen = S.ewbOpen === b.id ? null : b.id; drawEwb(); if (S.ewbOpen) ewbBox.scrollIntoView({block:'nearest'}); }}, (b.transport || {}).eway ? 'E-way bill ' + b.transport.eway : 'Generate e-way bill') : null,
       h('button',{class:'btn', onclick:e => downloadBill(b, e.currentTarget)}, 'Download PDF'),
       own ? rowDelete(BILL_TYPE[b.type].toLowerCase(), async () => { await deleteBill(b); S.billTab = b.type; go('bills'); }) : null)));
   root.append(h('div',{id:'bill-alert'}));
   // E-way bill panel (tax invoices): what's missing, the file for the portal, then the number back.
   const ewbBox = h('div',{}), ewbMsg = h('div',{class:'note', role:'status', 'aria-live':'polite'}); root.append(ewbBox);
   let trBox = null;
-  function drawEwb(){
+  let ewbDyn = null;
+  function drawEwb(onlyDyn){
     const btn = $('#ewb-btn'); if (btn) btn.textContent = (b.transport || {}).eway ? 'E-way bill ' + b.transport.eway : 'Generate e-way bill';
-    if (b.type !== 'invoice' || S.ewbOpen !== b.id){ ewbBox.replaceChildren(); return; }
+    if (!(b.type === 'invoice' || dc) || S.ewbOpen !== b.id){ ewbBox.replaceChildren(); ewbDyn = null; return; }
+    if (dc && !b.ewbc) b.ewbc = ewbChallanStart(b);
     const api = window.firstboxEwb;
     if (api && S.ewbApi === undefined){ S.ewbApi = null; api.status().then(x => { S.ewbApi = x || {ready:false}; drawEwb(); }).catch(() => { S.ewbApi = {ready:false}; drawEwb(); }); }
-    const live = !!(S.ewbApi && S.ewbApi.ready), probs = ewbProblems(b), c = billCalc(b), tr = b.transport || {};
+    const live = !!(S.ewbApi && S.ewbApi.ready), probs = ewbProblems(b), c = {total: ewbTotal(b)}, tr = b.transport || {};
     const msg = ewbMsg;
     const say = (t, bad) => { msg.className = 'note' + (bad ? ' warnline' : ''); msg.textContent = t; };
     const refreshTr = () => { if (trBox){ const nb = transportCard(b, touch); trBox.replaceWith(nb); trBox = nb; } };
@@ -2552,11 +2554,11 @@ function renderBill(){
       try {
         const r = await api.generate(billCfg().gstin, ewbPayload(b)) || {};
         if (!r.success){ say(errText(r), true); return; }
-        if (r.test_mode){ S.ewbConfirm = null; drawEwb(); say('✓ Test worked: sample number ' + r.ewaybill_no + '. Nothing was filed and nothing was saved on the invoice. Switch off test mode in ⚙ Billing details to make real e-way bills.'); return; }
+        if (r.test_mode){ S.ewbConfirm = null; drawEwb(); say('✓ Test worked: sample number ' + r.ewaybill_no + '. Nothing was filed and nothing was saved on the ' + (dc ? 'challan' : 'invoice') + '. Switch off test mode in ⚙ Billing details to make real e-way bills.'); return; }
         b.transport = b.transport || {mode:'Road'};
         Object.assign(b.transport, {on: true, eway: String(r.ewaybill_no || '').replace(/\D/g, ''), ewbDate: r.ewaybill_date || '', ewbValid: r.valid_upto || '', ewbAt: Date.now(), ewbBy: S.myName || ''});
         S.ewbConfirm = null; touch(); await saveAll(); refreshTr(); drawEwb();
-        say((r.already_existed ? '✓ This invoice already had an e-way bill; its number is now saved: ' : '✓ E-way bill made and saved on the invoice: ') + b.transport.eway + '.');
+        say((r.already_existed ? '✓ This ' + (dc ? 'challan' : 'invoice') + ' already had an e-way bill; its number is now saved: ' : '✓ E-way bill made and saved on the ' + (dc ? 'challan' : 'invoice') + ': ') + b.transport.eway + '.');
       } catch(e){ say('Couldn’t make the e-way bill: ' + (e && e.message ? e.message : 'try again') + '.', true); }
       finally { if (t.isConnected){ t.disabled = false; t.textContent = 'Yes, generate e-way bill'; } }
     };
@@ -2569,7 +2571,7 @@ function renderBill(){
         const bin = atob(r.pdf_base64), bytes = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
         const dl = window.claude && window.claude.use ? await window.claude.use('downloads') : null;
         if (!dl){ say('Downloading isn’t available in this view.', true); return; }
-        const name = ('Tax invoice ' + (b.no || '') + ' ' + ((b.client || {}).name || '') + ' - E-way bill ' + tr.eway).replace(/[\\/:*?"<>|]+/g, ' ').replace(/\s+/g, ' ').trim() + '.pdf';
+        const name = ((dc ? 'Delivery challan ' : 'Tax invoice ') + (b.no || '') + ' ' + ((b.client || {}).name || '') + ' - E-way bill ' + tr.eway).replace(/[\\/:*?"<>|]+/g, ' ').replace(/\s+/g, ' ').trim() + '.pdf';
         const res = await dl.save({filename: name, data: new Blob([bytes], {type:'application/pdf'})});
         say(res && res.path ? '✓ Saved to ' + res.path : '✓ Downloaded “' + name + '”.');
       } catch(e){ if (!(e && e.code === 'declined')) say('Couldn’t get the PDF: ' + (e && e.message ? e.message : 'try again') + '.', true); }
@@ -2612,7 +2614,7 @@ function renderBill(){
         h('b',{}, '✓ All the details are there.'),
         S.ewbApi.test ? h('div',{class:'warnline'}, 'Test mode is on: this only checks the details, nothing is filed. Switch it off in ⚙ Billing details for real e-way bills.') : null,
         S.ewbConfirm === b.id
-          ? [h('div',{}, 'This files an e-way bill with the GST system for invoice ', h('b',{}, b.no || ''), ', ', h('b',{}, rs2(c.total)), ', to ', h('b',{}, (b.client || {}).name || ''), sh ? ' (shipped to ' + (sh.name || sh.address || 'another address') + ')' : '', ', ',
+          ? [h('div',{}, 'This files an e-way bill with the GST system for ' + (dc ? 'challan ' : 'invoice '), h('b',{}, b.no || ''), ', ', h('b',{}, rs2(c.total)), ', to ', h('b',{}, (b.client || {}).name || ''), sh ? ' (shipped to ' + (sh.name || sh.address || 'another address') + ')' : '', ', ',
               (tr.mode || 'Road') === 'Road' ? (ewbVehicle(tr.vehicle) ? 'vehicle ' + ewbVehicle(tr.vehicle) : 'transporter ' + String(tr.id || '').toUpperCase()) : tr.mode, ', ' + n0(tr.distance) + ' km.'),
              h('div',{class:'row'}, h('button',{class:'btn primary', onclick:e => generate(e.currentTarget)}, 'Yes, generate e-way bill'), h('button',{class:'btn', onclick:() => { S.ewbConfirm = null; drawEwb(); }}, 'Not now'))]
           : h('div',{class:'row'}, h('button',{class:'btn primary', onclick:() => { S.ewbConfirm = b.id; drawEwb(); }}, S.ewbApi.test ? 'Test e-way bill' : 'Generate e-way bill now'))),
@@ -2621,10 +2623,38 @@ function renderBill(){
       body = [h('div',{class:'inv-pbox'}, h('b',{}, '✓ All the details are there.'), ...manual(),
         isOwnerRole() && api ? h('div',{class:'note'}, 'To make e-way bills with one click, set up the connection in ', h('button',{class:'linkbtn', onclick:() => go('billing')}, '⚙ Billing details'), '.') : null)];
     }
+    const inv = dc && b.fromId && S.bills.get(b.fromId), invEwb = inv && (inv.transport || {}).eway;
+    const dynKids = [invEwb && !tr.eway ? h('div',{class:'warnline'}, 'Tax invoice ' + (inv.no || '') + ' already has e-way bill ' + invEwb + ' for these goods. You don’t need another one on this challan.') : null,
+      c.total > 0 && c.total < 50000 && !tr.eway ? h('div',{class:'note'}, 'This ' + (dc ? 'challan' : 'invoice') + ' is ' + rs(c.total) + ': an e-way bill is normally needed only above ₹50,000, but you can still make one.') : null, ...body].filter(Boolean);
+    if (onlyDyn && ewbDyn && ewbDyn.isConnected){ ewbDyn.replaceChildren(...dynKids); return; }
+    ewbDyn = h('div',{style:'display:grid;gap:12px'}, ...dynKids);
     ewbBox.replaceChildren(h('section',{class:'inv-party', style:'margin-bottom:16px'},
       h('div',{class:'row', style:'justify-content:space-between'}, h('h2',{}, 'E-way bill'), h('button',{class:'linkbtn', onclick:() => { S.ewbOpen = null; drawEwb(); }}, 'Close')),
-      c.total < 50000 && !tr.eway ? h('div',{class:'note'}, 'This invoice is ' + rs(c.total) + ': an e-way bill is normally needed only above ₹50,000, but you can still make one.') : null,
-      ...body, msg));
+      dc && !tr.eway ? ewbChallanBox() : null, ewbDyn, msg));
+  }
+  // Challan only: why the goods move, GST % and the value of each line (typed here; the challan PDF stays without prices).
+  function ewbChallanBox(){
+    const e = b.ewbc, save = () => { b.updatedAt = Date.now(); S.bills.set(b.id, b); pageSave('invoices/' + b.id, () => clone(b)); drawEwb(true); };
+    const lines = (b.items || []).filter(it => it.name || n0(it.qty));
+    const totTxt = h('b',{});
+    const showTot = () => { const t = ewbTotal(b); totTxt.textContent = rs2(t); };
+    const reason = h('div',{class:'row', style:'gap:8px;flex-wrap:wrap'}, EWB_CHL_REASONS.map(([k, label]) => h('label',{class:'row', style:'gap:6px'},
+      h('input',{type:'radio', name:'ewb-reason-' + b.id, checked: e.reason === k ? true : null, onchange:() => { e.reason = k; save(); }}), label)));
+    const gst = sel([0, 5, 12, 18, 28].map(v => [String(v), v + '%']), String(n0(e.gst)), {'aria-label':'GST %', onchange:ev => { e.gst = +ev.target.value; showTot(); refreshAmts(); save(); }});
+    const amts = [];
+    const refreshAmts = () => amts.forEach(([it, el]) => { el.textContent = rs2(r2(n0(it.qty) * n0((e.vals || {})[it.id]))); });
+    const rows = lines.map((it, i) => { const amt = h('span',{class:'note'});
+      amts.push([it, amt]);
+      return h('div',{class:'row', style:'gap:10px;flex-wrap:wrap;align-items:center'},
+        h('span',{style:'flex:1 1 200px;min-width:0'}, (i + 1) + '. ' + (it.name || 'Item') + ' · ' + fmtN(it.qty, 3) + ' ' + (it.unit || '')),
+        h('input',{inputmode:'decimal', placeholder:'₹ per unit', style:'width:120px', 'aria-label':'Value per unit for ' + (it.name || 'item ' + (i + 1)), value: (e.vals || {})[it.id] ?? '',
+          oninput:ev => { e.vals = e.vals || {}; const v = ev.target.value.trim(); if (v === '') delete e.vals[it.id]; else e.vals[it.id] = +v || 0; refreshAmts(); showTot(); save(); }}), amt); });
+    refreshAmts(); showTot();
+    return h('div',{class:'inv-pbox'},
+      h('b',{}, '1. Why are the goods moving?'), reason,
+      h('b',{}, '2. Value of the goods'), h('div',{class:'note'}, 'Only for the e-way bill; the challan PDF stays without prices.'),
+      ...rows,
+      h('div',{class:'row', style:'gap:10px;align-items:center'}, h('span',{}, 'GST on this value'), gst, h('span',{style:'margin-left:auto'}, 'Total with GST: '), totTxt));
   }
   if (own && !cfg.gstin) root.append(h('div',{class:'banner'}, 'Firstbox’s GSTIN and bank details are not filled in yet. Add them in ', h('button',{class:'linkbtn', onclick:() => go('billing')}, '⚙ Billing details'), '.'));
   const paper = h('div',{class:'inv'}); root.append(paper);
@@ -3161,7 +3191,23 @@ const ewbPin = v => { const t = String(v || '').replace(/\s+/g, ''); return /^[1
 const ewbState = p => { const g = gstinInfo(p.gstin); const st = String(p.state || (g ? g.code : '') || ''); return GST_STATES[st] ? +st : null; };
 const ewbAddr = a => { const parts = String(a || '').split(/\s*[,\n]\s*/).filter(Boolean), half = Math.ceil(parts.length / 2);
   return {a1: ewbTxt(parts.slice(0, half).join(', '), '@#/,&. -', 120), a2: ewbTxt(parts.slice(half).join(', '), '@#/,&. -', 120), place: ewbTxt(parts[parts.length - 1] || '', '@#/,&. -', 50)}; };
-const ewbGoods = b => billCalc(b).rows.filter(r => (r.it.name || n0(r.it.qty)) && !/^99/.test(String(r.it.hsn || '').trim()));
+// Lines with their value for the e-way bill. A delivery challan has no prices, so its values and GST % are typed in the
+// e-way bill panel (Raj) and kept in b.ewbc {reason 'jobwork'|'supply', gst, vals:{itemId: ₹ per unit}}; the challan PDF stays priceless.
+const EWB_CHL_REASONS = [['jobwork', 'Sending out for job work', 4], ['supply', 'Supply – tax invoice to follow', 1]];
+function ewbRows(b){
+  if (b.type !== 'challan') return billCalc(b).rows.map(r => ({...r, gst: n0(r.it.gst)}));
+  const e = b.ewbc || {}, g = n0(e.gst);
+  return (b.items || []).map(it => { const amt = r2(n0(it.qty) * n0((e.vals || {})[it.id])), tax = r2(amt * g / 100); return {it, amt, tax, gst: g, total: r2(amt + tax)}; });
+}
+// First time the panel opens on a challan: GST % from settings, values from the tax invoice it was made from (same line order/name).
+function ewbChallanStart(b){
+  const inv = b.fromId && S.bills.get(b.fromId), vals = {};
+  if (inv) (b.items || []).forEach((it, i) => { const src = (inv.items || [])[i]; const m = src && src.name === it.name ? src : (inv.items || []).find(x => x.name === it.name);
+    if (m && m.rate != null && n0(m.rate) > 0) vals[it.id] = n0(m.rate); });
+  return {reason: inv ? 'supply' : '', gst: inv ? n0((inv.items || [])[0] && inv.items[0].gst) || n0(billCfg().gst) : n0(billCfg().gst), vals};
+}
+const ewbTotal = b => b.type === 'challan' ? r2(ewbRows(b).reduce((a, r) => a + r.total, 0)) : billCalc(b).total;
+const ewbGoods = b => ewbRows(b).filter(r => (r.it.name || n0(r.it.qty)) && !/^99/.test(String(r.it.hsn || '').trim()));
 const ewbShip = b => { const sp = b.ship || {}; return sp.on && !sp.same ? sp : null; };
 // Raj: no LR no. for road; rail / air / ship need their document no. (railway receipt / airway bill / bill of lading).
 const trDocNo = tr => (tr.mode || 'Road') === 'Road' ? '' : String(tr.docNo || '').trim();
@@ -3173,8 +3219,10 @@ function ewbProblems(b){
   if (!g || !g.ok) out.push('Firstbox GSTIN (⚙ Billing details)');
   if (!String(cfg.address || '').trim()) out.push('Firstbox address (⚙ Billing details)');
   if (!ewbPin(cfg.pin)) out.push('Firstbox PIN code, 6 digits (⚙ Billing details)');
-  if (!String(b.no || '').trim()) out.push('Invoice no.');
-  if (!b.date) out.push('Invoice date');
+  const dc = b.type === 'challan', e = b.ewbc || {};
+  if (!String(b.no || '').trim()) out.push(dc ? 'Challan no.' : 'Invoice no.');
+  if (!b.date) out.push(dc ? 'Challan date' : 'Invoice date');
+  if (dc && !EWB_CHL_REASONS.some(x => x[0] === e.reason)) out.push('Why the goods are moving (in this panel)');
   if (!String(cl.name || '').trim()) out.push('Client (Billed To)');
   if (cl.gstin && !(gstinInfo(cl.gstin) || {}).ok) out.push('Client GSTIN looks wrong');
   if (!ewbState(cl)) out.push('Client state');
@@ -3184,7 +3232,9 @@ function ewbProblems(b){
   if (sh && !ewbState(sh)) out.push('Shipping state');
   const goods = ewbGoods(b);
   if (!goods.length) out.push('At least one item with goods (not only freight)');
-  goods.forEach(r => { if (!/^\d{4,8}$/.test(String(r.it.hsn || '').trim())) out.push('HSN code for item ' + ((b.items || []).indexOf(r.it) + 1) + (r.it.name ? ' (' + r.it.name + ')' : '') + ', 4–8 digits'); });
+  goods.forEach(r => { const nm = 'item ' + ((b.items || []).indexOf(r.it) + 1) + (r.it.name ? ' (' + r.it.name + ')' : '');
+    if (!/^\d{4,8}$/.test(String(r.it.hsn || '').trim())) out.push('HSN code for ' + nm + ', 4–8 digits');
+    if (dc && !(r.amt > 0)) out.push('Value per unit for ' + nm + ' (in this panel)'); });
   if (!tr.on) out.push('Transport details (tick “Add transport details”)');
   else {
     if (!(n0(tr.distance) >= 1 && n0(tr.distance) <= 4000)) out.push('Distance in km (Transport details)');
@@ -3196,7 +3246,7 @@ function ewbProblems(b){
 const EWB_UQC = {NOS:'NOS', PCS:'PCS', SET:'SET', BOX:'BOX', KG:'KGS', KGS:'KGS', PKT:'PAC', ROLL:'ROL'};
 // One e-way bill in the API's field names (as india-compliance sends it); ewbData renames a few for the bulk file.
 function ewbBill(b){
-  const cfg = billCfg(), cl = b.client || {}, tr = b.transport || {}, calc = billCalc(b), sh = ewbShip(b), inter = calc.inter;
+  const cfg = billCfg(), cl = b.client || {}, tr = b.transport || {}, dc = b.type === 'challan', calc = dc ? {rows: ewbRows(b), round: 0, total: ewbTotal(b)} : billCalc(b), sh = ewbShip(b), inter = billInter(b);
   const from = ewbAddr(cfg.address), to = ewbAddr((sh || cl).address), goods = ewbGoods(b);
   const half = v => r2(v / 2), gi = new Set(goods.map(r => r.it));
   const tax = r2(goods.reduce((a, r) => a + r.tax, 0)), cg = r2(goods.reduce((a, r) => a + half(r.tax), 0)), taxable = r2(goods.reduce((a, r) => a + r.amt, 0));
@@ -3204,7 +3254,7 @@ function ewbBill(b){
   const mode = {Road: 1, Rail: 2, Air: 3, Ship: 4}[tr.mode || 'Road'] || 1;
   const hsnAmt = {}; goods.forEach(r => { const k = String(r.it.hsn).trim(); hsnAmt[k] = (hsnAmt[k] || 0) + r.amt; });
   const bill = {
-    userGstin: String(cfg.gstin).toUpperCase(), supplyType: 'O', subSupplyType: 1, subSupplyDesc: '', docType: 'INV',
+    userGstin: String(cfg.gstin).toUpperCase(), supplyType: 'O', subSupplyType: dc ? (EWB_CHL_REASONS.find(x => x[0] === (b.ewbc || {}).reason) || [0, 0, 1])[2] : 1, subSupplyDesc: '', docType: dc ? 'CHL' : 'INV',
     docNo: ewbTxt(b.no, '/ -', 16), docDate: ewbDate(b.date), transactionType: sh ? 2 : 1,
     fromGstin: String(cfg.gstin).toUpperCase(), fromTrdName: ewbTxt(cfg.name, '/. -', 100), fromAddr1: from.a1, fromAddr2: from.a2, fromPlace: from.place,
     fromPincode: ewbPin(cfg.pin), fromStateCode: +cfg.state, actFromStateCode: +cfg.state,
@@ -3216,7 +3266,7 @@ function ewbBill(b){
     transDocNo: ewbTxt(trDocNo(tr), '/. -', 15), transDocDate: trDocNo(tr) ? ewbDate(b.date) : '',   // doc date = invoice date (Raj)
     itemList: goods.map((r, i) => ({itemNo: i + 1, productName: '', productDesc: ewbTxt(r.it.name, '/. -&,', 100), hsnCode: +String(r.it.hsn).trim(),
       qtyUnit: EWB_UQC[String(r.it.unit || '').toUpperCase()] || 'OTH', quantity: n0(r.it.qty), taxableAmount: r.amt,
-      sgstRate: inter ? 0 : n0(r.it.gst) / 2, cgstRate: inter ? 0 : n0(r.it.gst) / 2, igstRate: inter ? n0(r.it.gst) : 0, cessRate: 0, cessNonAdvol: 0})),
+      sgstRate: inter ? 0 : r.gst / 2, cgstRate: inter ? 0 : r.gst / 2, igstRate: inter ? r.gst : 0, cessRate: 0, cessNonAdvol: 0})),
     mainHsnCode: +(Object.entries(hsnAmt).sort((x, y) => y[1] - x[1])[0] || ['0'])[0]};
   if (mode === 1){ const v = ewbVehicle(tr.vehicle); if (v) bill.vehicleNo = v; bill.vehicleType = 'R'; }
   return bill;
