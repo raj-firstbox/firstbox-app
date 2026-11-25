@@ -3163,6 +3163,8 @@ const ewbAddr = a => { const parts = String(a || '').split(/\s*[,\n]\s*/).filter
   return {a1: ewbTxt(parts.slice(0, half).join(', '), '@#/,&. -', 120), a2: ewbTxt(parts.slice(half).join(', '), '@#/,&. -', 120), place: ewbTxt(parts[parts.length - 1] || '', '@#/,&. -', 50)}; };
 const ewbGoods = b => billCalc(b).rows.filter(r => (r.it.name || n0(r.it.qty)) && !/^99/.test(String(r.it.hsn || '').trim()));
 const ewbShip = b => { const sp = b.ship || {}; return sp.on && !sp.same ? sp : null; };
+// Raj: no LR no. for road; rail / air / ship need their document no. (railway receipt / airway bill / bill of lading).
+const trDocNo = tr => (tr.mode || 'Road') === 'Road' ? '' : String(tr.docNo || '').trim();
 const ewbVehicle = v => String(v || '').toUpperCase().replace(/[^0-9A-Z]/g, '');
 // What still has to be filled in before the file can be made (plain words for the screen).
 function ewbProblems(b){
@@ -3187,7 +3189,7 @@ function ewbProblems(b){
   else {
     if (!(n0(tr.distance) >= 1 && n0(tr.distance) <= 4000)) out.push('Distance in km (Transport details)');
     if ((tr.mode || 'Road') === 'Road'){ if (!ewbVehicle(tr.vehicle) && !String(tr.id || '').trim()) out.push('Vehicle no. or transporter ID (Transport details)'); }
-    else if (!String(tr.docNo || '').trim()) out.push('LR / doc no. for ' + tr.mode + ' (Transport details)');
+    else if (!trDocNo(tr)) out.push('Document no. for ' + tr.mode + ' (Transport details)');
   }
   return out;
 }
@@ -3211,7 +3213,7 @@ function ewbBill(b){
     totalValue: taxable, cgstValue: inter ? 0 : cg, sgstValue: inter ? 0 : r2(tax - cg), igstValue: inter ? tax : 0, cessValue: 0,
     cessNonAdvolValue: 0, otherValue: other, totInvValue: calc.total,
     transMode: mode, transDistance: Math.round(n0(tr.distance)), transporterId: String(tr.id || '').trim().toUpperCase(), transporterName: ewbTxt(tr.name, '@#/,&. -', 100),
-    transDocNo: ewbTxt(tr.docNo, '/. -', 15), transDocDate: String(tr.docNo || '').trim() ? ewbDate(b.date) : '',   // LR date = invoice date (Raj)
+    transDocNo: ewbTxt(trDocNo(tr), '/. -', 15), transDocDate: trDocNo(tr) ? ewbDate(b.date) : '',   // doc date = invoice date (Raj)
     itemList: goods.map((r, i) => ({itemNo: i + 1, productName: '', productDesc: ewbTxt(r.it.name, '/. -&,', 100), hsnCode: +String(r.it.hsn).trim(),
       qtyUnit: EWB_UQC[String(r.it.unit || '').toUpperCase()] || 'OTH', quantity: n0(r.it.qty), taxableAmount: r.amt,
       sgstRate: inter ? 0 : n0(r.it.gst) / 2, cgstRate: inter ? 0 : n0(r.it.gst) / 2, igstRate: inter ? n0(r.it.gst) : 0, cessRate: 0, cessNonAdvol: 0})),
@@ -3265,11 +3267,11 @@ function transportCard(b, touch){
         h('div',{class:'grid'},
           fld('Transporter name', inp('name', 'e.g. VRL Logistics'), 'wide'),
           fld('Transporter ID', inp('id', 'GSTIN / TRANSIN', {style:'text-transform:uppercase'})),
-          fld('Mode', sel(TRANSPORT_MODES.map(m => [m, m]), tr.mode || 'Road', {onchange:e => { tr.mode = e.target.value; touch(); }})),
+          fld('Mode', sel(TRANSPORT_MODES.map(m => [m, m]), tr.mode || 'Road', {onchange:e => { tr.mode = e.target.value; touch(); draw(); }})),
           fld('Vehicle no.', inp('vehicle', 'e.g. DL01AB1234', {style:'text-transform:uppercase'})),
-          fld('LR / GR / Doc no.', inp('docNo', 'Lorry receipt no.')),
+          (tr.mode || 'Road') === 'Road' ? null : fld({Rail:'Railway receipt no.', Air:'Airway bill no.', Ship:'Bill of lading no.'}[tr.mode] || 'Document no.', inp('docNo', 'Needed for e-way bill')),
           fld('Distance (km)', inp('distance', 'Needed for e-way bill', {inputmode:'numeric'}))),
-        h('div',{class:'note'}, 'LR date is the invoice date. ' + (tr.eway ? 'E-way bill no. ' + tr.eway + ' (added by the Generate e-way bill button).' : 'The e-way bill no. is added by the Generate e-way bill button.')),
+        h('div',{class:'note'}, ((tr.mode || 'Road') === 'Road' ? '' : 'Document date is the invoice date. ') + (tr.eway ? 'E-way bill no. ' + tr.eway + ' (added by the Generate e-way bill button).' : 'The e-way bill no. is added by the Generate e-way bill button.')),
         note));
       idNote();
     }
@@ -3286,7 +3288,7 @@ function shipTo(b){
 function transportLines(b){
   const tr = b.transport || {}; if (b.type === 'proforma' || !tr.on) return [];
   return [['Transporter', tr.name], ['Transporter ID', String(tr.id || '').toUpperCase()], ['Mode', tr.mode], ['Vehicle No', String(tr.vehicle || '').toUpperCase()],
-    ['LR / GR No', tr.docNo], ['LR Date', String(tr.docNo || '').trim() ? billDate(b.date) : ''], ['E-Way Bill No', tr.eway], ['Distance', tr.distance ? tr.distance + ' km' : '']].filter(r => String(r[1] || '').trim());
+    [{Rail:'RR No', Air:'AWB No', Ship:'B/L No'}[tr.mode] || 'Doc No', trDocNo(tr)], ['Doc Date', trDocNo(tr) ? billDate(b.date) : ''], ['E-Way Bill No', tr.eway], ['Distance', tr.distance ? tr.distance + ' km' : '']].filter(r => String(r[1] || '').trim());
 }
 
 function challanList(box){
