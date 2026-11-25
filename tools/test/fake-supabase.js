@@ -12,9 +12,9 @@
   const authCbs = [];
   const role = () => { const d = load(); const m = session && d.members.find(x => x.user_id === session.user.id); return m ? m.role : ''; };
   const isAdm = () => ['owner','admin'].includes(role());
-  const READ = {jobcards:['jobcards','stock','stockLog','shared','orders','invoices','clients','billItems','payments'], sales:['leads','samples','samplePics','orders','jobcards','pastwork','priceBook','shared'],
+  const READ = {jobcards:['jobcards','stock','stockLog','shared','orders','invoices','clients','billItems','payments','podPics'], sales:['leads','samples','samplePics','orders','jobcards','pastwork','priceBook','shared'],
     manager:['jobcards','stock','stockLog','shared','orders','samples','samplePics','leads','pastwork','priceBook'], inventory:['jobcards','stock','stockLog','shared','orders','samples','samplePics']};
-  const WRITE = {jobcards:['jobcards','stock','stockLog','orders','invoices','clients','billItems','payments'], sales:['leads','samples','samplePics'], inventory:['stock','stockLog','samples','samplePics']};
+  const WRITE = {jobcards:['jobcards','stock','stockLog','orders','invoices','clients','billItems','payments','podPics'], sales:['leads','samples','samplePics'], inventory:['stock','stockLog','samples','samplePics']};
   const canRead = (r) => isAdm() || (READ[role()] || []).includes(r.col);
   const canWrite = (col) => isAdm() || (WRITE[role()] || []).includes(col);
   function q(table){
