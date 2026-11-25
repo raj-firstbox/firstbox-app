@@ -350,6 +350,11 @@
       if (error) rpcErr(error);
       return data;
     },
+    async pdf(gstin, no) {
+      const { data, error } = await sb.rpc('ewb_pdf', { p_gstin: gstin, p_no: no });
+      if (error) rpcErr(error);
+      return data;
+    },
     async cancel(gstin, no, reason, remark) {
       const { data, error } = await sb.rpc('ewb_cancel', { p_gstin: gstin, p_no: no, p_reason: reason, p_remark: remark });
       if (error) rpcErr(error);

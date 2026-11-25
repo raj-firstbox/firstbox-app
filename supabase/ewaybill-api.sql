@@ -70,7 +70,7 @@ declare
   v_j    jsonb;
 begin
   if public.my_role() not in ('owner','admin','jobcards') then raise exception 'Not allowed'; end if;
-  if p_path not in ('/v1/ewaybill', '/v1/ewaybill/cancel') then raise exception 'Not allowed'; end if;
+  if p_path not in ('/v1/ewaybill', '/v1/ewaybill/cancel', '/v1/ewaybill/pdf') then raise exception 'Not allowed'; end if;
   select value into v_key from public.app_secrets where name = 'gstinapi_key';
   select value into v_user from public.app_secrets where name = 'ewb_user';
   select value into v_pass from public.app_secrets where name = 'ewb_pass';
@@ -105,14 +105,24 @@ language sql security definer set search_path = public as $$
     'cancel_reason_code', coalesce(nullif(trim(p_reason), ''), '2'), 'cancel_remark', left(coalesce(p_remark, ''), 50)));
 $$;
 
+-- PDF copy of an e-way bill (gstinapi.in draws it in the portal's print layout; 1 credit). Answer: {success, pdf_base64, …}.
+create or replace function public.ewb_pdf(p_gstin text, p_no text)
+returns jsonb
+language sql security definer set search_path = public as $$
+  select public.ewb_call('/v1/ewaybill/pdf', jsonb_build_object('gstin', upper(trim(p_gstin)), 'ewaybill_no', trim(p_no),
+    'print_type', 'detailed', 'format', 'base64'));
+$$;
+
 revoke all on function public.set_ewb_api(text, text, text, boolean) from public, anon;
 revoke all on function public.ewb_api_status() from public, anon;
 revoke all on function public.ewb_call(text, jsonb) from public, anon, authenticated;
 revoke all on function public.ewb_generate(text, jsonb) from public, anon;
 revoke all on function public.ewb_cancel(text, text, text, text) from public, anon;
+revoke all on function public.ewb_pdf(text, text) from public, anon;
 grant execute on function public.set_ewb_api(text, text, text, boolean) to authenticated;
 grant execute on function public.ewb_api_status() to authenticated;
 grant execute on function public.ewb_generate(text, jsonb) to authenticated;
 grant execute on function public.ewb_cancel(text, text, text, text) to authenticated;
+grant execute on function public.ewb_pdf(text, text) to authenticated;
 
 select 'E-way bill connection ready' as result;

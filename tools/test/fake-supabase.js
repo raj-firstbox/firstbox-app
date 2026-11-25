@@ -82,10 +82,11 @@
           if (args.p_test != null) e.test = !!args.p_test; d.ewb = e; save(d); return {data:null, error:null}; }
         if (name === 'ewb_api_status'){ const e = d.ewb || {}; if (!['owner','admin','jobcards'].includes(role())) return {data:{ready:false}, error:null};
           return {data:{ready: !!(e.key && e.user && e.pass), key: !!e.key, user: e.user || null, pass: !!e.pass, test: e.test !== false}, error:null}; }
-        if (name === 'ewb_generate' || name === 'ewb_cancel'){ if (!['owner','admin','jobcards'].includes(role())) return {error:{message:'Not allowed'}}; const e = d.ewb || {};
+        if (name === 'ewb_generate' || name === 'ewb_cancel' || name === 'ewb_pdf'){ if (!['owner','admin','jobcards'].includes(role())) return {error:{message:'Not allowed'}}; const e = d.ewb || {};
           if (!(e.key && e.user && e.pass)) return {error:{message:'P0001: The e-way bill connection is not set up yet (⚙ Billing details)'}};
           d.ewbCalls = (d.ewbCalls || []).concat([{name, args}]); save(d); const test = e.test !== false;
           if (e.pass === 'wrong') return {data:{success:false, error:'Invalid login credentials', error_code:'108', http_status:400, test_mode:test}, error:null};
+          if (name === 'ewb_pdf') return {data:{success:true, ewaybill_no:args.p_no, content_type:'application/pdf', pdf_base64: btoa('%PDF-1.4\n% fake e-way bill ' + args.p_no + '\n%%EOF'), test_mode:test, http_status:200}, error:null};
           if (name === 'ewb_cancel') return {data:{success:true, ewaybill_no:args.p_no, cancel_date:'25/11/2026', test_mode:test, http_status:200}, error:null};
           return {data:{success:true, ewaybill_no: test ? 'TEST-351000000123' : '351000000123', ewaybill_date:'25/11/2026 03:10:00 PM', valid_upto:'02/12/2026 11:59:00 PM', doc_no:args.p_payload.docNo, already_existed:false, test_mode:test, http_status:200}, error:null}; }
         if (name === 'set_member_password'){ if (!isAdm()) return {error:{message:'no'}}; const us = d.users.find(x => x.id === args.p_user); us.password = args.p_password; save(d); return {data:null, error:null}; }

@@ -733,7 +733,7 @@ body.has-side .side{display:flex}
 <script src="vendor/supabase.js"></script>
 <script src="vendor/pdf-lib.min.js"></script>
 <script src="config.js?v=df28e7afb3"></script>
-<script src="firstbox-cloud.js?v=5e9b92f187"></script>
+<script src="firstbox-cloud.js?v=5c5bc13eb2"></script>
 <script>
 (() => {
 'use strict';
@@ -2556,6 +2556,21 @@ function renderBill(){
       } catch(e){ say('Couldn’t make the e-way bill: ' + (e && e.message ? e.message : 'try again') + '.', true); }
       finally { if (t.isConnected){ t.disabled = false; t.textContent = 'Yes, generate e-way bill'; } }
     };
+    // PDF copy from gstinapi.in (portal print layout). Named like the invoice so the desktop app files it with the invoices.
+    const ewbPdf = async t => {
+      const label = t.textContent; t.disabled = true; t.textContent = 'Getting the PDF…'; say('');
+      try {
+        const r = await api.pdf(billCfg().gstin, tr.eway) || {};
+        if (!r.success || !r.pdf_base64){ say(errText(r), true); return; }
+        const bin = atob(r.pdf_base64), bytes = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+        const dl = window.claude && window.claude.use ? await window.claude.use('downloads') : null;
+        if (!dl){ say('Downloading isn’t available in this view.', true); return; }
+        const name = ('Tax invoice ' + (b.no || '') + ' ' + ((b.client || {}).name || '') + ' - E-way bill ' + tr.eway).replace(/[\\/:*?"<>|]+/g, ' ').replace(/\s+/g, ' ').trim() + '.pdf';
+        const res = await dl.save({filename: name, data: new Blob([bytes], {type:'application/pdf'})});
+        say(res && res.path ? '✓ Saved to ' + res.path : '✓ Downloaded “' + name + '”.');
+      } catch(e){ if (!(e && e.code === 'declined')) say('Couldn’t get the PDF: ' + (e && e.message ? e.message : 'try again') + '.', true); }
+      finally { if (t.isConnected){ t.disabled = false; t.textContent = label; } }
+    };
     const cancelForm = () => {
       const why = sel([['2','Order cancelled'], ['3','Data entry mistake'], ['1','Duplicate'], ['4','Others']], '3', {'aria-label':'Reason'});
       const rem = h('input',{placeholder:'Short remark (optional)', maxlength:'50', 'aria-label':'Remark'});
@@ -2578,7 +2593,8 @@ function renderBill(){
       body = [h('div',{class:'inv-pbox'},
         h('b',{}, '✓ E-way bill no. ' + tr.eway),
         tr.ewbDate || tr.ewbValid ? h('div',{class:'note'}, [tr.ewbDate ? 'Made ' + tr.ewbDate : '', tr.ewbValid ? 'valid until ' + tr.ewbValid : ''].filter(Boolean).join(' · ')) : null,
-        h('div',{class:'row'}, h('a',{class:'btn', href: EWB_PORTAL, target:'_blank', rel:'noopener'}, 'Open e-way bill portal'),
+        h('div',{class:'row'}, h('button',{class:'btn primary', onclick:e => ewbPdf(e.currentTarget)}, 'Download e-way bill PDF'),
+          h('a',{class:'btn', href: EWB_PORTAL, target:'_blank', rel:'noopener'}, 'Open e-way bill portal'),
           S.ewbCancel === b.id ? null : h('button',{class:'btn', onclick:() => { S.ewbCancel = b.id; drawEwb(); }}, 'Cancel e-way bill…'))),
         S.ewbCancel === b.id ? cancelForm() : null];
     } else if (probs.length){
