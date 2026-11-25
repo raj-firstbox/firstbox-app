@@ -291,7 +291,7 @@ input[type=date]{cursor:pointer}
 .inv-head+.inv-row{margin-top:0;border-top-left-radius:0;border-top-right-radius:0}
 .inv-calc{font-variant-numeric:tabular-nums;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .inv-strong{font-weight:700}
-.inv-extra{display:grid;grid-template-columns:1fr 2fr;gap:10px}
+.inv-extra{display:grid;grid-template-columns:minmax(0,1fr);gap:10px}
 .inv-extra:empty{display:none}
 .inv-links{display:flex;gap:20px;flex-wrap:wrap}
 .inv-links:empty{display:none}
@@ -2773,13 +2773,14 @@ function renderBill(){
       const name = h('input',{value: it.name || '', placeholder:'Item name', list:listId, 'aria-label':'Item ' + (i + 1) + ' name',
         oninput:e => set('name', e.target.value),
         onchange:e => { const x = findItem(e.target.value); if (!x) return; let ch = false;
-          if (x.hsn && !it.hsnTouched){ it.hsn = x.hsn; ch = true; } if (x.unit){ it.unit = x.unit; ch = true; } if (x.size && !it.size){ it.size = x.size; ch = true; } if (it.rate == null && x.rate != null && x.rate !== ''){ it.rate = n0(x.rate); ch = true; }
+          if (x.hsn && !it.hsnTouched){ it.hsn = x.hsn; ch = true; } if (x.unit){ it.unit = x.unit; ch = true; } if (x.size && !it.desc){ it.desc = 'Dimensions: ' + x.size; ch = true; } if (it.rate == null && x.rate != null && x.rate !== ''){ it.rate = n0(x.rate); ch = true; }
           if (ch){ touch(); drawItems(); } }});
       const unitSel = sel([...new Set([...UNITS, it.unit || 'NOS'])].map(u => [u, u]), it.unit || 'NOS', {'aria-label':'Unit', onchange:e => set('unit', e.target.value)});
-      const showSize = it.size || it._showSize, showDesc = it.desc || it._showDesc;
+      // Raj: no separate Dimensions box — only a description. An older line's dimensions move into its description.
+      if (it.size){ it.desc = 'Dimensions: ' + it.size + (it.desc ? '\n' + it.desc : ''); it.size = ''; }
+      const showDesc = it.desc || it._showDesc;
       const extra = h('div',{class:'inv-extra'},
-        showSize ? fld('Dimensions', h('input',{value: it.size || '', placeholder:'e.g. 7.5 x 6 x 2.5 inch', oninput:e => set('size', e.target.value)})) : null,
-        showDesc ? fld('Description', h('textarea',{rows:'2', placeholder:'One line each, prints under the item', oninput:e => set('desc', e.target.value)}, it.desc || '')) : null);
+        showDesc ? fld('Description', h('textarea',{rows:'2', placeholder:'e.g. Dimensions: 200 × 150 × 60 mm — one line each, prints under the item', oninput:e => set('desc', e.target.value)}, it.desc || '')) : null);
       upd();
       return h('div',{class:'inv-row'},
         h('div',{class:'row', style:'justify-content:space-between'}, h('b',{}, (i + 1) + '.'), h('div',{class:'row', style:'gap:2px'},
@@ -2794,7 +2795,6 @@ function renderBill(){
           ...(dc ? [] : [amtEl, ...taxEls, totEl])),
         extra,
         h('div',{class:'inv-links'},
-          showSize ? null : linkBtn('plus', 'Add dimensions', () => { it._showSize = true; drawItems(); }),
           showDesc ? null : linkBtn('plus', 'Add description', () => { it._showDesc = true; drawItems(); })));
     });
     itemsBox.replaceChildren(
@@ -4764,8 +4764,8 @@ function proformaFromQuote(l, q){
     const base = [it.product === 'mono' ? optName(MONO_STYLES, it.style) : '', qRigidLike(it.product) && it.board ? it.board + ' mm board' : '', it.product === 'mono' && (it.paperType || it.gsm) ? [optName(MONO_PAPERS, it.paperType), it.gsm ? it.gsm + ' GSM' : ''].filter(Boolean).join(' ') : it.paper,
       it.lam ? coatName(fixCoat({lam: it.lam, fx: []}).lam) : '', (it.fx || []).map(k => (SMP_FX.find(x => x[0] === k) || [k, k])[1]).join(', ')].filter(Boolean);
     for (const r of it.rows.filter(r => r.qty)) for (const p of it.prints)
-      items.push({id: uid(), name: qProdName(it.product), hsn: c.hsn, size: [it.l, it.w, it.h].some(v => v != null && v !== '') ? qSizeIn(it, it.unit === 'in' ? 'in' : 'mm') : '',
-        desc: [printName(p), ...base].filter(Boolean).join(' · '), qty: n0(r.qty), unit: c.unit, rate: qClient(it, p, r), gst: n0(c.gst)});
+      items.push({id: uid(), name: qProdName(it.product), hsn: c.hsn, size: '',
+        desc: [[it.l, it.w, it.h].some(v => v != null && v !== '') ? 'Dimensions: ' + qSizeIn(it, it.unit === 'in' ? 'in' : 'mm') : '', [printName(p), ...base].filter(Boolean).join(' · ')].filter(Boolean).join('\n'), qty: n0(r.qty), unit: c.unit, rate: qClient(it, p, r), gst: n0(c.gst)});
   }
   const b = newBill('proforma', {client: cl, items, leadId: l.id, quoteId: q.id});
   if (pi.notes) b.payTerms = (b.payTerms ? b.payTerms + '\n' : '') + pi.notes;
