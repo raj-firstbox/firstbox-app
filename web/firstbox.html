@@ -137,6 +137,8 @@ tbody tr:last-child td{border-bottom:0}
 .pill.Confirmed{background:var(--warn-soft);color:var(--warn)}
 .pill.Completed{background:var(--good-soft);color:var(--good)}
 .pill.Lost{background:var(--bad-soft);color:var(--bad)}
+tr.paycan td{color:var(--muted)}
+.strike{text-decoration:line-through}
 .chip{display:inline-block;font-size:10px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;padding:1px 6px;border-radius:4px;background:var(--warn-soft);color:var(--warn);margin-left:6px;vertical-align:middle}
 .empty{padding:28px;text-align:center;color:var(--muted)}
 .newjob{background:var(--surface);border:1px solid var(--accent);border-radius:8px;padding:14px;margin-bottom:16px;display:grid;gap:12px}
@@ -2308,6 +2310,7 @@ async function deleteBill(b){
   if (b.type === 'challan' && b.fromId){ const inv = S.bills.get(b.fromId); if (inv && inv.challanId === b.id){ delete inv.challanId; saveBill(inv); } }
   if (b.type === 'challan') for (const x of S.orders.values()) if ((x.dispatches || []).some(y => y.challanId === b.id)){ x.dispatches.forEach(y => { if (y.challanId === b.id){ delete y.challanId; delete y.challanNo; } }); saveOrder(x); }
   for (const id of (b.pod || {}).picIds || []){ picCache.delete('podPics/' + id); removeDoc('podPics/' + id); }   // delivery photos go with the bill
+  rescuePayments(b);
   S.bills.delete(b.id); if (S.bdraft && S.bdraft.id === b.id) S.bdraft = null; await removeDoc('invoices/' + b.id);
 }
 function convertToInvoice(p){
@@ -3618,7 +3621,9 @@ function challanFromLot(o, d){
 }
 
 // ----- Payments received -----
-// payments/<id>: no, num, date, client{name,gstin,...}, amount, tds, mode, ref, bank, kind, billId (proforma or tax invoice it is for, or ''), note, by.
+// payments/<id>: no, num, date, client{name,gstin,...}, amount, tds, mode, ref, bank, kind, billId (proforma or tax invoice it is for, or '' = client credit / on account), note, by,
+// cancelled {at, by, reason} (Raj: a receipt is never deleted, only cancelled — it stays in the list and stops counting), movedFrom {billId, label, at, by, why} (moved to client credit),
+// log [{at, by, text}] (what happened to it).
 const PAY_KINDS = {advance:'Advance', full:'Balance clearance', part:'Part payment', other:'Other'};
 const PAY_KIND_OPTS = ['advance', 'full', 'part'];
 const PAY_MODES = ['Bank transfer (NEFT / RTGS / IMPS)', 'UPI', 'Cheque', 'Cash', 'Other'];
@@ -3631,10 +3636,31 @@ function nextPayNo(){
   return {no: prefix + n, num: n};
 }
 const paySettled = p => r2(n0(p.amount) + n0(p.tds));
+const canFixPay = () => isOwnerRole() || S.role === 'jobcards';   // Raj: owner/admins and the accounts team cancel receipts and move them to client credit
+const payLog = (p, text) => { p.log = [...(p.log || []), {at: Date.now(), by: S.myName || '', text}]; };
+const billLabel = b => BILL_TYPE[b.type] + ' ' + (b.no || '');
+const sameClientAs = (cl, x) => { const g = String((cl || {}).gstin || '').toUpperCase(), gx = String((x || {}).gstin || '').toUpperCase();
+  return g && gx ? g === gx : !!normC((cl || {}).name) && normC((cl || {}).name) === normC((x || {}).name); };
+// Money a client has paid that is not on any bill yet (advances on account, receipts moved off a bill): it can be used on their next bill.
+function clientCredit(cl){
+  const ps = [...S.payments.values()].filter(p => !p.cancelled && !(p.billId && S.bills.has(p.billId)) && sameClientAs(cl, p.client))
+    .sort((a, c) => String(a.date || '').localeCompare(String(c.date || '')));
+  return {ps, total: r2(ps.reduce((a, p) => a + paySettled(p), 0))};
+}
+// A bill being deleted: its receipts move to the tax invoice made from it (proforma), else to the client's credit, so no payment leaves the system.
+function rescuePayments(b){
+  const to = b.type === 'proforma' && b.toId && S.bills.get(b.toId);
+  for (const p of [...S.payments.values()].filter(x => x.billId === b.id)){
+    const q = clone(p);
+    if (to){ q.billId = to.id; payLog(q, billLabel(b) + ' was deleted; payment kept on ' + billLabel(to)); }
+    else { q.billId = ''; q.movedFrom = {billId: b.id, label: billLabel(b), at: Date.now(), by: S.myName || '', why: 'deleted'}; payLog(q, billLabel(b) + ' was deleted; payment kept as client credit'); }
+    savePayment(q);
+  }
+}
 // Payments that count towards a document: its own, and for a tax invoice also those taken on the proforma it came from.
 function paymentsFor(b){
   const ids = new Set([b.id]); if (b.type === 'invoice' && b.fromId) ids.add(b.fromId);
-  return [...S.payments.values()].filter(p => p.billId && ids.has(p.billId)).sort((a, c) => String(a.date || '').localeCompare(String(c.date || '')) || n0(a.createdAt) - n0(c.createdAt));
+  return [...S.payments.values()].filter(p => p.billId && ids.has(p.billId) && !p.cancelled).sort((a, c) => String(a.date || '').localeCompare(String(c.date || '')) || n0(a.createdAt) - n0(c.createdAt));
 }
 function billPaid(b, exceptId){
   const ps = paymentsFor(b).filter(p => p.id !== exceptId), got = r2(ps.reduce((a, p) => a + paySettled(p), 0)), total = billCalc(b).total, bal = r2(total - got);
@@ -3644,7 +3670,8 @@ const PAID_PILL = {unpaid:['Unpaid','Quoted'], part:['Part paid','Confirmed'], p
 const paidPill = (b, st) => b.type === 'proforma' ? (st.got > 0 ? h('span',{class:'pill Confirmed'}, 'Advance ' + rs(st.got)) : null) : h('span',{class:'pill ' + PAID_PILL[st.status][1]}, PAID_PILL[st.status][0]);
 function payFor(p){
   const b = p.billId && S.bills.get(p.billId);
-  return (PAY_KINDS[p.kind] || 'Payment') + (b ? (p.kind === 'advance' ? ' against ' : ' for ') + BILL_TYPE[b.type].toLowerCase() + ' ' + b.no : p.billId ? ' (document deleted)' : '');
+  if (!b) return 'Client credit (on account)' + (p.movedFrom ? ' · was on ' + p.movedFrom.label : '');
+  return (PAY_KINDS[p.kind] || 'Payment') + ((p.kind === 'advance' ? ' against ' : ' for ') + BILL_TYPE[b.type].toLowerCase() + ' ' + b.no);
 }
 function savePayment(p){ p.updatedAt = Date.now(); S.payments.set(p.id, p); const snap = clone(p); scheduleSave('payments/' + p.id, () => snap, 500); }
 function newPaymentFor(b){
@@ -3668,10 +3695,51 @@ function paymentsPanel(b){
         h('td',{}, fmtDate(p.date)), h('td',{}, h('button',{class:'linkbtn', onclick:() => go('pay', p.id)}, p.no || 'Receipt')),
         h('td',{}, payFor(p)), h('td',{}, [p.mode, payRef(p)].filter(Boolean).join(' · ')),
         h('td',{class:'n'}, h('b',{}, rs2(paySettled(p))), n0(p.tds) ? h('div',{class:'sub'}, 'incl. TDS ' + rs2(p.tds)) : null)))))) : h('div',{class:'note'}, b.type === 'proforma' ? 'Record the advance here when the client pays. It carries over to the tax invoice made from this proforma.' : 'Record each payment the client makes against this invoice.'),
+    creditBox(b) || '',
     h('div',{class:'row'}, h('button',{class:'btn primary', onclick:() => newPaymentFor(b)}, '+ Record payment')));
   return box;
 }
+function creditBox(b){
+  const cr = clientCredit(b.client); if (!cr.ps.length) return null;
+  return h('div',{class:'inv-pbox', style:'gap:8px'},
+    h('b',{}, 'Client credit available: ' + rs2(cr.total)),
+    h('div',{class:'note'}, 'Money this client paid that is not on any bill yet. Use it on this ' + BILL_TYPE[b.type].toLowerCase() + ' if it is for this order.'),
+    ...cr.ps.map(p => h('div',{class:'row', style:'justify-content:space-between;gap:8px'},
+      h('span',{}, h('button',{class:'linkbtn', onclick:() => go('pay', p.id)}, p.no || 'Receipt'), ' · ' + fmtDate(p.date) + ' · ', h('b',{}, rs2(paySettled(p))), p.movedFrom ? h('span',{class:'sub'}, ' (was on ' + p.movedFrom.label + ')') : null),
+      canFixPay() ? h('button',{class:'btn small', onclick:() => {
+        const q = clone(p); q.billId = b.id; const st = billPaid(b);
+        q.kind = b.type === 'proforma' ? 'advance' : paySettled(q) >= st.bal - 0.5 ? 'full' : 'part'; q.kindTouched = false;
+        payLog(q, 'Client credit used on ' + billLabel(b)); savePayment(q); render(); }}, 'Use on this ' + (b.type === 'proforma' ? 'proforma' : 'invoice')) : null)));
+}
 
+// Raj: receipts are never deleted. Cancel (with a reason) keeps them as a record; Move to client credit takes them off a bill but keeps the money with the client.
+const PAY_CANCEL_WHY = ['Entered by mistake', 'Wrong amount entered', 'Recorded twice', 'Cheque bounced / payment failed', 'Money returned to the client'];
+const payActBox = h('div',{});
+async function payAct(p, fn){
+  fn(p); p.updatedAt = Date.now(); S.payments.set(p.id, p); pageSave('payments/' + p.id, () => clone(p)); await saveAll(); payActBox.replaceChildren(); renderPay();
+}
+function payFixButtons(p){
+  if (!canFixPay()) return [];
+  if (p.cancelled) return [h('button',{class:'btn', onclick:() => payAct(p, q => { payLog(q, 'Restored (was cancelled: ' + (q.cancelled.reason || '') + ')'); delete q.cancelled; })}, 'Restore receipt')];
+  const b = p.billId && S.bills.get(p.billId);
+  return [
+    b ? h('button',{class:'btn', onclick:() => payActBox.replaceChildren(h('div',{class:'card', style:'display:grid;gap:8px;margin-bottom:12px'},
+      h('b',{}, 'Move this payment to client credit?'),
+      h('div',{}, 'It comes off ' + billLabel(b) + ' (that bill shows it as unpaid again) and stays with ' + ((p.client || {}).name || 'the client') + ' as credit, to use on their next proforma or invoice.'),
+      h('div',{class:'row'}, h('button',{class:'btn primary', onclick:() => payAct(p, q => { q.movedFrom = {billId: b.id, label: billLabel(b), at: Date.now(), by: S.myName || '', why: 'moved'}; q.billId = ''; q.kind = 'advance'; payLog(q, 'Moved off ' + billLabel(b) + ' to client credit'); })}, 'Move to client credit'),
+        h('button',{class:'btn', onclick:() => payActBox.replaceChildren()}, 'Keep it here')))) }, 'Move to client credit') : null,
+    h('button',{class:'btn', style:'color:var(--bad)', onclick:() => {
+      let why = '', other = '';
+      const go2 = h('button',{class:'btn primary', disabled:true, onclick:() => payAct(p, q => { const r = why === 'Other' ? other.trim() : why; q.cancelled = {at: Date.now(), by: S.myName || '', reason: r}; payLog(q, 'Cancelled: ' + r); })}, 'Cancel this receipt');
+      const ok = () => { go2.disabled = !(why && (why !== 'Other' || other.trim())); };
+      const otherIn = h('input',{placeholder:'Write the reason', hidden:true, oninput:e => { other = e.target.value; ok(); }});
+      payActBox.replaceChildren(h('div',{class:'card', style:'display:grid;gap:8px;margin-bottom:12px'},
+        h('b',{}, 'Cancel receipt ' + (p.no || '') + '?'),
+        h('div',{}, 'It stays in the list marked “Cancelled” and stops counting as received' + (b ? ' on ' + billLabel(b) : '') + '. Its number is not used again. If the money really came in but is on the wrong bill, use “Move to client credit” instead.'),
+        fld('Reason', sel([['', 'Choose a reason'], ...PAY_CANCEL_WHY.map(x => [x, x]), ['Other', 'Other reason…']], '', {onchange:e => { why = e.target.value; otherIn.hidden = why !== 'Other'; ok(); }})), otherIn,
+        h('div',{class:'row'}, go2, h('button',{class:'btn', onclick:() => payActBox.replaceChildren()}, 'Don’t cancel'))));
+    }}, 'Cancel receipt')].filter(Boolean);
+}
 // Payment receipt editor
 function renderPay(){
   const root = $('#view-pay'); root.replaceChildren();
@@ -3685,8 +3753,9 @@ function renderPay(){
       h('button',{class:'btn', onclick:e => copyPayMsg(p, e.currentTarget)}, 'Copy for WhatsApp'),
       waLink(p) ? h('a',{class:'btn', href: waLink(p), target:'_blank', rel:'noopener'}, 'Open WhatsApp') : null,
       h('button',{class:'btn', onclick:e => downloadReceipt(p, e.currentTarget)}, 'Download receipt PDF'),
-      own ? rowDelete('payment receipt ' + (p.no || ''), async () => { S.payments.delete(p.id); S.paydraft = null; await removeDoc('payments/' + p.id); S.billTab = 'payments'; go('bills'); }) : null)));
-  root.append(h('div',{id:'bill-alert'}));
+      ...payFixButtons(p))));
+  root.append(h('div',{id:'bill-alert'}), payActBox);
+  if (p.cancelled) root.append(h('div',{class:'banner', style:'background:var(--bad-soft);color:var(--bad)'}, 'CANCELLED on ' + fmtWhen(p.cancelled.at) + (p.cancelled.by ? ' by ' + p.cancelled.by : '') + ' · Reason: ' + (p.cancelled.reason || '—') + '. This receipt no longer counts as received. It stays here as a record.'));
   const paper = h('div',{class:'inv'}); root.append(paper);
   const topSum = h('div',{class:'inv-sum', 'aria-live':'polite'});
   paper.append(h('div',{class:'inv-top'},
@@ -3741,7 +3810,7 @@ function renderPay(){
   }
   const sum = h('div',{class:'inv-tot'});
   const refresh = () => {
-    topSum.replaceChildren(h('span',{class:'inv-sum-l'}, 'Amount received'), h('span',{class:'inv-sum-v'}, rs2(p.amount)), h('span',{class:'inv-sum-s'}, payFor(p)), (p.client || {}).name ? h('span',{class:'inv-sum-c'}, p.client.name) : null);
+    topSum.replaceChildren(h('span',{class:'inv-sum-l'}, 'Amount received'), h('span',{class:'inv-sum-v'}, rs2(p.amount)), h('span',{class:'inv-sum-s'}, (p.cancelled ? 'CANCELLED · ' : '') + payFor(p)), (p.client || {}).name ? h('span',{class:'inv-sum-c'}, p.client.name) : null);
     const b = p.billId && S.bills.get(p.billId), line = (l, v, cls) => h('div',{class:'row inv-tline' + (cls ? ' ' + cls : ''), style:'justify-content:space-between'}, h('span',{}, l), h('span',{}, v));
     const kids = [line('Amount received', h('b',{}, rs2(p.amount)))];
     if (n0(p.tds)) kids.push(line('TDS deducted', rs2(p.tds), 'sub2'), line('Total settled', rs2(paySettled(p)), 'sub2'));
@@ -3754,6 +3823,9 @@ function renderPay(){
   };
   refresh();
   paper.append(h('div',{class:'inv-two'}, h('div',{class:'note', style:'align-self:center'}, 'Send the receipt to the client: “Download receipt PDF”, then attach it in WhatsApp or email. “Copy for WhatsApp” copies a short message with the details.'), sum));
+  if ((p.log || []).length) paper.append(h('section',{class:'inv-party'}, h('h2',{}, 'History'),
+    h('div',{class:'inv-pbox', style:'gap:4px'}, ...p.log.map(x => h('div',{}, h('span',{class:'sub'}, fmtWhen(x.at) + (x.by ? ' · ' + x.by : '') + ' — '), x.text)))));
+  if (p.cancelled) paper.querySelectorAll('input, select, textarea').forEach(el => { el.disabled = true; });
   root.append(saveFoot());   // Save button at the bottom too
 }
 const payDocTxt = p => { const b = p.billId && S.bills.get(p.billId); return b ? (p.kind === 'advance' ? 'as advance against ' : 'towards ') + BILL_TYPE[b.type].toLowerCase() + ' no. ' + b.no : p.kind === 'advance' ? 'as advance' : ''; };
@@ -3785,7 +3857,7 @@ async function downloadReceipt(p, btn){
   } finally { btn.disabled = false; if (btn.textContent === 'Making PDF…') btn.textContent = label; }
 }
 async function buildReceiptPdf(p){
-  const {PDFDocument, StandardFonts, rgb} = await loadPdfLib();
+  const {PDFDocument, StandardFonts, rgb, degrees: PDFLibDeg} = await loadPdfLib();
   const cfg = billCfg(), cl = p.client || {}, b = p.billId && S.bills.get(p.billId);
   const doc = await PDFDocument.create(); doc.setTitle('Payment Receipt ' + (p.no || '')); doc.setAuthor(cfg.name || 'Firstbox');
   const F = await doc.embedFont(StandardFonts.Helvetica), FB = await doc.embedFont(StandardFonts.HelveticaBold);
@@ -3848,6 +3920,12 @@ async function buildReceiptPdf(p){
     if (cfg.phone) parts.push([cfg.email ? ', call on ' : 'call on ', F], [cfg.phone, FB]);
     const tot = parts.reduce((a, [t, f]) => a + tw(t, f, 9), 0); let cx = W / 2 - tot / 2; parts.forEach(([t, f]) => { cx = text(t, cx, Math.max(y, 50), f, 9); });
   }
+  if (p.cancelled){   // Raj: a cancelled receipt prints with a stamp across it
+    const RED = rgb(0.8, 0.13, 0.13), st = 'CANCELLED', sz = 72;
+    page.drawText(st, {x: W / 2 - FB.widthOfTextAtSize(st, sz) * 0.39, y: H / 2 - 160, size: sz, font: FB, color: RED, opacity: 0.28, rotate: PDFLibDeg(30)});
+    const ln = 'Cancelled on ' + billDate(ymd(new Date(p.cancelled.at))) + (p.cancelled.by ? ' by ' + p.cancelled.by : '') + ' · Reason: ' + (p.cancelled.reason || '');
+    text(ln, M, 40, FB, 9, RED);
+  }
   const foot = 'This is a computer-generated receipt. Payment is subject to realisation of the cheque / transfer.';
   page.drawText(foot, {x: W / 2 - F.widthOfTextAtSize(foot, 6.5) / 2, y: 22, size: 6.5, font: F, color: INK});
   return await doc.save();
@@ -3857,7 +3935,8 @@ function paymentsList(box){
   const invs = [...S.bills.values()].filter(b => b.type === 'invoice').map(b => billPaid(b));
   const openPf = [...S.bills.values()].filter(b => b.type === 'proforma' && !(b.toId && S.bills.has(b.toId)));
   box.append(h('div',{class:'kpis'},
-    kpi('Received', rs(mon.reduce((a, p) => a + n0(p.amount), 0)), mon.length + (mon.length === 1 ? ' payment · ' : ' payments · ') + periodLabel()),
+    kpi('Received', rs(mon.filter(p => !p.cancelled).reduce((a, p) => a + n0(p.amount), 0)), mon.filter(p => !p.cancelled).length + (mon.filter(p => !p.cancelled).length === 1 ? ' payment · ' : ' payments · ') + periodLabel() + (mon.some(p => p.cancelled) ? ' · ' + mon.filter(p => p.cancelled).length + ' cancelled' : '')),
+    kpi('Client credit', rs([...S.payments.values()].filter(p => !p.cancelled && !(p.billId && S.bills.has(p.billId))).reduce((a, p) => a + paySettled(p), 0)), 'paid, not on any bill yet'),
     kpi('Advances on open proformas', rs(openPf.reduce((a, b) => a + billPaid(b).got, 0)), 'not yet invoiced'),
     kpi('Still to receive', rs(invs.reduce((a, s) => a + Math.max(0, s.bal), 0)), 'on all tax invoices')));
   const search = h('input',{type:'search', placeholder:'Search receipt no., client, reference', value:S.billQ, style:'flex:1 1 240px'}), tbox = h('div',{class:'tablebox'});
@@ -3869,12 +3948,12 @@ function paymentsList(box){
     const rows = all.filter(p => !q || [p.no, (p.client || {}).name, payRef(p), payFor(p)].join(' ').toLowerCase().includes(q)).sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')) || n0(b.createdAt) - n0(a.createdAt));
     if (!rows.length){ tbox.append(h('div',{class:'empty'},'Nothing matches.')); return; }
     tbox.append(h('table',{class:'jobs'},
-      h('thead',{}, h('tr',{}, h('th',{},'Receipt no.'), h('th',{},'Date'), h('th',{},'Client'), h('th',{},'For'), h('th',{},'Mode'), h('th',{class:'n'},'Amount'), own ? h('th',{class:'act'}, h('span',{class:'sr'},'Delete')) : null)),
-      h('tbody',{}, rows.map(p => h('tr',{tabindex:'0', onclick:() => go('pay', p.id), onkeydown:e => { if (e.key === 'Enter') go('pay', p.id); }},
+      h('thead',{}, h('tr',{}, h('th',{},'Receipt no.'), h('th',{},'Date'), h('th',{},'Client'), h('th',{},'For'), h('th',{},'Mode'), h('th',{class:'n'},'Amount'))),
+      h('tbody',{}, rows.map(p => h('tr',{tabindex:'0', class: p.cancelled ? 'paycan' : null, onclick:() => go('pay', p.id), onkeydown:e => { if (e.key === 'Enter') go('pay', p.id); }},
         h('td',{}, h('span',{class:'jcno'}, p.no || '—')), h('td',{}, fmtDate(p.date)), h('td',{}, h('div',{class:'jobno'}, (p.client || {}).name || '(no client)')),
-        h('td',{}, payFor(p)), h('td',{}, h('div',{}, p.mode || ''), payRef(p) ? h('div',{class:'sub'}, payRef(p)) : null),
-        h('td',{class:'n'}, h('b',{}, rs2(p.amount)), n0(p.tds) ? h('div',{class:'sub'}, '+ TDS ' + rs2(p.tds)) : null),
-        own ? h('td',{class:'act'}, rowDelete('payment receipt ' + (p.no || ''), async () => { S.payments.delete(p.id); await removeDoc('payments/' + p.id); renderBills(); })) : null)))));
+        h('td',{}, p.cancelled ? h('span',{class:'pill Lost', style:'margin-right:6px'}, 'Cancelled') : null, payFor(p), p.cancelled ? h('div',{class:'sub'}, p.cancelled.reason || '') : null),
+        h('td',{}, h('div',{}, p.mode || ''), payRef(p) ? h('div',{class:'sub'}, payRef(p)) : null),
+        h('td',{class:'n'}, h('b',{class: p.cancelled ? 'strike' : null}, rs2(p.amount)), n0(p.tds) ? h('div',{class:'sub'}, '+ TDS ' + rs2(p.tds)) : null))))));
   };
   search.addEventListener('input', e => { S.billQ = e.target.value; draw(); });
   draw();
